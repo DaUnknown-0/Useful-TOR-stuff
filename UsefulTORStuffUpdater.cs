@@ -26,9 +26,7 @@ namespace UsefulTORStuff {
     // DTOs so this plugin needs no compile-time reference to TheOtherRoles.
     public class UsefulTORStuffUpdater : MonoBehaviour {
         public const string RepositoryOwner = "DaUnknown-0";
-        // NOTE: repo unchanged for now. Release assets must be renamed to UsefulTORStuff.dll
-        // (to match PluginAssetName) before the self-updater can find an update.
-        public const string RepositoryName = "TOR-Optimized";
+        public const string RepositoryName = "Useful-TOR-stuff";
         public const string PluginAssetName = "UsefulTORStuff.dll";
 
         public static UsefulTORStuffUpdater Instance { get; private set; }
