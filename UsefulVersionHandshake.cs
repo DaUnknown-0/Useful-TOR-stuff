@@ -149,6 +149,9 @@ namespace UsefulTORStuff {
                             text.transform.position = tl + new Vector3(0.7f, -0.5f, 0f);
                         }
                         text.alignment = TMPro.TextAlignmentOptions.TopLeft;
+                        // Pivot to top-left so the (now larger) text grows right/down from the
+                        // corner instead of widening across its centre and spilling off-screen.
+                        text.rectTransform.pivot = new Vector2(0f, 1f);
                         text.transform.localScale = new Vector3(1.0f, 1.0f, 1f);
                         __instance.GameStartTextParent.SetActive(true);
                     } else {
@@ -163,6 +166,8 @@ namespace UsefulTORStuff {
                         "weiterhin auftreten (Fallback: Host Fix).</color>";
                     if (!__instance.GameStartTextParent.activeSelf || string.IsNullOrEmpty(text.text)) {
                         text.text = msg;
+                        // Restore the centred pivot in case the everyone-branch moved it to top-left.
+                        text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
                         text.transform.localPosition = __instance.StartButton.transform.localPosition + Vector3.up * 5;
                         text.transform.localScale = new Vector3(2f, 2f, 1f);
                         __instance.GameStartTextParent.SetActive(true);
