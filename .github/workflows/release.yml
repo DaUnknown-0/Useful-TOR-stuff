@@ -1,0 +1,52 @@
+name: Build & Release
+
+# Pushe einen Tag wie "v1.0.0", um automatisch zu bauen und ein Release
+# mit der UsefulTORStuff.dll als Asset zu erstellen.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 6
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Version aus Tag ermitteln
+        id: version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '$GITHUB_REF_NAME' ist keine gueltige Version (erwartet vX.Y.Z)."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Version in Quellen auf Tag setzen
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i -E "s/(PluginVersion = \")[0-9]+\.[0-9]+\.[0-9]+(\")/\1${VERSION}\2/" UsefulTORStuffPlugin.cs
+          sed -i -E "s|(<Version>)[0-9]+\.[0-9]+\.[0-9]+(</Version>)|\1${VERSION}\2|" UsefulTORStuff.csproj
+          echo "Gesetzt auf:"; grep PluginVersion UsefulTORStuffPlugin.cs
+
+      - name: Build
+        run: dotnet build -c Release
+
+      - name: Release erstellen + DLL anhaengen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DLL="bin/Release/net6.0/UsefulTORStuff.dll"
+          gh release create "$GITHUB_REF_NAME" "$DLL" \
+            --title "$GITHUB_REF_NAME" --generate-notes \
+          || gh release upload "$GITHUB_REF_NAME" "$DLL" --clobber
