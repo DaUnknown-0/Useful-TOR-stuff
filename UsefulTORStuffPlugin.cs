@@ -14,10 +14,12 @@
  *
  * 2) Permanent Snitch reveal fix (SnitchRoomPersistFix): a timing-independent, client-side
  *    fix that restores the host's room entry into Snitch.playerRoomMap after TOR wipes it
- *    in StartMeeting. Only active when EVERY player runs the same Useful TOR Stuff build,
- *    verified by a version handshake (UsefulVersionHandshake, RPC 253). When not everyone
- *    has it, the fix stays off and HostFixPlugin's host-only fallback (Fix 4) takes over —
- *    HostFix reads SnitchClientFixActive to know when to stand down.
+ *    in StartMeeting. It is purely client-local (no RPCs sent), so it fixes the reveal whenever
+ *    the SNITCH has this mod — independent of what anyone else runs. HostFixPlugin's host-only
+ *    fallback (Fix 4) still covers a Snitch WITHOUT the mod by having the host re-broadcast its
+ *    room; if both run they write the same host entry (idempotent). The version handshake
+ *    (UsefulVersionHandshake, RPC 253) now only feeds the lobby display and lets HostFix stand
+ *    down its redundant re-send when every player already has this mod (SnitchClientFixActive).
  *
  * Strategy: minimal, defensive patches via reflection so no compile-time TOR reference
  * is needed; if TOR changes its internals the patches simply become no-ops.

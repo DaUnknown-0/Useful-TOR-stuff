@@ -11,14 +11,17 @@
  * RpcStartMeeting, so when the Snitch's prefix runs the reset it wipes the host's entry. Non-host
  * players send after receiving RpcStartMeeting, so their entries survive — only the host is lost.
  *
- * The fix (runs on every client, so it needs everyone to have this mod — gated on
- * UsefulTORStuffPlugin.SnitchClientFixActive):
+ * The fix is purely client-local — it only rewrites the local Snitch.playerRoomMap and sends
+ * nothing over the network, so it works whenever the SNITCH has this mod, regardless of whether
+ * anyone else does. The patches are installed on every client but only do meaningful work on the
+ * client whose playerRoomMap drives a reveal (the Snitch, or a ghost with shouldShowGhostInfo):
  *   - A postfix on RPCProcedure.shareRoom shadow-records every (playerId -> roomId), independent
  *     of TOR's reset.
  *   - A postfix on PlayerControl.StartMeeting runs AFTER TOR's prefix reset (and ~0.4s before the
  *     reveal lerp reads the map). It writes the host's shadow-recorded room back into
  *     Snitch.playerRoomMap, restoring exactly the entry the race dropped. Late-arriving non-host
- *     ShareRooms land in the map on their own.
+ *     ShareRooms land in the map on their own. If HostFix's host-only Fix 4 also runs, both write
+ *     the same host entry — idempotent, no conflict.
  *
  * Reflection only (TOR types are internal): handles become no-ops if TOR changes its internals.
  */
@@ -84,7 +87,6 @@ namespace UsefulTORStuff {
         public static class StartMeetingRestorePatch {
             public static void Postfix() {
                 try {
-                    if (!UsefulTORStuffPlugin.SnitchClientFixActive) return;
                     if (SnitchSnitchField == null || ShareRoomMethod == null) return;
                     if (SnitchSnitchField.GetValue(null) == null) return; // no Snitch in play
                     if (AmongUsClient.Instance == null) return;

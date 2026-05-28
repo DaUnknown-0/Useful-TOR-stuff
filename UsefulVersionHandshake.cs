@@ -23,7 +23,8 @@ namespace UsefulTORStuff {
         private static bool versionSent;
         private static bool snitchFixChatShown;
 
-        // Post the "snitch fix active" confirmation to the local chat exactly once per session.
+        // Post the "snitch fix active" confirmation to the local chat once. The guard is re-armed
+        // each lobby frame (see GameStartManagerUpdatePatch), so it fires once per started game.
         private static void PostSnitchFixChatOnce() {
             if (snitchFixChatShown) return;
             var hud = HudManager.Instance;
@@ -31,6 +32,26 @@ namespace UsefulTORStuff {
             snitchFixChatShown = true;
             hud.Chat.AddChat(PlayerControl.LocalPlayer,
                 "Snitch fix active — all players have Useful TOR Stuff.");
+        }
+
+        // Draw a message anchored to the top-left corner on TOR's shared GameStartText. Guards
+        // against per-frame stacking on clients where TOR doesn't rebuild the element (non-host
+        // clients: TOR only clears/rewrites GameStartText for the host).
+        private static void DrawTopLeftMessage(GameStartManager gsm, TMPro.TMP_Text text, string msg, string marker) {
+            if (text.text != null && text.text.Contains(marker)) return;
+            text.text = string.IsNullOrEmpty(text.text) ? msg : text.text + "\n" + msg;
+            var cam = Camera.main;
+            if (cam != null) {
+                // Map the camera's top-left viewport corner to world space, then inset slightly.
+                Vector3 tl = cam.ViewportToWorldPoint(new Vector3(0f, 1f, 10f));
+                tl.z = text.transform.position.z;
+                text.transform.position = tl + new Vector3(0.7f, -0.5f, 0f);
+            }
+            text.alignment = TMPro.TextAlignmentOptions.TopLeft;
+            // Pivot to top-left so the text grows right/down from the corner, never off-screen.
+            text.rectTransform.pivot = new Vector2(0f, 1f);
+            text.transform.localScale = new Vector3(1.0f, 1.0f, 1f);
+            gsm.GameStartTextParent.SetActive(true);
         }
 
         public sealed class PlayerVersion {
@@ -137,6 +158,10 @@ namespace UsefulTORStuff {
 
                 if (AmongUsClient.Instance == null) return;
 
+                // Re-arm the chat post each lobby frame so it fires once per started game (the actual
+                // post happens at game start in IntroEndChatPatch, after this stops running).
+                snitchFixChatShown = false;
+
                 // Compute on EVERY client. GameStartManager.Update only runs in the lobby, so this
                 // value naturally persists (latches) into the game that follows.
                 string mismatch = BuildMismatchMessage();
@@ -145,48 +170,40 @@ namespace UsefulTORStuff {
 
                 var text = __instance.GameStartText;
 
-                // The mismatch warning below draws on TOR's shared GameStartText and moves its pivot
-                // to top-left. TOR resets that element's position/scale every frame but NOT its pivot,
-                // so a leftover top-left pivot offsets TOR's centred countdown. Restore the centred
-                // pivot whenever we are not actively drawing the mismatch warning (incl. during the
-                // countdown) so the countdown is never displaced.
-                bool drawMismatch = !everyone && AmongUsClient.Instance.AmHost
-                                    && __instance.startState != GameStartManager.StartingStates.Countdown;
-                if (text != null && !drawMismatch)
-                    text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-
-                if (__instance.startState == GameStartManager.StartingStates.Countdown) return;
+                // During the countdown TOR shows its own centred "Starting in X" on this shared
+                // element. Our lobby messages move the pivot to top-left, and TOR resets position/
+                // scale each frame but never the pivot — leaving it would displace the countdown.
+                // Restore the centred pivot and stop drawing while the countdown runs.
+                if (__instance.startState == GameStartManager.StartingStates.Countdown) {
+                    if (text != null) text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                    return;
+                }
                 if (text == null) return;
 
                 if (everyone) {
-                    // Fix is active — confirm once in chat instead of drawing over GameStartText
-                    // (which spammed every frame and corrupted the shared countdown element).
-                    PostSnitchFixChatOnce();
+                    // All players have the mod — show the active-fix confirmation top-left in the
+                    // lobby. It is also posted once to chat when the game actually starts.
+                    DrawTopLeftMessage(__instance, text,
+                        "<color=#3FCF4AFF>Snitch fix active — all players have Useful TOR Stuff.</color>",
+                        "Snitch fix active");
                 } else {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.
                     // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).
                     if (!AmongUsClient.Instance.AmHost) return;
-                    string msg = mismatch +
-                        "<color=#FFA500FF>The game can still be started, but the snitch bug may " +
-                        "still occur (fallback: Host Fix).</color>";
-                    if (!__instance.GameStartTextParent.activeSelf || string.IsNullOrEmpty(text.text)) {
-                        text.text = msg;
-                        var cam = Camera.main;
-                        if (cam != null) {
-                            // Map the camera's top-left viewport corner to world space, then inset slightly.
-                            Vector3 tl = cam.ViewportToWorldPoint(new Vector3(0f, 1f, 10f));
-                            tl.z = text.transform.position.z;
-                            text.transform.position = tl + new Vector3(0.7f, -0.5f, 0f);
-                        }
-                        text.alignment = TMPro.TextAlignmentOptions.TopLeft;
-                        // Pivot to top-left so the text grows right/down from the corner.
-                        text.rectTransform.pivot = new Vector2(0f, 1f);
-                        text.transform.localScale = new Vector3(1.0f, 1.0f, 1f);
-                        __instance.GameStartTextParent.SetActive(true);
-                    } else {
-                        text.text += "\n" + msg;
-                    }
+                    DrawTopLeftMessage(__instance, text,
+                        mismatch + "<color=#FFA500FF>The game can still be started, but the snitch bug " +
+                        "may still occur (fallback: Host Fix).</color>",
+                        "fallback: Host Fix");
                 }
+            }
+        }
+
+        // Post the active-fix confirmation to chat once the game has actually started (intro ended).
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        static class IntroEndChatPatch {
+            public static void Postfix() {
+                if (UsefulTORStuffPlugin.SnitchClientFixActive)
+                    PostSnitchFixChatOnce();
             }
         }
 
