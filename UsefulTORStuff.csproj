@@ -2,7 +2,7 @@
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
         <Version>1.0.0</Version>
-        <Description>Optimized - Reduces lag caused by the TOR Bloody modifier</Description>
+        <Description>Useful TOR Stuff - Bloody-modifier lag throttle and a permanent client-side Snitch reveal fix</Description>
         <Authors>DaUnknown-0</Authors>
         <LangVersion>latest</LangVersion>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -10,7 +10,7 @@
         <PlatformTarget>AnyCPU</PlatformTarget>
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <Platforms>AnyCPU</Platforms>
-        <AssemblyName>Optimized</AssemblyName>
+        <AssemblyName>UsefulTORStuff</AssemblyName>
     </PropertyGroup>
 
     <ItemGroup>
@@ -20,7 +20,7 @@
     </ItemGroup>
 
     <Target Name="CopyCustomContent" AfterTargets="AfterBuild" Condition="Exists('$(AmongUsLatest)/BepInEx/plugins/')">
-        <Message Text="Copying Optimized to BepInEx plugins" />
-        <Copy SourceFiles="$(ProjectDir)\bin\$(Configuration)\net6.0\Optimized.dll" DestinationFolder="$(AmongUsLatest)/BepInEx/plugins/" />
+        <Message Text="Copying UsefulTORStuff to BepInEx plugins" />
+        <Copy SourceFiles="$(ProjectDir)\bin\$(Configuration)\net6.0\UsefulTORStuff.dll" DestinationFolder="$(AmongUsLatest)/BepInEx/plugins/" />
     </Target>
 </Project>

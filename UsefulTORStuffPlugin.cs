@@ -1,24 +1,26 @@
-// TOR Optimized - Copyright (C) 2026 DaUnknown-0
+// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
 /*
- * OptimizedPlugin - External performance fix for TOR 4.8.0.
+ * UsefulTORStuffPlugin - External fixes for TOR 4.8.0.
  *
- * Bloody modifier lag: TOR's PlayerControlPatch.bloodyUpdate() spawns a brand-new
- * Bloodytrail (GameObject + SpriteRenderer + 10s coroutine) for every bloody player
- * on EVERY FixedUpdate (~50 Hz). With a 10s lifetime that's up to ~500 live blood
- * GameObjects per player, which tanks the framerate.
+ * 1) Bloody modifier lag: TOR's PlayerControlPatch.bloodyUpdate() spawns a brand-new
+ *    Bloodytrail (GameObject + SpriteRenderer + 10s coroutine) for every bloody player
+ *    on EVERY FixedUpdate (~50 Hz). With a 10s lifetime that's up to ~500 live blood
+ *    GameObjects per player, which tanks the framerate. Fix: patch the Bloodytrail
+ *    constructor and skip it unless the player moved at least MinDropDistance since their
+ *    last accepted blood drop.
  *
- * Fix: patch the Bloodytrail constructor and skip it (return false) unless the player
- * has actually moved at least MinDropDistance since their last accepted blood drop.
- * This caps blood to roughly one drop per MinDropDistance travelled and also looks
- * more natural (blood only along the walked path). bloodyUpdate() itself is left
- * untouched, so TOR's per-tick Bloody.active countdown — and thus the effect duration —
- * is unchanged.
+ * 2) Permanent Snitch reveal fix (SnitchRoomPersistFix): a timing-independent, client-side
+ *    fix that restores the host's room entry into Snitch.playerRoomMap after TOR wipes it
+ *    in StartMeeting. Only active when EVERY player runs the same Useful TOR Stuff build,
+ *    verified by a version handshake (UsefulVersionHandshake, RPC 253). When not everyone
+ *    has it, the fix stays off and HostFixPlugin's host-only fallback (Fix 4) takes over —
+ *    HostFix reads SnitchClientFixActive to know when to stand down.
  *
  * Strategy: minimal, defensive patches via reflection so no compile-time TOR reference
- * is needed; if TOR changes its internals the patch simply becomes a no-op.
+ * is needed; if TOR changes its internals the patches simply become no-ops.
  */
 
 global using Il2CppInterop.Runtime;
@@ -38,22 +40,31 @@ using System.Linq;
 using System.Reflection;
 using UnityEngine;
 
-namespace Optimized;
+namespace UsefulTORStuff;
 
 [BepInPlugin(PluginGuid, PluginName, PluginVersion)]
 [BepInProcess("Among Us.exe")]
 [BepInDependency("me.eisbison.theotherroles", BepInDependency.DependencyFlags.HardDependency)]
-public class OptimizedPlugin : BasePlugin
+public class UsefulTORStuffPlugin : BasePlugin
 {
-    public const string PluginGuid = "com.tormod.optimized";
-    public const string PluginName = "TOR Optimized";
+    public const string PluginGuid = "com.tormod.usefultorstuff";
+    public const string PluginName = "Useful TOR Stuff";
     public const string PluginVersion = "1.0.0";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
+
+    // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
+    // 253 is free: TOR's CustomRPC enum runs 100–~180, the Chance mod uses 200/201/250/251.
+    public const byte VersionHandshakeRpcId = 253;
 
     public static ManualLogSource Logger { get; private set; }
 
     internal static Assembly TORAssembly;
     internal static ConfigEntry<float> MinDropDistance;
+
+    // True only when the version handshake confirms every connected player runs the same
+    // Useful TOR Stuff build. Gates the client-side Snitch fix and is read by HostFixPlugin
+    // (via cross-assembly reflection) so its host-only fallback can stand down.
+    public static bool SnitchClientFixActive;
 
     public override void Load()
     {
@@ -67,11 +78,18 @@ public class OptimizedPlugin : BasePlugin
 
         var harmony = new Harmony(PluginGuid);
 
+        // Manual reflection patches (TOR types are internal): Bloody throttle + the shareRoom
+        // shadow-recorder, plus resolving the Snitch reflection handles.
         PatchBloodyThrottle(harmony);
-        harmony.PatchAll(typeof(VersionDisplayPatch));
+        SnitchRoomPersistFix.Initialize(harmony);
+
+        // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
+        // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the StartMeeting
+        // restore patch. Assembly-wide so nested patch classes are picked up too.
+        harmony.PatchAll(typeof(UsefulTORStuffPlugin).Assembly);
 
         // Self-updater: checks GitHub releases and offers an in-game update button.
-        AddComponent<OptimizedUpdater>();
+        AddComponent<UsefulTORStuffUpdater>();
 
         Logger.LogInfo($"{PluginName} v{PluginVersion} loaded.");
     }
@@ -156,7 +174,7 @@ public class OptimizedPlugin : BasePlugin
     }
 
     // ========================================================================
-    // Version display: add an "Optimized vX.Y.Z" line to the top-corner PingTracker.
+    // Version display: add a "Useful TOR Stuff vX.Y.Z" line to the top-corner PingTracker.
     // Inserted right after TOR's own "TheOtherRoles vX" line; the Chance and Host Fix
     // lines stack below it, so nothing overlaps.
     // ========================================================================
@@ -171,7 +189,7 @@ public class OptimizedPlugin : BasePlugin
             string text = __instance.text.text;
             if (string.IsNullOrEmpty(text)) return;
 
-            string line = $"<color=#3FCF4A>Optimized</color> v{PluginVersion}";
+            string line = $"<color=#3FCF4A>Useful TOR Stuff</color> v{PluginVersion}";
             int nl = text.IndexOf('\n');
             text = nl >= 0
                 ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)

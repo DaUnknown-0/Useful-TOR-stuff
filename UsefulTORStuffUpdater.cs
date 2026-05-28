@@ -1,4 +1,4 @@
-// TOR Optimized - Copyright (C) 2026 DaUnknown-0
+// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -20,18 +20,20 @@ using AmongUs.Data;
 using Assets.InnerNet;
 using Twitch;
 
-namespace Optimized {
+namespace UsefulTORStuff {
     // Self-updater that checks the GitHub releases of this repo and offers an in-game update
     // button on the main menu. Mirrors TOR's own ModUpdater flow but uses its own GithubRelease
     // DTOs so this plugin needs no compile-time reference to TheOtherRoles.
-    public class OptimizedUpdater : MonoBehaviour {
+    public class UsefulTORStuffUpdater : MonoBehaviour {
         public const string RepositoryOwner = "DaUnknown-0";
+        // NOTE: repo unchanged for now. Release assets must be renamed to UsefulTORStuff.dll
+        // (to match PluginAssetName) before the self-updater can find an update.
         public const string RepositoryName = "TOR-Optimized";
-        public const string PluginAssetName = "Optimized.dll";
+        public const string PluginAssetName = "UsefulTORStuff.dll";
 
-        public static OptimizedUpdater Instance { get; private set; }
+        public static UsefulTORStuffUpdater Instance { get; private set; }
 
-        public OptimizedUpdater(IntPtr ptr) : base(ptr) { }
+        public UsefulTORStuffUpdater(IntPtr ptr) : base(ptr) { }
 
         private bool _busy;
         private bool _showPopUp = true;
@@ -94,7 +96,7 @@ namespace Optimized {
 
             var button = popup.transform.GetChild(2).gameObject;
             button.SetActive(false);
-            popup.TextAreaTMP.text = "Updating Optimized\nPlease wait...";
+            popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...";
 
             var asset = release.Assets.Find(FilterPluginAsset);
             var www = new UnityWebRequest();
@@ -105,7 +107,7 @@ namespace Optimized {
 
             while (!operation.isDone) {
                 int stars = Mathf.CeilToInt(www.downloadProgress * 10);
-                string progress = $"Updating Optimized\nPlease wait...\nDownloading...\n{new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars)}";
+                string progress = $"Updating Useful TOR Stuff\nPlease wait...\nDownloading...\n{new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars)}";
                 popup.TextAreaTMP.text = progress;
                 yield return new WaitForEndOfFrame();
             }
@@ -116,7 +118,7 @@ namespace Optimized {
                 _busy = false;
                 yield break;
             }
-            popup.TextAreaTMP.text = "Updating Optimized\nPlease wait...\n\nDownload complete\ncopying file...";
+            popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...\n\nDownload complete\ncopying file...";
 
             var filePath = Path.Combine(Paths.PluginPath, asset.Name);
 
@@ -138,7 +140,7 @@ namespace Optimized {
             www.Dispose();
 
             if (!hasError) {
-                popup.TextAreaTMP.text = "Optimized\nupdated successfully\nPlease restart the game.";
+                popup.TextAreaTMP.text = "Useful TOR Stuff\nupdated successfully\nPlease restart the game.";
             }
             button.SetActive(true);
             _busy = false;
@@ -159,7 +161,7 @@ namespace Optimized {
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
             if (_busy || scene.name != "MainMenu" || Releases == null) return;
             var latestRelease = Releases.FirstOrDefault();
-            if (latestRelease == null || !latestRelease.IsNewer(global::Optimized.OptimizedPlugin.Version) || !latestRelease.Assets.Any(FilterPluginAsset))
+            if (latestRelease == null || !latestRelease.IsNewer(global::UsefulTORStuff.UsefulTORStuffPlugin.Version) || !latestRelease.Assets.Any(FilterPluginAsset))
                 return;
 
             var template = GameObject.Find("ExitGameButton");
@@ -178,22 +180,22 @@ namespace Optimized {
             }));
 
             var text = button.transform.GetComponentInChildren<TMPro.TMP_Text>();
-            string t = "Update Optimized";
+            string t = "Update Useful TOR Stuff";
             StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(t))));
             passiveButton.OnMouseOut.AddListener((Action)(() => text.color = Color.green));
             passiveButton.OnMouseOver.AddListener((Action)(() => text.color = Color.white));
             text.color = Color.green;
 
             if (_showPopUp) {
-                var announcement = $"<size=150%>A new TOR OPTIMIZED update to {latestRelease.Tag} is available</size>\n{latestRelease.Description}";
+                var announcement = $"<size=150%>A new USEFUL TOR STUFF update to {latestRelease.Tag} is available</size>\n{latestRelease.Description}";
                 var mgr = FindObjectOfType<MainMenuManager>(true);
-                mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "Optimized Update", date: latestRelease.PublishedAt));
+                mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "Useful TOR Stuff Update", date: latestRelease.PublishedAt));
             }
             _showPopUp = false;
         }
 
         [HideFromIl2Cpp]
-        public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = "Optimized Update", string title = "", string date = "") {
+        public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = "Useful TOR Stuff Update", string title = "", string date = "") {
             // Stagger behind other mods so the other update popups appear first.
             yield return new WaitForSeconds(2f);
             // Wait until no announcement popup is currently visible (up to 30 s).
@@ -213,10 +215,10 @@ namespace Optimized {
             popUp.gameObject.SetActive(true);
 
             Announcement optimizedAnnouncement = new() {
-                Id = "optimizedAnnouncement",
+                Id = "usefulTORStuffAnnouncement",
                 Language = 0,
                 Number = 6972,
-                Title = title == "" ? "TOR Optimized Announcement" : title,
+                Title = title == "" ? "Useful TOR Stuff Announcement" : title,
                 ShortTitle = shortTitle,
                 SubTitle = "",
                 PinState = false,
