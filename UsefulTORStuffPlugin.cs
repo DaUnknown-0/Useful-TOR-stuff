@@ -73,6 +73,19 @@ public class UsefulTORStuffPlugin : BasePlugin
         Logger = Log;
         Logger.LogInfo($"{PluginName} v{PluginVersion} loading...");
 
+        // Check if this mod is enabled. Early return wenn deaktiviert.
+        var enabled = Config.Bind("General", "Enabled", true, "Enable this mod");
+        if (!enabled.Value) {
+            Logger.LogInfo($"{PluginName} is disabled in config — skipping load.");
+            return;
+        }
+
+        // Mod-Manager Config: Wenn aktiviert, werden Update-Buttons in die Mod-Manager-UI verschoben.
+        var modManagerEnabled = Config.Bind("ModManager", "Enabled", false,
+            "When enabled, update buttons move into the Mod Manager UI. When disabled, update buttons " +
+            "appear at their original positions.");
+        ModManagerRegistry.SetModManagerEnabled(modManagerEnabled.Value);
+
         MinDropDistance = Config.Bind(
             "Bloody", "MinDropDistance", 0.35f,
             "Minimum distance (in world units) a bloody player must travel before a new blood " +
@@ -92,6 +105,23 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Self-updater: checks GitHub releases and offers an in-game update button.
         AddComponent<UsefulTORStuffUpdater>();
+
+        // Mod-Manager UI Components: Button im Hauptmenü + Popup-UI.
+        AddComponent<ModManagerButton>();
+        AddComponent<ModManagerUI>();
+
+        // Registriere diese Mod in der Mod-Manager-Registry.
+        ModManagerRegistry.RegisterMod(new ModInfo {
+            Guid = PluginGuid,
+            Name = PluginName,
+            Version = Version,
+            RepositoryOwner = UsefulTORStuffUpdater.RepositoryOwner,
+            RepositoryName = UsefulTORStuffUpdater.RepositoryName,
+            ButtonColor = Color.green,
+            HasUpdate = () => UsefulTORStuffUpdater.Instance?.HasUpdate() ?? false,
+            TriggerUpdate = () => UsefulTORStuffUpdater.Instance?.TriggerUpdateFromManager(),
+            Enabled = enabled
+        });
 
         Logger.LogInfo($"{PluginName} v{PluginVersion} loaded.");
     }

@@ -158,6 +158,13 @@ namespace UsefulTORStuff {
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
             if (_busy || scene.name != "MainMenu" || Releases == null) return;
+
+            // Wenn Mod-Manager aktiviert ist, keine eigenen Update-Buttons anzeigen.
+            // Der Mod-Manager übernimmt dann die Update-Funktionalität.
+            if (ModManagerRegistry.IsModManagerEnabled()) {
+                return;
+            }
+
             var latestRelease = Releases.FirstOrDefault();
             if (latestRelease == null || !latestRelease.IsNewer(global::UsefulTORStuff.UsefulTORStuffPlugin.Version) || !latestRelease.Assets.Any(FilterPluginAsset))
                 return;
@@ -245,6 +252,26 @@ namespace UsefulTORStuff {
                     DataManager.Player.Announcements.allAnnouncements = backup;
                 }
             })));
+        }
+
+        // Callback-Methoden für ModManagerRegistry: Prüft ob ein Update verfügbar ist.
+        [HideFromIl2Cpp]
+        public bool HasUpdate() {
+            if (Releases == null || Releases.Count == 0) return false;
+            var latestRelease = Releases.FirstOrDefault();
+            return latestRelease != null
+                && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)
+                && latestRelease.Assets.Any(FilterPluginAsset);
+        }
+
+        // Callback-Methode für ModManagerRegistry: Startet den Update-Download.
+        [HideFromIl2Cpp]
+        public void TriggerUpdateFromManager() {
+            if (Releases == null || Releases.Count == 0) return;
+            var latestRelease = Releases.FirstOrDefault();
+            if (latestRelease != null && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)) {
+                StartDownloadRelease(latestRelease);
+            }
         }
     }
 
