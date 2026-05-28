@@ -1,0 +1,686 @@
+// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+// Licensed under GPL-3.0-or-later. See LICENSE for details.
+// Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using HarmonyLib;
+using UnityEngine;
+
+namespace UsefulTORStuff;
+
+public static class SnitchLogic
+{
+    private static readonly Dictionary<byte, byte> roomMap = new Dictionary<byte, byte>();
+
+    private static Type snitchType;
+    private static Type snitchModeEnumType;
+    private static Type snitchTargetsEnumType;
+    private static Type helpersType;
+    private static Type tasksHandlerType;
+    private static Type roleInfoType;
+    private static Type mapUtilitiesType;
+    private static Type playerControlPatchType;
+    private static Type mapBehaviourPatchType;
+
+    private static FieldInfo snitchPlayerField;
+    private static FieldInfo snitchModeField;
+    private static FieldInfo snitchTargetsField;
+    private static FieldInfo snitchIsRevealedField;
+    private static FieldInfo snitchNeedsUpdateField;
+    private static FieldInfo snitchTextField;
+    private static FieldInfo snitchTaskCountForRevealField;
+    private static FieldInfo mapBehaviourHerePointsField;
+    private static FieldInfo mapUtilitiesCachedShipStatusField;
+
+    private static MethodInfo shareRoomMethod;
+    private static MethodInfo snitchClearAndReloadMethod;
+    private static MethodInfo snitchUpdateMethod;
+    private static MethodInfo helpersShouldShowGhostInfoMethod;
+    private static MethodInfo helpersIsEvilMethod;
+    private static MethodInfo helpersIsKillerMethod;
+    private static MethodInfo taskInfoMethod;
+    private static MethodInfo getRolesStringMethod;
+
+    private static int snitchModeChatValue;
+    private static int snitchModeMapValue;
+    private static int snitchModeChatAndMapValue;
+    private static int snitchTargetsEvilPlayersValue;
+    private static int snitchTargetsKillersValue;
+
+    private static bool chatModeSwapped;
+    private static int chatOriginalMode;
+    private static bool mapModeSwapped;
+    private static int mapOriginalMode;
+
+    internal static bool RoomMapReady { get; private set; }
+    internal static bool ChatRevealReady { get; private set; }
+    internal static bool MapRevealReady { get; private set; }
+    internal static bool HudRevealReady { get; private set; }
+
+    public static void Initialize(Harmony harmony)
+    {
+        try
+        {
+            var tor = UsefulTORStuffPlugin.TORAssembly
+                ?? AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "TheOtherRoles");
+            if (tor == null)
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning("TheOtherRoles assembly not found — Snitch logic disabled.");
+                return;
+            }
+
+            ResolveHandles(tor);
+
+            RoomMapReady = shareRoomMethod != null && snitchClearAndReloadMethod != null;
+            ChatRevealReady = RoomMapReady
+                && snitchPlayerField != null
+                && snitchModeField != null
+                && snitchTargetsField != null
+                && snitchModeEnumType != null
+                && snitchTargetsEnumType != null
+                && helpersShouldShowGhostInfoMethod != null
+                && helpersIsEvilMethod != null
+                && helpersIsKillerMethod != null
+                && taskInfoMethod != null
+                && getRolesStringMethod != null;
+            MapRevealReady = snitchPlayerField != null
+                && snitchModeField != null
+                && snitchTargetsField != null
+                && mapBehaviourHerePointsField != null
+                && snitchModeEnumType != null
+                && snitchTargetsEnumType != null
+                && helpersIsEvilMethod != null
+                && helpersIsKillerMethod != null
+                && taskInfoMethod != null
+                && mapUtilitiesCachedShipStatusField != null;
+            HudRevealReady = snitchPlayerField != null
+                && snitchNeedsUpdateField != null
+                && snitchIsRevealedField != null
+                && snitchTextField != null
+                && snitchTaskCountForRevealField != null
+                && snitchTargetsField != null
+                && snitchTargetsEnumType != null
+                && helpersIsEvilMethod != null
+                && helpersIsKillerMethod != null
+                && taskInfoMethod != null;
+
+            if (RoomMapReady)
+            {
+                harmony.Patch(shareRoomMethod,
+                    postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(ShareRoomPostfix)));
+                harmony.Patch(snitchClearAndReloadMethod,
+                    postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(ClearAndReloadPostfix)));
+                UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: room map recorder enabled.");
+            }
+            else
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "SnitchLogic: room map recorder disabled — missing shareRoom/clearAndReload handles.");
+            }
+
+            if (ChatRevealReady)
+            {
+                UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: chat reveal reimplementation enabled.");
+            }
+            else
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "SnitchLogic: chat reveal stays on TOR's original path — missing Snitch handles.");
+            }
+
+            if (MapRevealReady)
+            {
+                UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: map reveal reimplementation enabled.");
+            }
+            else
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "SnitchLogic: map reveal stays on TOR's original path — missing Snitch/MapBehaviour handles.");
+            }
+
+            if (HudRevealReady)
+            {
+                harmony.Patch(snitchUpdateMethod,
+                    prefix: new HarmonyMethod(typeof(SnitchLogic), nameof(SnitchHudUpdatePrefix)));
+                UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: HUD update reimplementation enabled.");
+            }
+            else
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "SnitchLogic: HUD update stays on TOR's original path — missing Snitch handles.");
+            }
+        }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogError($"Failed to initialize Snitch logic: {ex}");
+        }
+    }
+
+    private static void ResolveHandles(Assembly tor)
+    {
+        snitchType = tor.GetType("TheOtherRoles.TheOtherRoles+Snitch");
+        helpersType = tor.GetType("TheOtherRoles.Helpers");
+        tasksHandlerType = tor.GetType("TheOtherRoles.TasksHandler");
+        roleInfoType = tor.GetType("TheOtherRoles.RoleInfo");
+        mapUtilitiesType = tor.GetType("TheOtherRoles.Utilities.MapUtilities");
+        playerControlPatchType = tor.GetType("TheOtherRoles.Patches.PlayerControlPatch");
+        mapBehaviourPatchType = tor.GetType("TheOtherRoles.Patches.MapBehaviourPatch");
+
+        if (snitchType != null)
+        {
+            snitchPlayerField = snitchType.GetField("snitch", BindingFlags.Public | BindingFlags.Static);
+            snitchModeField = snitchType.GetField("mode", BindingFlags.Public | BindingFlags.Static);
+            snitchTargetsField = snitchType.GetField("targets", BindingFlags.Public | BindingFlags.Static);
+            snitchIsRevealedField = snitchType.GetField("isRevealed", BindingFlags.Public | BindingFlags.Static);
+            snitchNeedsUpdateField = snitchType.GetField("needsUpdate", BindingFlags.Public | BindingFlags.Static);
+            snitchTextField = snitchType.GetField("text", BindingFlags.Public | BindingFlags.Static);
+            snitchTaskCountForRevealField = snitchType.GetField("taskCountForReveal", BindingFlags.Public | BindingFlags.Static);
+            snitchModeEnumType = snitchType.GetNestedType("Mode", BindingFlags.Public | BindingFlags.NonPublic);
+            snitchTargetsEnumType = snitchType.GetNestedType("Targets", BindingFlags.Public | BindingFlags.NonPublic);
+
+            if (snitchModeEnumType != null)
+            {
+                snitchModeChatValue = GetEnumValue(snitchModeEnumType, "Chat");
+                snitchModeMapValue = GetEnumValue(snitchModeEnumType, "Map");
+                snitchModeChatAndMapValue = GetEnumValue(snitchModeEnumType, "ChatAndMap");
+            }
+
+            if (snitchTargetsEnumType != null)
+            {
+                snitchTargetsEvilPlayersValue = GetEnumValue(snitchTargetsEnumType, "EvilPlayers");
+                snitchTargetsKillersValue = GetEnumValue(snitchTargetsEnumType, "Killers");
+            }
+
+            snitchClearAndReloadMethod = snitchType.GetMethod("clearAndReload", BindingFlags.Public | BindingFlags.Static);
+        }
+
+        var rpcProcedureType = tor.GetType("TheOtherRoles.RPCProcedure");
+        shareRoomMethod = rpcProcedureType?.GetMethod("shareRoom", BindingFlags.Public | BindingFlags.Static);
+
+        if (helpersType != null)
+        {
+            helpersShouldShowGhostInfoMethod = helpersType.GetMethod("shouldShowGhostInfo", BindingFlags.Public | BindingFlags.Static);
+            helpersIsEvilMethod = helpersType.GetMethod("isEvil", BindingFlags.Public | BindingFlags.Static);
+            helpersIsKillerMethod = helpersType.GetMethod("isKiller", BindingFlags.Public | BindingFlags.Static);
+        }
+
+        if (tasksHandlerType != null)
+            taskInfoMethod = tasksHandlerType.GetMethod("taskInfo", BindingFlags.Public | BindingFlags.Static);
+
+        if (roleInfoType != null)
+            getRolesStringMethod = roleInfoType.GetMethod("GetRolesString", BindingFlags.Public | BindingFlags.Static);
+
+        if (mapUtilitiesType != null)
+            mapUtilitiesCachedShipStatusField = mapUtilitiesType.GetField("CachedShipStatus", BindingFlags.Public | BindingFlags.Static);
+
+        if (playerControlPatchType != null)
+            snitchUpdateMethod = playerControlPatchType.GetMethod("snitchUpdate", BindingFlags.NonPublic | BindingFlags.Static);
+
+        if (mapBehaviourPatchType != null)
+            mapBehaviourHerePointsField = mapBehaviourPatchType.GetField("herePoints", BindingFlags.Public | BindingFlags.Static);
+    }
+
+    private static int GetEnumValue(Type enumType, string name)
+    {
+        return Convert.ToInt32(Enum.Parse(enumType, name));
+    }
+
+    private static PlayerControl GetSnitchPlayer()
+    {
+        return snitchPlayerField?.GetValue(null) as PlayerControl;
+    }
+
+    private static int GetSnitchMode()
+    {
+        return snitchModeField == null ? -1 : Convert.ToInt32(snitchModeField.GetValue(null));
+    }
+
+    private static void SetSnitchMode(int value)
+    {
+        if (snitchModeField == null || snitchModeEnumType == null) return;
+        snitchModeField.SetValue(null, Enum.ToObject(snitchModeEnumType, value));
+    }
+
+    private static int GetSnitchTargets()
+    {
+        return snitchTargetsField == null ? -1 : Convert.ToInt32(snitchTargetsField.GetValue(null));
+    }
+
+    private static bool GetSnitchIsRevealed()
+    {
+        return snitchIsRevealedField != null && Convert.ToBoolean(snitchIsRevealedField.GetValue(null));
+    }
+
+    private static void SetSnitchIsRevealed(bool value)
+    {
+        if (snitchIsRevealedField != null) snitchIsRevealedField.SetValue(null, value);
+    }
+
+    private static bool GetSnitchNeedsUpdate()
+    {
+        return snitchNeedsUpdateField != null && Convert.ToBoolean(snitchNeedsUpdateField.GetValue(null));
+    }
+
+    private static void SetSnitchNeedsUpdate(bool value)
+    {
+        if (snitchNeedsUpdateField != null) snitchNeedsUpdateField.SetValue(null, value);
+    }
+
+    private static TMPro.TextMeshPro GetSnitchText()
+    {
+        return snitchTextField?.GetValue(null) as TMPro.TextMeshPro;
+    }
+
+    private static void SetSnitchText(TMPro.TextMeshPro text)
+    {
+        if (snitchTextField != null) snitchTextField.SetValue(null, text);
+    }
+
+    private static int GetSnitchTaskCountForReveal()
+    {
+        return snitchTaskCountForRevealField == null ? 0 : Convert.ToInt32(snitchTaskCountForRevealField.GetValue(null));
+    }
+
+    private static Dictionary<byte, SpriteRenderer> GetHerePoints()
+    {
+        if (mapBehaviourHerePointsField == null) return null;
+
+        var value = mapBehaviourHerePointsField.GetValue(null) as Dictionary<byte, SpriteRenderer>;
+        if (value == null)
+        {
+            value = new Dictionary<byte, SpriteRenderer>();
+            mapBehaviourHerePointsField.SetValue(null, value);
+        }
+
+        return value;
+    }
+
+    private static bool IsChatRevealMode(int mode)
+    {
+        return mode == snitchModeChatValue || mode == snitchModeChatAndMapValue;
+    }
+
+    private static bool IsMapRevealMode(int mode)
+    {
+        return mode == snitchModeMapValue || mode == snitchModeChatAndMapValue;
+    }
+
+    private static bool IsSnitchTargetMatch(PlayerControl player)
+    {
+        if (player == null || player.Data == null) return false;
+
+        int targets = GetSnitchTargets();
+        if (targets == snitchTargetsEvilPlayersValue) return CallHelpersIsEvil(player);
+        if (targets == snitchTargetsKillersValue) return CallHelpersIsKiller(player);
+        return false;
+    }
+
+    private static bool ShouldRunChatReveal(PlayerControl snitch)
+    {
+        if (snitch == null || snitch.Data == null || snitch.Data.IsDead) return false;
+        if (!IsChatRevealMode(GetSnitchMode())) return false;
+
+        var local = PlayerControl.LocalPlayer;
+        return local != null && (local == snitch || CallHelpersShouldShowGhostInfo());
+    }
+
+    private static bool ShouldRunMapReveal(PlayerControl snitch)
+    {
+        if (snitch == null || snitch.Data == null || snitch.Data.IsDead) return false;
+        if (!IsMapRevealMode(GetSnitchMode())) return false;
+
+        var local = PlayerControl.LocalPlayer;
+        return local != null && local == snitch;
+    }
+
+    private static bool CallHelpersShouldShowGhostInfo()
+    {
+        if (helpersShouldShowGhostInfoMethod == null) return false;
+        return Convert.ToBoolean(helpersShouldShowGhostInfoMethod.Invoke(null, Array.Empty<object>()));
+    }
+
+    private static bool CallHelpersIsEvil(PlayerControl player)
+    {
+        if (helpersIsEvilMethod == null || player == null) return false;
+        return Convert.ToBoolean(helpersIsEvilMethod.Invoke(null, new object[] { player }));
+    }
+
+    private static bool CallHelpersIsKiller(PlayerControl player)
+    {
+        if (helpersIsKillerMethod == null || player == null) return false;
+        return Convert.ToBoolean(helpersIsKillerMethod.Invoke(null, new object[] { player }));
+    }
+
+    private static Tuple<int, int> CallTaskInfo(object playerInfo)
+    {
+        if (taskInfoMethod == null) return Tuple.Create(0, 0);
+        return taskInfoMethod.Invoke(null, new[] { playerInfo }) as Tuple<int, int> ?? Tuple.Create(0, 0);
+    }
+
+    private static string CallGetRolesString(PlayerControl player, bool useColors, bool showModifier, bool suppressGhostInfo)
+    {
+        if (getRolesStringMethod == null || player == null) return string.Empty;
+        return getRolesStringMethod.Invoke(null, new object[] { player, useColors, showModifier, suppressGhostInfo }) as string ?? string.Empty;
+    }
+
+    private static ShipStatus GetCachedShipStatus()
+    {
+        return mapUtilitiesCachedShipStatusField?.GetValue(null) as ShipStatus;
+    }
+
+    private static TMPro.TextMeshPro CreateSnitchText()
+    {
+        var hud = DestroyableSingleton<HudManager>.Instance;
+        if (hud == null || hud.KillButton == null || hud.KillButton.cooldownTimerText == null) return null;
+
+        var text = UnityEngine.Object.Instantiate(hud.KillButton.cooldownTimerText, hud.transform);
+        text.enableWordWrapping = false;
+        text.transform.localScale = Vector3.one * 0.75f;
+        text.transform.localPosition += new Vector3(0f, 1.8f, -69f);
+        text.gameObject.SetActive(true);
+        return text;
+    }
+
+    private static void DestroySnitchText(TMPro.TextMeshPro text)
+    {
+        if (text == null) return;
+        UnityEngine.Object.Destroy(text.gameObject);
+        SetSnitchText(null);
+    }
+
+    private static void AddChatMessage(PlayerControl speaker, string message)
+    {
+        var hud = DestroyableSingleton<HudManager>.Instance;
+        if (hud?.Chat == null || speaker == null || string.IsNullOrEmpty(message)) return;
+        hud.Chat.AddChat(speaker, message);
+    }
+
+    private static void ShareRoomPostfix(byte __0, byte __1)
+    {
+        try
+        {
+            roomMap[__0] = __1;
+        }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic shareRoom recorder failed: {ex}");
+        }
+    }
+
+    private static void ClearAndReloadPostfix()
+    {
+        try
+        {
+            roomMap.Clear();
+            chatModeSwapped = false;
+            mapModeSwapped = false;
+        }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic clearAndReload reset failed: {ex}");
+        }
+    }
+
+    private static bool SnitchHudUpdatePrefix()
+    {
+        if (!HudRevealReady) return true;
+
+        try
+        {
+            var snitch = GetSnitchPlayer();
+            if (snitch == null || snitch.Data == null) return false;
+            if (!GetSnitchNeedsUpdate()) return false;
+
+            bool snitchIsDead = snitch.Data.IsDead;
+            var taskInfo = CallTaskInfo(snitch.Data);
+            int playerCompleted = taskInfo.Item1;
+            int playerTotal = taskInfo.Item2;
+            if (playerTotal == 0) return false;
+
+            var local = PlayerControl.LocalPlayer;
+            int numberOfTasks = playerTotal - playerCompleted;
+            int targets = GetSnitchTargets();
+            bool localCanSee = local != null &&
+                               ((targets == snitchTargetsEvilPlayersValue && CallHelpersIsEvil(local)) ||
+                                (targets == snitchTargetsKillersValue && CallHelpersIsKiller(local)));
+
+            var text = GetSnitchText();
+            if (GetSnitchIsRevealed() && localCanSee)
+            {
+                if (text == null)
+                {
+                    text = CreateSnitchText();
+                    SetSnitchText(text);
+                }
+                else
+                {
+                    text.text = $"Snitch is alive: {playerCompleted}/{playerTotal}";
+                    if (snitchIsDead) text.text = "Snitch is dead!";
+                }
+            }
+            else if (text != null)
+            {
+                DestroySnitchText(text);
+            }
+
+            if (snitchIsDead)
+            {
+                if (MeetingHud.Instance == null) SetSnitchNeedsUpdate(false);
+                return false;
+            }
+
+            if (numberOfTasks <= GetSnitchTaskCountForReveal())
+                SetSnitchIsRevealed(true);
+
+            return false;
+        }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic snitchUpdate replacement failed: {ex}");
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.StartMeeting))]
+    [HarmonyPriority(Priority.High)]
+    private static class StartMeetingChatPatch
+    {
+        public static bool Prepare() => ChatRevealReady;
+
+        public static void Prefix()
+        {
+            try
+            {
+                var snitch = GetSnitchPlayer();
+                if (!ShouldRunChatReveal(snitch))
+                {
+                    chatModeSwapped = false;
+                    return;
+                }
+
+                chatOriginalMode = GetSnitchMode();
+                if (!IsChatRevealMode(chatOriginalMode))
+                {
+                    chatModeSwapped = false;
+                    return;
+                }
+
+                SetSnitchMode(snitchModeMapValue);
+                chatModeSwapped = true;
+            }
+            catch (Exception ex)
+            {
+                chatModeSwapped = false;
+                UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic chat prefix failed: {ex}");
+            }
+        }
+
+        [HarmonyPriority(Priority.Low)]
+        public static void Postfix()
+        {
+            if (!chatModeSwapped) return;
+
+            try
+            {
+                SetSnitchMode(chatOriginalMode);
+
+                var snitch = GetSnitchPlayer();
+                if (!ShouldRunChatReveal(snitch)) return;
+
+                var taskInfo = CallTaskInfo(snitch.Data);
+                int playerCompleted = taskInfo.Item1;
+                int playerTotal = taskInfo.Item2;
+                int numberOfTasks = playerTotal - playerCompleted;
+                if (numberOfTasks != 0) return;
+
+                string output = "Bad alive roles in game: \n \n";
+                var hud = DestroyableSingleton<HudManager>.Instance;
+                if (hud == null) return;
+
+                hud.StartCoroutine(Effects.Lerp(0.4f, new Action<float>(x =>
+                {
+                    if (x != 1f) return;
+
+                    foreach (PlayerControl player in PlayerControl.AllPlayerControls)
+                    {
+                        if (!IsSnitchTargetMatch(player)) continue;
+                        if (player == null || player.Data == null || player.Data.IsDead) continue;
+                        if (!roomMap.TryGetValue(player.PlayerId, out byte room)) continue;
+
+                        var roomName = "open fields";
+                        if (room != byte.MinValue)
+                            roomName = DestroyableSingleton<TranslationController>.Instance.GetString((SystemTypes)room);
+
+                        output += "- " + CallGetRolesString(player, false, false, true) + ", was last seen " + roomName + "\n";
+                    }
+
+                    AddChatMessage(snitch, output);
+                })));
+
+                if (PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.Data != null && PlayerControl.LocalPlayer.Data.IsDead)
+                    AddChatMessage(PlayerControl.LocalPlayer, output);
+            }
+            catch (Exception ex)
+            {
+                UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic chat postfix failed: {ex}");
+            }
+            finally
+            {
+                chatModeSwapped = false;
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.FixedUpdate))]
+    [HarmonyPriority(Priority.High)]
+    private static class MapRevealPatch
+    {
+        public static bool Prepare() => MapRevealReady;
+
+        public static void Prefix()
+        {
+            try
+            {
+                var snitch = GetSnitchPlayer();
+                if (!ShouldRunMapReveal(snitch))
+                {
+                    mapModeSwapped = false;
+                    return;
+                }
+
+                mapOriginalMode = GetSnitchMode();
+                if (!IsMapRevealMode(mapOriginalMode))
+                {
+                    mapModeSwapped = false;
+                    return;
+                }
+
+                SetSnitchMode(snitchModeChatValue);
+                mapModeSwapped = true;
+            }
+            catch (Exception ex)
+            {
+                mapModeSwapped = false;
+                UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic map prefix failed: {ex}");
+            }
+        }
+
+        [HarmonyPriority(Priority.Low)]
+        public static void Postfix(MapBehaviour __instance)
+        {
+            if (!mapModeSwapped) return;
+
+            try
+            {
+                SetSnitchMode(mapOriginalMode);
+
+                var snitch = GetSnitchPlayer();
+                if (!ShouldRunMapReveal(snitch)) return;
+
+                var taskInfo = CallTaskInfo(snitch.Data);
+                int playerCompleted = taskInfo.Item1;
+                int playerTotal = taskInfo.Item2;
+                int numberOfTasks = playerTotal - playerCompleted;
+                if (numberOfTasks != 0) return;
+
+                var points = GetHerePoints();
+                if (points == null || __instance == null || __instance.HerePoint == null) return;
+                var shipStatus = GetCachedShipStatus();
+                if (shipStatus == null) return;
+
+                if (MeetingHud.Instance == null)
+                {
+                    foreach (PlayerControl player in PlayerControl.AllPlayerControls)
+                    {
+                        if (player == null || player.Data == null || player.Data.IsDead) continue;
+                        if (!IsSnitchTargetMatch(player)) continue;
+
+                        Vector3 v = player.transform.position;
+                        v /= shipStatus.MapScale;
+                        v.x *= Mathf.Sign(shipStatus.transform.localScale.x);
+                        v.z = -2.1f;
+
+                        if (points.TryGetValue(player.PlayerId, out SpriteRenderer existing) && existing != null)
+                        {
+                            existing.transform.localPosition = v;
+                            continue;
+                        }
+
+                        if (points.ContainsKey(player.PlayerId))
+                            points.Remove(player.PlayerId);
+
+                        var herePoint = UnityEngine.Object.Instantiate(__instance.HerePoint, __instance.HerePoint.transform.parent, true);
+                        herePoint.transform.localPosition = v;
+                        herePoint.enabled = true;
+
+                        int colorId = player.CurrentOutfit.ColorId;
+                        player.CurrentOutfit.ColorId = 6;
+                        player.SetPlayerMaterialColors(herePoint);
+                        player.CurrentOutfit.ColorId = colorId;
+
+                        points.Add(player.PlayerId, herePoint);
+                    }
+                }
+                else
+                {
+                    foreach (var entry in points.ToList())
+                    {
+                        if (entry.Value != null) UnityEngine.Object.Destroy(entry.Value.gameObject);
+                        points.Remove(entry.Key);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic map postfix failed: {ex}");
+            }
+            finally
+            {
+                mapModeSwapped = false;
+            }
+        }
+    }
+}

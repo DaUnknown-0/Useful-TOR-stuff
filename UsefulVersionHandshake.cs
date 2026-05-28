@@ -15,8 +15,9 @@ namespace UsefulTORStuff {
     // Mod-presence handshake, modelled on TOR's own VersionHandshake (and the Chance mod's).
     // Every client with Useful TOR Stuff broadcasts its version + assembly GUID at lobby time
     // (RPC 253). Each client can then tell whether EVERY connected player runs the same build —
-    // the precondition for the permanent client-side Snitch fix (SnitchRoomPersistFix), which
-    // needs all clients to cooperate. The result is published in
+    // the precondition for the gated client-side Snitch reimplementation (SnitchLogic), which
+    // needs all clients to cooperate for the client-side fallback to stand down cleanly. The
+    // result is published in
     // UsefulTORStuffPlugin.SnitchClientFixActive and surfaced via lobby messages.
     public static class UsefulVersionHandshake {
         public static readonly Dictionary<int, PlayerVersion> playerVersions = new Dictionary<int, PlayerVersion>();

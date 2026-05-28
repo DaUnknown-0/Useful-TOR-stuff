@@ -12,14 +12,14 @@
  *    constructor and skip it unless the player moved at least MinDropDistance since their
  *    last accepted blood drop.
  *
- * 2) Permanent Snitch reveal fix (SnitchRoomPersistFix): a timing-independent, client-side
- *    fix that restores the host's room entry into Snitch.playerRoomMap after TOR wipes it
- *    in StartMeeting. It is purely client-local (no RPCs sent), so it fixes the reveal whenever
- *    the SNITCH has this mod — independent of what anyone else runs. HostFixPlugin's host-only
- *    fallback (Fix 4) still covers a Snitch WITHOUT the mod by having the host re-broadcast its
- *    room; if both run they write the same host entry (idempotent). The version handshake
- *    (UsefulVersionHandshake, RPC 253) now only feeds the lobby display and lets HostFix stand
- *    down its redundant re-send when every player already has this mod (SnitchClientFixActive).
+ * 2) Snitch logic reimplementation (SnitchLogic): a gated, client-side replacement for TOR's
+ *    Snitch room/chat/map/HUD paths. It records ShareRoom RPCs into a persistent room map, then
+ *    suppresses TOR's buggy Snitch surfaces only when the required reflection handles are present;
+ *    otherwise TOR's original behavior stays active. HostFixPlugin's host-only fallback (Fix 4)
+ *    still covers a Snitch WITHOUT this mod by having the host re-broadcast its room; if both run
+ *    they write the same host entry (idempotent). The version handshake (UsefulVersionHandshake,
+ *    RPC 253) now only feeds the lobby display and lets HostFix stand down its redundant re-send
+ *    when every player already has this mod (SnitchClientFixActive).
  *
  * Strategy: minimal, defensive patches via reflection so no compile-time TOR reference
  * is needed; if TOR changes its internals the patches simply become no-ops.
@@ -80,14 +80,14 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         var harmony = new Harmony(PluginGuid);
 
-        // Manual reflection patches (TOR types are internal): Bloody throttle + the shareRoom
-        // shadow-recorder, plus resolving the Snitch reflection handles.
+        // Manual reflection patches (TOR types are internal): Bloody throttle plus SnitchLogic's
+        // reflection-gated room recorder and surface reimplementation.
         PatchBloodyThrottle(harmony);
-        SnitchRoomPersistFix.Initialize(harmony);
+        SnitchLogic.Initialize(harmony);
 
         // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
-        // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the StartMeeting
-        // restore patch. Assembly-wide so nested patch classes are picked up too.
+        // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
+        // surface patches. Assembly-wide so nested patch classes are picked up too.
         harmony.PatchAll(typeof(UsefulTORStuffPlugin).Assembly);
 
         // Self-updater: checks GitHub releases and offers an in-game update button.
