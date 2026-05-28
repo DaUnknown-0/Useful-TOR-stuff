@@ -31,8 +31,11 @@ namespace UsefulTORStuff {
             var hud = HudManager.Instance;
             if (hud == null || hud.Chat == null || PlayerControl.LocalPlayer == null) return;
             snitchFixChatShown = true;
-            hud.Chat.AddChat(PlayerControl.LocalPlayer,
-                "Snitch fix active — all players have Useful TOR Stuff.");
+
+            string msg = SnitchLogic.TranspilerFixReady
+                ? "Snitch Transpiler-Fix active — all players have Useful TOR Stuff."
+                : "Snitch client-side fix active — all players have Useful TOR Stuff.";
+            hud.Chat.AddChat(PlayerControl.LocalPlayer, msg);
         }
 
         // Draw a message anchored to the top-left corner on TOR's shared GameStartText. Guards
@@ -184,16 +187,17 @@ namespace UsefulTORStuff {
                 if (everyone) {
                     // All players have the mod — show the active-fix confirmation top-left in the
                     // lobby. It is also posted once to chat when the game actually starts.
+                    string fixType = SnitchLogic.TranspilerFixReady ? "Transpiler-Fix" : "client-side fix";
                     DrawTopLeftMessage(__instance, text,
-                        "<color=#3FCF4AFF>Snitch fix active — all players have Useful TOR Stuff.</color>",
-                        "Snitch fix active");
+                        $"<color=#3FCF4AFF>Snitch {fixType} active — all players have Useful TOR Stuff v{UsefulTORStuffPlugin.PluginVersion}.</color>",
+                        "Snitch");
                 } else {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.
                     // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).
                     if (!AmongUsClient.Instance.AmHost) return;
                     DrawTopLeftMessage(__instance, text,
                         mismatch + "<color=#FFA500FF>The game can still be started, but the snitch bug " +
-                        "may still occur (fallback: Host Fix).</color>",
+                        "may still occur (fallback: Host Fix re-broadcast).</color>",
                         "fallback: Host Fix");
                 }
             }
