@@ -149,7 +149,7 @@ namespace UsefulTORStuff {
                             text.transform.position = tl + new Vector3(0.7f, -0.5f, 0f);
                         }
                         text.alignment = TMPro.TextAlignmentOptions.TopLeft;
-                        text.transform.localScale = new Vector3(0.6f, 0.6f, 1f);
+                        text.transform.localScale = new Vector3(1.0f, 1.0f, 1f);
                         __instance.GameStartTextParent.SetActive(true);
                     } else {
                         text.text += "\n" + msg;
