@@ -36,6 +36,7 @@ namespace UsefulTORStuff {
 
         internal static FieldInfo SnitchSnitchField;
         internal static FieldInfo SnitchPlayerRoomMapField;
+        internal static MethodInfo ShareRoomMethod;
 
         public static void Initialize(Harmony harmony) {
             try {
@@ -58,6 +59,8 @@ namespace UsefulTORStuff {
                         "Snitch reflection handles incomplete — permanent Snitch fix disabled (HostFix fallback still applies).");
                     return;
                 }
+
+                ShareRoomMethod = shareRoomMethod;
 
                 // Shadow-record every shareRoom call (postfix, no Invoke).
                 harmony.Patch(shareRoomMethod,
@@ -82,7 +85,7 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 try {
                     if (!UsefulTORStuffPlugin.SnitchClientFixActive) return;
-                    if (SnitchSnitchField == null || SnitchPlayerRoomMapField == null) return;
+                    if (SnitchSnitchField == null || ShareRoomMethod == null) return;
                     if (SnitchSnitchField.GetValue(null) == null) return; // no Snitch in play
                     if (AmongUsClient.Instance == null) return;
 
@@ -98,12 +101,12 @@ namespace UsefulTORStuff {
                     if (hostPlayerId == byte.MaxValue) return;
                     if (!_lastRoom.TryGetValue(hostPlayerId, out byte room)) return;
 
-                    var map = SnitchPlayerRoomMapField.GetValue(null)
-                        as Il2CppSystem.Collections.Generic.Dictionary<byte, byte>;
-                    if (map == null) return;
-
-                    // Add/update — restores the host entry TOR's reset wiped.
-                    map[hostPlayerId] = room;
+                    // Re-insert via TOR's own shareRoom so the host entry lands in the exact
+                    // Snitch.playerRoomMap instance the reveal lerp reads. Writing the dictionary
+                    // directly is brittle: TOR declares it as a managed System.Dictionary, so casting
+                    // the reflected value to an Il2Cpp dictionary returns null and the fix silently
+                    // no-ops — which left the Snitch bug unfixed while HostFix's fallback stood down.
+                    ShareRoomMethod.Invoke(null, new object[] { hostPlayerId, room });
                 } catch (Exception ex) {
                     UsefulTORStuffPlugin.Logger.LogError($"Snitch restore failed: {ex.Message}");
                 }
