@@ -5,7 +5,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using BepInEx.Unity.IL2CPP.Utils;
-using Twitch;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -400,34 +399,48 @@ namespace UsefulTORStuff
         {
             yield return new WaitForSeconds(0.3f);
 
-            var template = TwitchManager.Instance?.TwitchPopup;
+            // TwitchPopup ist in Twitch namespace, aber wir greifen via Reflection zu (keine Compile-Zeit-Referenz)
+            var twitchManagerType = Type.GetType("Twitch.TwitchManager, Assembly-CSharp");
+            if (twitchManagerType == null) yield break;
+
+            var instanceProp = twitchManagerType.GetProperty("Instance");
+            var twitchManager = instanceProp?.GetValue(null);
+            if (twitchManager == null) yield break;
+
+            var twitchPopupProp = twitchManagerType.GetProperty("TwitchPopup");
+            var template = twitchPopupProp?.GetValue(twitchManager) as GameObject;
             if (template == null) yield break;
 
-            var warningPopup = Instantiate(template.gameObject);
+            var warningPopup = Instantiate(template);
             warningPopup.SetActive(true);
 
-            var twitchPopup = warningPopup.GetComponent<TwitchPopup>();
-            if (twitchPopup != null)
+            // TextAreaTMP setzen via Reflection
+            var popupComponent = warningPopup.GetComponent<MonoBehaviour>();
+            if (popupComponent != null)
             {
-                twitchPopup.Show();
-                if (twitchPopup.TextAreaTMP != null)
+                var showMethod = popupComponent.GetType().GetMethod("Show");
+                showMethod?.Invoke(popupComponent, null);
+
+                var textAreaField = popupComponent.GetType().GetField("TextAreaTMP");
+                var textArea = textAreaField?.GetValue(popupComponent) as TMPro.TextMeshPro;
+                if (textArea != null)
                 {
-                    twitchPopup.TextAreaTMP.text = "<b><size=150%>Neustart erforderlich</size></b>\n\n" +
+                    textArea.text = "<b><size=150%>Neustart erforderlich</size></b>\n\n" +
                         "Die Mod-Konfiguration wurde geändert.\n\n" +
                         "<color=#FFFF00>Bitte starte das Spiel neu,\ndamit die Änderungen wirksam werden.</color>";
                 }
+            }
 
-                var closeButton = warningPopup.transform.GetChild(2).gameObject;
-                if (closeButton != null)
+            var closeButton = warningPopup.transform.GetChild(2).gameObject;
+            if (closeButton != null)
+            {
+                var passiveButton = closeButton.GetComponent<PassiveButton>();
+                if (passiveButton != null)
                 {
-                    var passiveButton = closeButton.GetComponent<PassiveButton>();
-                    if (passiveButton != null)
-                    {
-                        passiveButton.OnClick.RemoveAllListeners();
-                        passiveButton.OnClick.AddListener((Action)(() => {
-                            Destroy(warningPopup);
-                        }));
-                    }
+                    passiveButton.OnClick.RemoveAllListeners();
+                    passiveButton.OnClick.AddListener((Action)(() => {
+                        Destroy(warningPopup);
+                    }));
                 }
             }
         }
