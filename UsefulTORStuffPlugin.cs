@@ -110,18 +110,22 @@ public class UsefulTORStuffPlugin : BasePlugin
         AddComponent<ModManagerButton>();
         AddComponent<ModManagerUI>();
 
-        // Registriere diese Mod in der Mod-Manager-Registry.
-        ModManagerRegistry.RegisterMod(new ModInfo {
-            Guid = PluginGuid,
-            Name = PluginName,
-            Version = Version,
-            RepositoryOwner = UsefulTORStuffUpdater.RepositoryOwner,
-            RepositoryName = UsefulTORStuffUpdater.RepositoryName,
-            ButtonColor = Color.green,
-            HasUpdate = () => UsefulTORStuffUpdater.Instance?.HasUpdate() ?? false,
-            TriggerUpdate = () => UsefulTORStuffUpdater.Instance?.TriggerUpdateFromManager(),
-            Enabled = enabled
-        });
+        // Registriere diese Mod in der Mod-Manager-Registry via AppDomain.
+        try {
+            var modData = new System.Collections.Generic.Dictionary<string, object> {
+                { "Guid", PluginGuid },
+                { "Name", PluginName },
+                { "Version", Version },
+                { "RepositoryOwner", UsefulTORStuffUpdater.RepositoryOwner },
+                { "RepositoryName", UsefulTORStuffUpdater.RepositoryName },
+                { "ButtonColor", Color.green },
+                { "Enabled", enabled }
+            };
+            AppDomain.CurrentDomain.SetData($"ModManager.RegisteredMod.{PluginGuid}", modData);
+            Logger.LogInfo($"Registered {PluginName} in Mod Manager registry.");
+        } catch (Exception ex) {
+            Logger.LogError($"Failed to register {PluginName}: {ex}");
+        }
 
         Logger.LogInfo($"{PluginName} v{PluginVersion} loaded.");
     }

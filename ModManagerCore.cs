@@ -8,58 +8,34 @@ using UnityEngine;
 
 namespace UsefulTORStuff
 {
-    // Mod-Informationen für die Registry. Jede Mod registriert sich selbst via AppDomain.
+    // Mod-Informationen für die Registry (nur innerhalb UsefulTORStuff verwendet).
     public class ModInfo
     {
-        public string Guid;                     // z.B. "com.tormod.chancemodifier"
-        public string Name;                     // z.B. "Chance Modifier"
-        public Version Version;                 // Aktuelle Version
-        public string RepositoryOwner;          // "DaUnknown-0"
-        public string RepositoryName;           // "TOR-Chance"
-        public Color ButtonColor;               // Farbe für Update-Button (gelb, cyan, grün)
-        public Func<bool> HasUpdate;            // Callback: ist Update verfügbar?
-        public Action TriggerUpdate;            // Callback: Update-Download starten
-        public ConfigEntry<bool> Enabled;       // BepInEx ConfigEntry für Aktivierung
+        public string Guid;
+        public string Name;
+        public Version Version;
+        public string RepositoryOwner;
+        public string RepositoryName;
+        public Color ButtonColor;
+        public Func<bool> HasUpdate;
+        public Action TriggerUpdate;
+        public ConfigEntry<bool> Enabled;
     }
 
-    // Zentrale Registry für alle Mods. Verwendet AppDomain.SetData/GetData für
-    // cross-assembly Kommunikation ohne Compile-Zeit-Referenzen (analog zum Credit-Toggle).
+    // Zentrale Registry für alle Mods. Liest Mod-Daten aus AppDomain (keine Compile-Zeit-Referenzen).
     public static class ModManagerRegistry
     {
         private const string RegistryKeyPrefix = "ModManager.RegisteredMod.";
         private const string ModManagerEnabledKey = "ModManager.IsEnabled";
 
-        // Registriert eine Mod in der globalen Registry.
-        public static void RegisterMod(ModInfo info)
-        {
-            if (info == null || string.IsNullOrEmpty(info.Guid))
-            {
-                UsefulTORStuffPlugin.Logger?.LogWarning("RegisterMod: ModInfo is null or has no Guid — skipping.");
-                return;
-            }
-
-            try
-            {
-                AppDomain.CurrentDomain.SetData(RegistryKeyPrefix + info.Guid, info);
-                UsefulTORStuffPlugin.Logger?.LogInfo($"Registered mod: {info.Name} v{info.Version} ({info.Guid})");
-            }
-            catch (Exception ex)
-            {
-                UsefulTORStuffPlugin.Logger?.LogError($"Failed to register mod {info.Guid}: {ex}");
-            }
-        }
-
-        // Gibt alle registrierten Mods zurück.
+        // Gibt alle registrierten Mods zurück, indem Dictionaries aus AppDomain gelesen werden.
         public static List<ModInfo> GetAllMods()
         {
             var mods = new List<ModInfo>();
 
             try
             {
-                // AppDomain hat leider keine direkte API um alle Keys zu enumerieren.
-                // Wir kennen aber die GUIDs aller unserer Mods (ChanceMod, HostFix, UsefulTORStuff).
-                // Alternativ: jede Mod könnte ihre GUID auch in eine Liste schreiben.
-                // Für jetzt: Hard-coded GUIDs der bekannten Mods.
+                // Hard-coded GUIDs der bekannten Mods (da AppDomain keine Key-Enumeration bietet)
                 string[] knownGuids = {
                     "com.tormod.chancemodifier",
                     "com.trackerteam.hostfix",
@@ -69,9 +45,13 @@ namespace UsefulTORStuff
                 foreach (var guid in knownGuids)
                 {
                     var data = AppDomain.CurrentDomain.GetData(RegistryKeyPrefix + guid);
-                    if (data is ModInfo modInfo)
+                    if (data is Dictionary<string, object> dict)
                     {
-                        mods.Add(modInfo);
+                        var modInfo = ConvertDictionaryToModInfo(guid, dict);
+                        if (modInfo != null)
+                        {
+                            mods.Add(modInfo);
+                        }
                     }
                 }
             }
@@ -83,7 +63,82 @@ namespace UsefulTORStuff
             return mods;
         }
 
-        // Setzt den Mod-Manager-Enabled-Status (wird von UsefulTORStuffPlugin.cs aufgerufen).
+        // Konvertiert ein Dictionary (aus AppDomain) zu einem ModInfo-Objekt.
+        private static ModInfo ConvertDictionaryToModInfo(string guid, Dictionary<string, object> dict)
+        {
+            try
+            {
+                var modInfo = new ModInfo
+                {
+                    Guid = dict.TryGetValue("Guid", out var g) ? g as string : guid,
+                    Name = dict.TryGetValue("Name", out var n) ? n as string : "Unknown",
+                    Version = dict.TryGetValue("Version", out var v) ? v as Version : new Version(1, 0, 0),
+                    RepositoryOwner = dict.TryGetValue("RepositoryOwner", out var ro) ? ro as string : "",
+                    RepositoryName = dict.TryGetValue("RepositoryName", out var rn) ? rn as string : "",
+                    ButtonColor = dict.TryGetValue("ButtonColor", out var bc) && bc is Color c ? c : Color.white,
+                    Enabled = dict.TryGetValue("Enabled", out var e) ? e as ConfigEntry<bool> : null
+                };
+
+                // Callbacks für HasUpdate und TriggerUpdate (reflection-basiert auf Updater-Instanzen)
+                SetupUpdateCallbacks(modInfo);
+
+                return modInfo;
+            }
+            catch (Exception ex)
+            {
+                UsefulTORStuffPlugin.Logger?.LogError($"Failed to convert mod data for {guid}: {ex}");
+                return null;
+            }
+        }
+
+        // Setzt HasUpdate und TriggerUpdate Callbacks via Reflection auf Updater-Instanzen.
+        private static void SetupUpdateCallbacks(ModInfo modInfo)
+        {
+            try
+            {
+                if (modInfo.Guid == "com.tormod.chancemodifier")
+                {
+                    modInfo.HasUpdate = () => {
+                        var type = Type.GetType("TOR_ChanceModifier.ChanceModUpdater, ChanceMod");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var hasUpdateMethod = type?.GetMethod("HasUpdate");
+                        return instance != null && hasUpdateMethod != null && (bool)hasUpdateMethod.Invoke(instance, null);
+                    };
+                    modInfo.TriggerUpdate = () => {
+                        var type = Type.GetType("TOR_ChanceModifier.ChanceModUpdater, ChanceMod");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var triggerMethod = type?.GetMethod("TriggerUpdateFromManager");
+                        triggerMethod?.Invoke(instance, null);
+                    };
+                }
+                else if (modInfo.Guid == "com.trackerteam.hostfix")
+                {
+                    modInfo.HasUpdate = () => {
+                        var type = Type.GetType("HostFixPlugin.HostFixUpdater, HostFixPlugin");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var hasUpdateMethod = type?.GetMethod("HasUpdate");
+                        return instance != null && hasUpdateMethod != null && (bool)hasUpdateMethod.Invoke(instance, null);
+                    };
+                    modInfo.TriggerUpdate = () => {
+                        var type = Type.GetType("HostFixPlugin.HostFixUpdater, HostFixPlugin");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var triggerMethod = type?.GetMethod("TriggerUpdateFromManager");
+                        triggerMethod?.Invoke(instance, null);
+                    };
+                }
+                else if (modInfo.Guid == "com.tormod.usefultorstuff")
+                {
+                    modInfo.HasUpdate = () => UsefulTORStuffUpdater.Instance?.HasUpdate() ?? false;
+                    modInfo.TriggerUpdate = () => UsefulTORStuffUpdater.Instance?.TriggerUpdateFromManager();
+                }
+            }
+            catch (Exception ex)
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"Failed to setup callbacks for {modInfo.Guid}: {ex}");
+            }
+        }
+
+        // Setzt den Mod-Manager-Enabled-Status.
         public static void SetModManagerEnabled(bool enabled)
         {
             try
@@ -96,8 +151,7 @@ namespace UsefulTORStuff
             }
         }
 
-        // Prüft ob der Mod-Manager aktiviert ist. Update-Buttons der einzelnen Mods
-        // verwenden dies um zu entscheiden, ob sie sich selbst anzeigen sollen.
+        // Prüft ob der Mod-Manager aktiviert ist.
         public static bool IsModManagerEnabled()
         {
             try
