@@ -196,12 +196,22 @@ namespace UsefulTORStuff {
         public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = "Useful TOR Stuff Update", string title = "", string date = "") {
             // Stagger behind other mods so the other update popups appear first.
             yield return new WaitForSeconds(2f);
-            // Wait until no announcement popup is currently visible (up to 30 s).
-            for (float t = 30f; t > 0f; t -= 0.25f) {
+            // Show last of all mods. The other updaters wait for a clear popup field and then
+            // settle 0.2 s before instantiating, so when a shared prior popup (e.g. Chance) closes
+            // they all break on the same frame and race. To guarantee Useful TOR Stuff comes AFTER
+            // Host Fix, settle longer (0.6 s) and re-check: if a popup (Host Fix's) appeared during
+            // the settle, loop and wait it out again.
+            for (float guard = 30f; guard > 0f; guard -= 0.6f) {
+                // Wait until no announcement popup is currently visible (up to 30 s).
+                for (float t = 30f; t > 0f; t -= 0.25f) {
+                    if (UnityEngine.Object.FindObjectOfType<AnnouncementPopUp>() == null) break;
+                    yield return new WaitForSeconds(0.25f);
+                }
+                // Settle longer than the other updaters (0.2 s) so they win a simultaneous clear.
+                yield return new WaitForSeconds(0.6f);
+                // Nothing slipped in during the settle — safe to show now.
                 if (UnityEngine.Object.FindObjectOfType<AnnouncementPopUp>() == null) break;
-                yield return new WaitForSeconds(0.25f);
             }
-            yield return new WaitForSeconds(0.2f);
 
             var mgr = FindObjectOfType<MainMenuManager>(true);
             var popUpTemplate = UnityEngine.Object.FindObjectOfType<AnnouncementPopUp>(true);
