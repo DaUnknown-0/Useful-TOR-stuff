@@ -174,26 +174,71 @@ public class UsefulTORStuffPlugin : BasePlugin
     }
 
     // ========================================================================
-    // Version display: add a "Useful TOR Stuff vX.Y.Z" line to the top-corner PingTracker.
-    // Inserted right after TOR's own "TheOtherRoles vX" line; the Chance and Host Fix
-    // lines stack below it, so nothing overlaps.
+    // Version display: add a clickable "Useful TOR Stuff vX.Y.Z" line to the top-corner
+    // PingTracker. Inserted right after TOR's own "TheOtherRoles vX" line; the Chance and
+    // Host Fix lines stack below it.
+    //
+    // Clicking the name toggles a "Modded by DaUnknown" credit. The toggle state is shared
+    // across all three of our mods via a process-wide AppDomain flag (no cross-assembly
+    // references), so clicking any mod name flips the same flag — clicking another hides it
+    // again. The credit is only inserted if not already present, so it shows at most once.
     // ========================================================================
 
     [HarmonyPatch(typeof(PingTracker), nameof(PingTracker.Update))]
     [HarmonyPriority(Priority.Low)] // run after TOR's own PingTracker postfix
     public static class VersionDisplayPatch
     {
+        // Shared with HostFixPlugin and the Chance Modifier — keep this string identical there.
+        private const string CreditKey = "TORMods.DaUnknownCreditVisible";
+        private const string LinkId = "usefulTORStuffCredits";
+
+        private static bool CreditVisible() =>
+            AppDomain.CurrentDomain.GetData(CreditKey) is bool b && b;
+
         public static void Postfix(PingTracker __instance)
         {
             if (__instance == null || __instance.text == null) return;
             string text = __instance.text.text;
             if (string.IsNullOrEmpty(text)) return;
 
-            string line = $"<color=#3FCF4A>Useful TOR Stuff</color> v{PluginVersion}";
+            // Click the mod name to toggle the shared credit line. PingTracker.text is a
+            // world-space TextMeshPro (no canvas), so the link raycast needs the rendering camera.
+            if (Input.GetMouseButtonDown(0))
+            {
+                Camera cam = Camera.main;
+                var canvas = __instance.text.canvas;
+                if (canvas != null)
+                    cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null
+                        : (canvas.worldCamera != null ? canvas.worldCamera : Camera.main);
+                int link = TMPro.TMP_TextUtilities.FindIntersectingLink(__instance.text, Input.mousePosition, cam);
+                if (link != -1 && __instance.text.textInfo.linkInfo[link].GetLinkID() == LinkId)
+                    AppDomain.CurrentDomain.SetData(CreditKey, !CreditVisible());
+            }
+
+            string line = $"<link=\"{LinkId}\"><color=#3FCF4A>Useful TOR Stuff</color> v{PluginVersion}</link>";
             int nl = text.IndexOf('\n');
             text = nl >= 0
                 ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)
                 : text + "\n" + line;
+
+            // Insert the shared credit under TOR's "Design by Bavari" line — but only if no other
+            // mod already added it this frame, so "Modded by DaUnknown" appears at most once.
+            if (CreditVisible() && !text.Contains("DaUnknown"))
+            {
+                string credit = "\n<size=70%>Modded by <color=#FCCE03FF>DaUnknown</color></size>";
+                int anchor = text.IndexOf("Bavari");
+                if (anchor >= 0)
+                {
+                    int lineEnd = text.IndexOf('\n', anchor);
+                    text = lineEnd >= 0
+                        ? text.Substring(0, lineEnd) + credit + text.Substring(lineEnd)
+                        : text + credit;
+                }
+                else
+                {
+                    text += credit;
+                }
+            }
 
             __instance.text.text = text;
         }

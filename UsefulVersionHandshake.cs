@@ -136,26 +136,39 @@ namespace UsefulTORStuff {
                 var text = __instance.GameStartText;
                 if (text == null) return;
 
-                string msg;
                 if (everyone) {
-                    // Patch is active — inform every player.
-                    msg = "<color=#3FCF4AFF>Snitch-Fix aktiv — alle Spieler haben Useful TOR Stuff.</color>";
+                    // Patch is active — small, unobtrusive confirmation tucked into the top-left corner.
+                    string msg = "<color=#3FCF4AFF>Snitch-Fix aktiv — alle Spieler haben Useful TOR Stuff.</color>";
+                    if (!__instance.GameStartTextParent.activeSelf || string.IsNullOrEmpty(text.text)) {
+                        text.text = msg;
+                        var cam = Camera.main;
+                        if (cam != null) {
+                            // Map the camera's top-left viewport corner to world space, then inset slightly.
+                            Vector3 tl = cam.ViewportToWorldPoint(new Vector3(0f, 1f, 10f));
+                            tl.z = text.transform.position.z;
+                            text.transform.position = tl + new Vector3(0.7f, -0.5f, 0f);
+                        }
+                        text.alignment = TMPro.TextAlignmentOptions.TopLeft;
+                        text.transform.localScale = new Vector3(0.6f, 0.6f, 1f);
+                        __instance.GameStartTextParent.SetActive(true);
+                    } else {
+                        text.text += "\n" + msg;
+                    }
                 } else {
-                    // Someone is missing the mod — only the host needs the heads-up. The game can
-                    // still be started; the snitch bug may occur (Host Fix host-only fallback handles it).
+                    // Someone is missing the mod — only the host needs the heads-up, shown centered.
+                    // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).
                     if (!AmongUsClient.Instance.AmHost) return;
-                    msg = mismatch +
+                    string msg = mismatch +
                         "<color=#FFA500FF>Das Spiel kann gestartet werden, aber der Snitch-Bug kann " +
                         "weiterhin auftreten (Fallback: Host Fix).</color>";
-                }
-
-                if (!__instance.GameStartTextParent.activeSelf || string.IsNullOrEmpty(text.text)) {
-                    text.text = msg;
-                    text.transform.localPosition = __instance.StartButton.transform.localPosition + Vector3.up * 5;
-                    text.transform.localScale = new Vector3(2f, 2f, 1f);
-                    __instance.GameStartTextParent.SetActive(true);
-                } else {
-                    text.text += "\n" + msg;
+                    if (!__instance.GameStartTextParent.activeSelf || string.IsNullOrEmpty(text.text)) {
+                        text.text = msg;
+                        text.transform.localPosition = __instance.StartButton.transform.localPosition + Vector3.up * 5;
+                        text.transform.localScale = new Vector3(2f, 2f, 1f);
+                        __instance.GameStartTextParent.SetActive(true);
+                    } else {
+                        text.text += "\n" + msg;
+                    }
                 }
             }
         }
