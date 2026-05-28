@@ -82,17 +82,17 @@ namespace UsefulTORStuff {
                 string name = client.Character.Data.PlayerName;
 
                 if (!playerVersions.TryGetValue(client.Id, out PlayerVersion pv)) {
-                    message += $"<color=#FF0000FF>{name} fehlt Useful TOR Stuff (oder hat eine andere Version)\n</color>";
+                    message += $"<color=#FF0000FF>{name} is missing Useful TOR Stuff (or has a different version)\n</color>";
                     continue;
                 }
 
                 int diff = UsefulTORStuffPlugin.Version.CompareTo(pv.version);
                 if (diff > 0)
-                    message += $"<color=#FF0000FF>{name} hat ein aelteres Useful TOR Stuff (v{pv.version})\n</color>";
+                    message += $"<color=#FF0000FF>{name} has an older Useful TOR Stuff (v{pv.version})\n</color>";
                 else if (diff < 0)
-                    message += $"<color=#FF0000FF>{name} hat ein neueres Useful TOR Stuff (v{pv.version})\n</color>";
+                    message += $"<color=#FF0000FF>{name} has a newer Useful TOR Stuff (v{pv.version})\n</color>";
                 else if (!pv.GuidMatches())
-                    message += $"<color=#FF0000FF>{name} hat ein modifiziertes Useful TOR Stuff v{pv.version} <size=30%>({pv.guid})</size>\n</color>";
+                    message += $"<color=#FF0000FF>{name} has a modified Useful TOR Stuff v{pv.version} <size=30%>({pv.guid})</size>\n</color>";
             }
             return message;
         }
@@ -138,7 +138,7 @@ namespace UsefulTORStuff {
 
                 if (everyone) {
                     // Patch is active — small, unobtrusive confirmation tucked into the top-left corner.
-                    string msg = "<color=#3FCF4AFF>Snitch-Fix aktiv — alle Spieler haben Useful TOR Stuff.</color>";
+                    string msg = "<color=#3FCF4AFF>Snitch fix active — all players have Useful TOR Stuff.</color>";
                     if (!__instance.GameStartTextParent.activeSelf || string.IsNullOrEmpty(text.text)) {
                         text.text = msg;
                         var cam = Camera.main;
@@ -162,14 +162,21 @@ namespace UsefulTORStuff {
                     // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).
                     if (!AmongUsClient.Instance.AmHost) return;
                     string msg = mismatch +
-                        "<color=#FFA500FF>Das Spiel kann gestartet werden, aber der Snitch-Bug kann " +
-                        "weiterhin auftreten (Fallback: Host Fix).</color>";
+                        "<color=#FFA500FF>The game can still be started, but the snitch bug may " +
+                        "still occur (fallback: Host Fix).</color>";
                     if (!__instance.GameStartTextParent.activeSelf || string.IsNullOrEmpty(text.text)) {
                         text.text = msg;
-                        // Restore the centred pivot in case the everyone-branch moved it to top-left.
-                        text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
-                        text.transform.localPosition = __instance.StartButton.transform.localPosition + Vector3.up * 5;
-                        text.transform.localScale = new Vector3(2f, 2f, 1f);
+                        var cam = Camera.main;
+                        if (cam != null) {
+                            // Map the camera's top-left viewport corner to world space, then inset slightly.
+                            Vector3 tl = cam.ViewportToWorldPoint(new Vector3(0f, 1f, 10f));
+                            tl.z = text.transform.position.z;
+                            text.transform.position = tl + new Vector3(0.7f, -0.5f, 0f);
+                        }
+                        text.alignment = TMPro.TextAlignmentOptions.TopLeft;
+                        // Pivot to top-left so the text grows right/down from the corner.
+                        text.rectTransform.pivot = new Vector2(0f, 1f);
+                        text.transform.localScale = new Vector3(1.0f, 1.0f, 1f);
                         __instance.GameStartTextParent.SetActive(true);
                     } else {
                         text.text += "\n" + msg;
