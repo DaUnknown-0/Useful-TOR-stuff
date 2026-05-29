@@ -272,26 +272,59 @@ namespace UsefulTORStuff
             titleText.color = new Color(0.3f, 0.7f, 1f);
         }
 
+        // Breite des Scrollbalken-Streifens rechts (Spur + Abstand). Der Viewport wird um
+        // diesen Betrag schmaler, damit Mod-Inhalte nie unter der Scrollbar liegen.
+        private const float ScrollbarWidth = 14f;
+
         private void CreateContent(GameObject parent)
         {
+            // ScrollView = Wurzel der scrollbaren Flaeche. Traegt die ScrollRect-Logik.
             var scrollView = new GameObject("ScrollView");
             scrollView.transform.SetParent(parent.transform, false);
 
-            var scrollRect = scrollView.AddComponent<RectTransform>();
-            scrollRect.anchorMin = new Vector2(0, 0);
-            scrollRect.anchorMax = new Vector2(1, 1);
-            scrollRect.offsetMin = new Vector2(20, 80);
-            scrollRect.offsetMax = new Vector2(-20, -90);
+            var scrollViewRect = scrollView.AddComponent<RectTransform>();
+            scrollViewRect.anchorMin = new Vector2(0, 0);
+            scrollViewRect.anchorMax = new Vector2(1, 1);
+            scrollViewRect.offsetMin = new Vector2(20, 80);
+            scrollViewRect.offsetMax = new Vector2(-20, -90);
 
-            // Scroll content
+            var scrollRect = scrollView.AddComponent<UnityEngine.UI.ScrollRect>();
+            scrollRect.horizontal = false;
+            scrollRect.vertical = true;
+            scrollRect.movementType = UnityEngine.UI.ScrollRect.MovementType.Clamped;
+            scrollRect.scrollSensitivity = 35f; // Mausrad-Tempo
+            scrollRect.inertia = false;
+
+            // Viewport = sichtbarer Ausschnitt, clippt den Inhalt per RectMask2D.
+            // Rechts um die Scrollbar-Breite eingerueckt, damit Buttons frei bleiben.
+            var viewport = new GameObject("Viewport");
+            viewport.transform.SetParent(scrollView.transform, false);
+            var viewportRect = viewport.AddComponent<RectTransform>();
+            viewportRect.anchorMin = new Vector2(0, 0);
+            viewportRect.anchorMax = new Vector2(1, 1);
+            viewportRect.pivot = new Vector2(0, 1);
+            viewportRect.offsetMin = new Vector2(0, 0);
+            viewportRect.offsetMax = new Vector2(-ScrollbarWidth, 0);
+            viewport.AddComponent<UnityEngine.UI.RectMask2D>();
+
+            // Content = bewegter Container mit den Mod-Zeilen.
             var content = new GameObject("Content");
-            content.transform.SetParent(scrollView.transform, false);
+            content.transform.SetParent(viewport.transform, false);
 
             var contentRect = content.AddComponent<RectTransform>();
             contentRect.anchorMin = new Vector2(0, 1);
             contentRect.anchorMax = new Vector2(1, 1);
             contentRect.pivot = new Vector2(0.5f, 1);
+            contentRect.anchoredPosition = Vector2.zero;
             contentRect.sizeDelta = new Vector2(0, 0);
+
+            // Vertikale Scrollbar rechts im freigehaltenen Streifen.
+            var scrollbar = CreateScrollbar(scrollView);
+
+            scrollRect.viewport = viewportRect;
+            scrollRect.content = contentRect;
+            scrollRect.verticalScrollbar = scrollbar;
+            scrollRect.verticalScrollbarVisibility = UnityEngine.UI.ScrollRect.ScrollbarVisibility.AutoHide;
 
             // Add mod entries
             _entryRefs.Clear();
@@ -303,7 +336,52 @@ namespace UsefulTORStuff
                 yPos = CreateModEntry(content, mod, yPos);
             }
 
+            // Gesamthoehe des Inhalts. Ist sie groesser als der Viewport, wird automatisch
+            // gescrollt (Mausrad oder Scrollbar). So skaliert das UI mit beliebig vielen Mods.
             contentRect.sizeDelta = new Vector2(0, Mathf.Abs(yPos) + 20);
+
+            // Nach oben scrollen (erste Mod sichtbar), sobald das Layout steht.
+            scrollRect.verticalNormalizedPosition = 1f;
+        }
+
+        // Baut eine schlichte vertikale Scrollbar (Spur + Griff) und gibt die Komponente zurueck.
+        private UnityEngine.UI.Scrollbar CreateScrollbar(GameObject scrollView)
+        {
+            var bar = new GameObject("Scrollbar");
+            bar.transform.SetParent(scrollView.transform, false);
+
+            var barRect = bar.AddComponent<RectTransform>();
+            barRect.anchorMin = new Vector2(1, 0);
+            barRect.anchorMax = new Vector2(1, 1);
+            barRect.pivot = new Vector2(1, 1);
+            barRect.sizeDelta = new Vector2(ScrollbarWidth - 2f, 0);
+            barRect.anchoredPosition = Vector2.zero;
+
+            var barBg = bar.AddComponent<UnityEngine.UI.Image>();
+            barBg.color = new Color(0.08f, 0.08f, 0.12f, 0.9f);
+
+            // Sliding-Area + Griff
+            var slidingArea = new GameObject("SlidingArea");
+            slidingArea.transform.SetParent(bar.transform, false);
+            var slidingRect = slidingArea.AddComponent<RectTransform>();
+            slidingRect.anchorMin = Vector2.zero;
+            slidingRect.anchorMax = Vector2.one;
+            slidingRect.sizeDelta = Vector2.zero;
+            slidingRect.anchoredPosition = Vector2.zero;
+
+            var handle = new GameObject("Handle");
+            handle.transform.SetParent(slidingArea.transform, false);
+            var handleRect = handle.AddComponent<RectTransform>();
+            handleRect.sizeDelta = Vector2.zero;
+            var handleImg = handle.AddComponent<UnityEngine.UI.Image>();
+            handleImg.color = new Color(0.4f, 0.5f, 0.7f, 0.95f);
+
+            var scrollbar = bar.AddComponent<UnityEngine.UI.Scrollbar>();
+            scrollbar.direction = UnityEngine.UI.Scrollbar.Direction.BottomToTop;
+            scrollbar.handleRect = handleRect;
+            scrollbar.targetGraphic = handleImg;
+
+            return scrollbar;
         }
 
         private float CreateModEntry(GameObject parent, ModInfo mod, float yPos)
@@ -376,8 +454,10 @@ namespace UsefulTORStuff
             // Status-Text und Update-Button sofort in den korrekten Zustand bringen.
             RefreshEntry(refs);
 
-            // GitHub link button
-            CreateGitHubButton(entry, mod);
+            // GitHub link button — nur fuer Mods mit hinterlegtem Repository.
+            // Lokale Mods (kein GitHub) bekommen keinen "Open GitHub"-Button.
+            if (HasRepository(mod))
+                CreateGitHubButton(entry, mod);
 
             // Repository
             var repoObj = new GameObject("Repo");
@@ -390,7 +470,9 @@ namespace UsefulTORStuff
             repoRect.sizeDelta = new Vector2(-30, 15);
 
             var repoText = repoObj.AddComponent<TMPro.TextMeshProUGUI>();
-            repoText.text = $"Repository: {mod.RepositoryOwner}/{mod.RepositoryName}";
+            repoText.text = HasRepository(mod)
+                ? $"Repository: {mod.RepositoryOwner}/{mod.RepositoryName}"
+                : "Lokale Mod (kein GitHub)";
             repoText.fontSize = 14;
             repoText.color = new Color(0.7f, 0.7f, 0.7f);
 
@@ -681,6 +763,14 @@ namespace UsefulTORStuff
                 yield return new WaitForSeconds(0.25f);
             }
         }
+
+        // True, wenn der Mod ein GitHub-Repository hinterlegt hat. Lokale Mods lassen die
+        // Felder leer und erhalten daher keinen GitHub-Button. Future-proof: gilt automatisch
+        // fuer jede kuenftige Mod, die kein Repository angibt.
+        private static bool HasRepository(ModInfo mod) =>
+            mod != null
+            && !string.IsNullOrWhiteSpace(mod.RepositoryOwner)
+            && !string.IsNullOrWhiteSpace(mod.RepositoryName);
 
         private void CreateGitHubButton(GameObject parent, ModInfo mod)
         {
