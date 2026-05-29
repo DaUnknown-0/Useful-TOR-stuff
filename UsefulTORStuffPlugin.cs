@@ -102,9 +102,11 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         var harmony = new Harmony(PluginGuid);
 
-        // Manual reflection patches (TOR types are internal): Bloody throttle plus SnitchLogic's
-        // reflection-gated room recorder and surface reimplementation.
+        // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
+        // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
+        // reimplementation.
         PatchBloodyThrottle(harmony);
+        PatchBloodyKillerMap(harmony);
         SnitchLogic.Initialize(harmony);
 
         // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
@@ -173,19 +175,9 @@ public class UsefulTORStuffPlugin : BasePlugin
                 return;
             }
 
-            // Resolve the private instance fields the color fix needs. If either is missing we
-            // still register the throttle prefix; the postfix simply no-ops.
-            BloodyColorFixPatch.SpriteRendererField = bloodytrailType.GetField(
-                "spriteRenderer", BindingFlags.NonPublic | BindingFlags.Instance);
-            BloodyColorFixPatch.ColorField = bloodytrailType.GetField(
-                "color", BindingFlags.NonPublic | BindingFlags.Instance);
-            if (BloodyColorFixPatch.SpriteRendererField == null)
-                Logger.LogWarning("Bloodytrail.spriteRenderer field not found — Bloody color fix disabled.");
-
             harmony.Patch(ctor,
-                prefix: new HarmonyMethod(typeof(BloodyThrottlePatch), nameof(BloodyThrottlePatch.Prefix)),
-                postfix: new HarmonyMethod(typeof(BloodyColorFixPatch), nameof(BloodyColorFixPatch.Postfix)));
-            Logger.LogInfo("Patched Bloodytrail constructor — blood drops are distance-throttled and color-corrected.");
+                prefix: new HarmonyMethod(typeof(BloodyThrottlePatch), nameof(BloodyThrottlePatch.Prefix)));
+            Logger.LogInfo("Patched Bloodytrail constructor — blood drops are now distance-throttled.");
         }
         catch (Exception ex)
         {
@@ -229,60 +221,98 @@ public class UsefulTORStuffPlugin : BasePlugin
     }
 
     // ========================================================================
-    // Bloody color fix: TOR's Bloodytrail constructor assigns the shared
-    // HatManager.PlayerMaterial to the blood SpriteRenderer and tints it via
-    // SetPlayerMaterialColors. With that player shader in place the per-drop
-    // SpriteRenderer.color the constructor's fade-out coroutine writes every frame
-    // is ignored, so every drop renders in whatever the shared material settled on
-    // (in practice the first killed player's color) instead of the actual victim's.
+    // Bloody killer-map fix: TOR's RPCProcedure.bloody records the bloody victim with
+    //   if (Bloody.active.ContainsKey(killer)) return;
+    //   Bloody.active.Add(killer, duration);
+    //   Bloody.bloodyKillerMap.Add(killer, victim);
+    // bloodyKillerMap is only ever cleared at game start, and uses Add (never an
+    // overwrite). So once a killer has bled one bloody victim, bloodyKillerMap[killer]
+    // stays pinned to that FIRST victim for the rest of the game — every later blood
+    // trail (whose color comes from that mapped victim) renders in the first victim's
+    // color. The early ContainsKey return also drops a second victim entirely while the
+    // first trail is still active.
     //
-    // Fix: right after construction, swap the renderer back to a plain vertex-color
-    // sprite material (matching upstream TOR's original behavior). The renderer's
-    // own fade coroutine then colors each drop correctly from its per-instance
-    // `color` field — including the camouflage/mushroom gray case it already handles.
+    // Fix: replace the body via prefix — refresh the timer and OVERWRITE the victim with
+    // the indexer, so each kill makes the trail track the latest victim. RPCProcedure.bloody
+    // is the only writer of these maps and runs on every client (local kill + RPC handler),
+    // so patching it here fixes our own view (host) and any client running this mod.
     // ========================================================================
 
-    public static class BloodyColorFixPatch
+    private void PatchBloodyKillerMap(Harmony harmony)
     {
-        public static FieldInfo SpriteRendererField;
-        public static FieldInfo ColorField;
-
-        // Plain sprite material that honors SpriteRenderer.color (RGBA vertex tint),
-        // unlike the player shader. Built lazily and kept alive across scene loads.
-        private static Material _bloodMaterial;
-
-        private static Material BloodMaterial()
+        try
         {
-            if (_bloodMaterial != null) return _bloodMaterial;
-            var shader = Shader.Find("Sprites/Default");
-            if (shader == null) return null;
-            _bloodMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
-            UnityEngine.Object.DontDestroyOnLoad(_bloodMaterial);
-            return _bloodMaterial;
-        }
+            if (TORAssembly == null)
+            {
+                Logger.LogError("TheOtherRoles assembly not found — Bloody killer-map fix disabled.");
+                return;
+            }
 
-        // __instance = the freshly built Bloodytrail. Skipped construction (throttled
-        // prefix returned false) leaves spriteRenderer null, so we simply no-op.
-        public static void Postfix(object __instance)
+            var rpcType = TORAssembly.GetType("TheOtherRoles.RPCProcedure")
+                ?? TORAssembly.GetTypes().FirstOrDefault(t => t.Name == "RPCProcedure");
+            var bloodyType = TORAssembly.GetType("TheOtherRoles.Bloody")
+                ?? TORAssembly.GetTypes().FirstOrDefault(t => t.Name == "Bloody");
+            if (rpcType == null || bloodyType == null)
+            {
+                Logger.LogWarning("RPCProcedure or Bloody type not found — Bloody killer-map fix disabled.");
+                return;
+            }
+
+            var method = rpcType.GetMethod("bloody",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null,
+                new[] { typeof(byte), typeof(byte) }, null);
+            if (method == null)
+            {
+                Logger.LogWarning("RPCProcedure.bloody(byte, byte) not found — Bloody killer-map fix disabled.");
+                return;
+            }
+
+            const BindingFlags staticField = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+            BloodyKillerMapPatch.ActiveField = bloodyType.GetField("active", staticField);
+            BloodyKillerMapPatch.MapField = bloodyType.GetField("bloodyKillerMap", staticField);
+            BloodyKillerMapPatch.DurationField = bloodyType.GetField("duration", staticField);
+            if (BloodyKillerMapPatch.ActiveField == null || BloodyKillerMapPatch.MapField == null
+                || BloodyKillerMapPatch.DurationField == null)
+            {
+                Logger.LogWarning("Bloody.active/bloodyKillerMap/duration field(s) not found — Bloody killer-map fix disabled.");
+                return;
+            }
+
+            harmony.Patch(method,
+                prefix: new HarmonyMethod(typeof(BloodyKillerMapPatch), nameof(BloodyKillerMapPatch.Prefix)));
+            Logger.LogInfo("Patched RPCProcedure.bloody — bloody trail now tracks the latest victim.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Failed to patch RPCProcedure.bloody: {ex}");
+        }
+    }
+
+    public static class BloodyKillerMapPatch
+    {
+        public static FieldInfo ActiveField;       // Dictionary<byte, float>
+        public static FieldInfo MapField;          // Dictionary<byte, byte>
+        public static FieldInfo DurationField;     // float
+
+        // __0 = killerPlayerId, __1 = bloodyPlayerId (the killed bloody-modifier victim).
+        // Returning false replaces TOR's buggy Add/early-return logic.
+        public static bool Prefix(byte __0, byte __1)
         {
             try
             {
-                if (__instance == null || SpriteRendererField == null) return;
+                var active = ActiveField.GetValue(null) as Dictionary<byte, float>;
+                var map = MapField.GetValue(null) as Dictionary<byte, byte>;
+                if (active == null || map == null) return true; // let the original run
 
-                if (SpriteRendererField.GetValue(__instance) is not SpriteRenderer renderer || renderer == null)
-                    return;
-
-                var mat = BloodMaterial();
-                if (mat != null) renderer.material = mat;
-
-                // Apply the victim color immediately so the first frame isn't a white
-                // flash; the constructor's fade coroutine keeps it updated afterwards.
-                if (ColorField != null && ColorField.GetValue(__instance) is Color c)
-                    renderer.color = c;
+                float duration = Convert.ToSingle(DurationField.GetValue(null));
+                active[__0] = duration; // set/refresh timer (indexer, not Add)
+                map[__0] = __1;         // overwrite victim with the latest kill (indexer, not Add)
+                return false;           // skip the buggy original
             }
             catch (Exception ex)
             {
-                Logger?.LogError($"Bloody color fix failed: {ex}");
+                Logger?.LogError($"Bloody killer-map fix failed: {ex}");
+                return true; // never block TOR on our account
             }
         }
     }
