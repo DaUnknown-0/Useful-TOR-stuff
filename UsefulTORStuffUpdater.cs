@@ -363,7 +363,10 @@ namespace UsefulTORStuff {
         public void TriggerUpdateFromManager() {
             if (Releases == null || Releases.Count == 0) return;
             var latestRelease = Releases.FirstOrDefault();
-            if (latestRelease != null && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)) {
+            // Asset-Check wie in HasUpdate(): ohne passende DLL liefe CoDownloadRelease in
+            // einen NullRef bei asset.DownloadUrl (release.Assets.Find liefert dann null).
+            if (latestRelease != null && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)
+                && latestRelease.Assets.Any(FilterPluginAsset)) {
                 StartDownloadRelease(latestRelease, managerMode: true);
             }
         }
