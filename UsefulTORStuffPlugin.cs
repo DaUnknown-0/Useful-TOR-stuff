@@ -173,9 +173,19 @@ public class UsefulTORStuffPlugin : BasePlugin
                 return;
             }
 
+            // Resolve the private instance fields the color fix needs. If either is missing we
+            // still register the throttle prefix; the postfix simply no-ops.
+            BloodyColorFixPatch.SpriteRendererField = bloodytrailType.GetField(
+                "spriteRenderer", BindingFlags.NonPublic | BindingFlags.Instance);
+            BloodyColorFixPatch.ColorField = bloodytrailType.GetField(
+                "color", BindingFlags.NonPublic | BindingFlags.Instance);
+            if (BloodyColorFixPatch.SpriteRendererField == null)
+                Logger.LogWarning("Bloodytrail.spriteRenderer field not found — Bloody color fix disabled.");
+
             harmony.Patch(ctor,
-                prefix: new HarmonyMethod(typeof(BloodyThrottlePatch), nameof(BloodyThrottlePatch.Prefix)));
-            Logger.LogInfo("Patched Bloodytrail constructor — blood drops are now distance-throttled.");
+                prefix: new HarmonyMethod(typeof(BloodyThrottlePatch), nameof(BloodyThrottlePatch.Prefix)),
+                postfix: new HarmonyMethod(typeof(BloodyColorFixPatch), nameof(BloodyColorFixPatch.Postfix)));
+            Logger.LogInfo("Patched Bloodytrail constructor — blood drops are distance-throttled and color-corrected.");
         }
         catch (Exception ex)
         {
@@ -214,6 +224,65 @@ public class UsefulTORStuffPlugin : BasePlugin
             catch
             {
                 return true; // never block TOR on our account
+            }
+        }
+    }
+
+    // ========================================================================
+    // Bloody color fix: TOR's Bloodytrail constructor assigns the shared
+    // HatManager.PlayerMaterial to the blood SpriteRenderer and tints it via
+    // SetPlayerMaterialColors. With that player shader in place the per-drop
+    // SpriteRenderer.color the constructor's fade-out coroutine writes every frame
+    // is ignored, so every drop renders in whatever the shared material settled on
+    // (in practice the first killed player's color) instead of the actual victim's.
+    //
+    // Fix: right after construction, swap the renderer back to a plain vertex-color
+    // sprite material (matching upstream TOR's original behavior). The renderer's
+    // own fade coroutine then colors each drop correctly from its per-instance
+    // `color` field — including the camouflage/mushroom gray case it already handles.
+    // ========================================================================
+
+    public static class BloodyColorFixPatch
+    {
+        public static FieldInfo SpriteRendererField;
+        public static FieldInfo ColorField;
+
+        // Plain sprite material that honors SpriteRenderer.color (RGBA vertex tint),
+        // unlike the player shader. Built lazily and kept alive across scene loads.
+        private static Material _bloodMaterial;
+
+        private static Material BloodMaterial()
+        {
+            if (_bloodMaterial != null) return _bloodMaterial;
+            var shader = Shader.Find("Sprites/Default");
+            if (shader == null) return null;
+            _bloodMaterial = new Material(shader) { hideFlags = HideFlags.HideAndDontSave };
+            UnityEngine.Object.DontDestroyOnLoad(_bloodMaterial);
+            return _bloodMaterial;
+        }
+
+        // __instance = the freshly built Bloodytrail. Skipped construction (throttled
+        // prefix returned false) leaves spriteRenderer null, so we simply no-op.
+        public static void Postfix(object __instance)
+        {
+            try
+            {
+                if (__instance == null || SpriteRendererField == null) return;
+
+                if (SpriteRendererField.GetValue(__instance) is not SpriteRenderer renderer || renderer == null)
+                    return;
+
+                var mat = BloodMaterial();
+                if (mat != null) renderer.material = mat;
+
+                // Apply the victim color immediately so the first frame isn't a white
+                // flash; the constructor's fade coroutine keeps it updated afterwards.
+                if (ColorField != null && ColorField.GetValue(__instance) is Color c)
+                    renderer.color = c;
+            }
+            catch (Exception ex)
+            {
+                Logger?.LogError($"Bloody color fix failed: {ex}");
             }
         }
     }
