@@ -35,7 +35,19 @@ namespace UsefulTORStuff {
 
         private bool _busy;
         private bool _showPopUp = true;
+        // Einmal-Flag: die gesammelte Update-Ankündigung (Manager-Modus) nur einmal pro Sitzung zeigen.
+        private bool _showConsolidatedAnnouncement = true;
         public List<GithubRelease> Releases;
+
+        // Download-Zustand für den Mod Manager. 0 = idle, 1 = downloading,
+        // 2 = success (restart required), 3 = error. Lebt in der Instanz, damit das
+        // Mod-Manager-UI ihn über Schließen/Öffnen hinweg abfragen kann.
+        private int _updateState;
+        private float _updateProgress;
+
+        // True sobald der GitHub-Release-Check abgeschlossen ist (Erfolg oder Fehler). Vom
+        // Mod Manager abgefragt, um die gesammelte Update-Ankündigung erst nach allen Checks zu zeigen.
+        private bool _checkCompleted;
 
         public void Awake() {
             if (Instance) Destroy(Instance);
@@ -52,10 +64,20 @@ namespace UsefulTORStuff {
         }
 
         [HideFromIl2Cpp]
-        public void StartDownloadRelease(GithubRelease release) {
+        public void StartDownloadRelease(GithubRelease release, bool managerMode = false) {
             if (_busy) return;
-            this.StartCoroutine(CoDownloadRelease(release));
+            this.StartCoroutine(CoDownloadRelease(release, managerMode));
         }
+
+        // Reflection-/direkt-aufrufbare Getter für das Mod-Manager-UI.
+        [HideFromIl2Cpp]
+        public int GetUpdateState() => _updateState;
+
+        [HideFromIl2Cpp]
+        public float GetUpdateProgress() => _updateProgress;
+
+        [HideFromIl2Cpp]
+        public bool GetCheckCompleted() => _checkCompleted;
 
         [HideFromIl2Cpp]
         private IEnumerator CoCheckForUpdate() {
@@ -71,6 +93,7 @@ namespace UsefulTORStuff {
             }
 
             if (www.isNetworkError || www.isHttpError) {
+                _checkCompleted = true;
                 _busy = false;
                 yield break;
             }
@@ -79,22 +102,31 @@ namespace UsefulTORStuff {
             www.downloadHandler.Dispose();
             www.Dispose();
             Releases.Sort(SortReleases);
+            _checkCompleted = true;
             _busy = false;
         }
 
         [HideFromIl2Cpp]
-        private IEnumerator CoDownloadRelease(GithubRelease release) {
+        private IEnumerator CoDownloadRelease(GithubRelease release, bool managerMode) {
             _busy = true;
+            _updateState = 1;
+            _updateProgress = 0f;
 
-            var popup = Instantiate(TwitchManager.Instance.TwitchPopup);
-            popup.TextAreaTMP.fontSize *= 0.7f;
-            popup.TextAreaTMP.enableAutoSizing = false;
+            // Im Manager-Modus wird kein Among-Us-TwitchPopup erzeugt; der Mod Manager zeigt
+            // Fortschritt/Status selbst über GetUpdateState()/GetUpdateProgress() an.
+            GenericPopup popup = null;
+            GameObject button = null;
+            if (!managerMode) {
+                popup = Instantiate(TwitchManager.Instance.TwitchPopup);
+                popup.TextAreaTMP.fontSize *= 0.7f;
+                popup.TextAreaTMP.enableAutoSizing = false;
 
-            popup.Show();
+                popup.Show();
 
-            var button = popup.transform.GetChild(2).gameObject;
-            button.SetActive(false);
-            popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...";
+                button = popup.transform.GetChild(2).gameObject;
+                button.SetActive(false);
+                popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...";
+            }
 
             var asset = release.Assets.Find(FilterPluginAsset);
             var www = new UnityWebRequest();
@@ -104,19 +136,27 @@ namespace UsefulTORStuff {
             var operation = www.SendWebRequest();
 
             while (!operation.isDone) {
-                int stars = Mathf.CeilToInt(www.downloadProgress * 10);
-                string progress = $"Updating Useful TOR Stuff\nPlease wait...\nDownloading...\n{new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars)}";
-                popup.TextAreaTMP.text = progress;
+                _updateProgress = www.downloadProgress;
+                if (!managerMode) {
+                    int stars = Mathf.CeilToInt(www.downloadProgress * 10);
+                    string progress = $"Updating Useful TOR Stuff\nPlease wait...\nDownloading...\n{new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars)}";
+                    popup.TextAreaTMP.text = progress;
+                }
                 yield return new WaitForEndOfFrame();
             }
 
             if (www.isNetworkError || www.isHttpError) {
-                popup.TextAreaTMP.text = "Update wasn't successful\nTry again later,\nor update manually.";
-                button.SetActive(true);
+                _updateState = 3;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = "Update wasn't successful\nTry again later,\nor update manually.";
+                    button.SetActive(true);
+                }
                 _busy = false;
                 yield break;
             }
-            popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...\n\nDownload complete\ncopying file...";
+            if (!managerMode) {
+                popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...\n\nDownload complete\ncopying file...";
+            }
 
             var filePath = Path.Combine(Paths.PluginPath, asset.Name);
 
@@ -138,9 +178,14 @@ namespace UsefulTORStuff {
             www.Dispose();
 
             if (!hasError) {
-                popup.TextAreaTMP.text = "Useful TOR Stuff\nupdated successfully\nPlease restart the game.";
+                _updateState = 2;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = "Useful TOR Stuff\nupdated successfully\nPlease restart the game.";
+                }
+            } else {
+                _updateState = 3;
             }
-            button.SetActive(true);
+            if (!managerMode) button.SetActive(true);
             _busy = false;
         }
 
@@ -157,13 +202,20 @@ namespace UsefulTORStuff {
         }
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode) {
-            if (_busy || scene.name != "MainMenu" || Releases == null) return;
+            if (scene.name != "MainMenu") return;
 
-            // Wenn Mod-Manager aktiviert ist, keine eigenen Update-Buttons anzeigen.
-            // Der Mod-Manager übernimmt dann die Update-Funktionalität.
+            // Wenn Mod-Manager aktiviert ist, keine eigenen Update-Buttons anzeigen. Stattdessen
+            // zeigt UsefulTORStuff (als Manager-Besitzer) einmalig eine gesammelte Ankündigung mit
+            // allen Mods, die ein Update brauchen. Unabhängig von den eigenen Releases.
             if (ModManagerRegistry.IsModManagerEnabled()) {
+                if (_showConsolidatedAnnouncement) {
+                    _showConsolidatedAnnouncement = false;
+                    this.StartCoroutine(CoShowConsolidatedUpdateAnnouncement());
+                }
                 return;
             }
+
+            if (_busy || Releases == null) return;
 
             var latestRelease = Releases.FirstOrDefault();
             if (latestRelease == null || !latestRelease.IsNewer(global::UsefulTORStuff.UsefulTORStuffPlugin.Version) || !latestRelease.Assets.Any(FilterPluginAsset))
@@ -197,6 +249,45 @@ namespace UsefulTORStuff {
                 mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "Useful TOR Stuff Update", date: latestRelease.PublishedAt));
             }
             _showPopUp = false;
+        }
+
+        // Manager-Modus: zeigt einmalig eine gesammelte Ankündigung mit allen Mods, die ein Update
+        // brauchen — statt der einzelnen per-Mod-Ankündigungen (die im Manager-Modus unterdrückt sind).
+        [HideFromIl2Cpp]
+        private IEnumerator CoShowConsolidatedUpdateAnnouncement() {
+            var mods = ModManagerRegistry.GetAllMods();
+
+            // Warte bis alle Mods ihren GitHub-Release-Check abgeschlossen haben (oder Timeout),
+            // damit kein Update verpasst wird, dessen Check noch lief.
+            for (float t = 20f; t > 0f; t -= 0.25f) {
+                bool allDone = true;
+                foreach (var m in mods) {
+                    bool done = false;
+                    try { done = m.GetCheckCompleted?.Invoke() ?? true; } catch { }
+                    if (!done) { allDone = false; break; }
+                }
+                if (allDone) break;
+                yield return new WaitForSeconds(0.25f);
+            }
+
+            // Sammle alle laufenden Mods mit verfügbarem Update.
+            var names = new List<string>();
+            foreach (var m in mods) {
+                bool has = false;
+                try { has = m.RuntimeEnabled && (m.HasUpdate?.Invoke() ?? false); } catch { }
+                if (has) names.Add($"• <b>{m.Name}</b> <size=80%>(v{m.Version})</size>");
+            }
+
+            if (names.Count == 0) yield break;
+
+            string announcement =
+                "<size=130%>Mod Updates Available</size>\n\n" +
+                $"The following mod{(names.Count == 1 ? "" : "s")} can be updated:\n\n" +
+                string.Join("\n", names) +
+                "\n\nOpen the <b>Mod Manager</b> from the main menu to update.";
+
+            yield return this.StartCoroutine(CoShowAnnouncement(
+                announcement, shortTitle: "Mod Updates", title: "Mod Updates Available"));
         }
 
         [HideFromIl2Cpp]
@@ -270,7 +361,7 @@ namespace UsefulTORStuff {
             if (Releases == null || Releases.Count == 0) return;
             var latestRelease = Releases.FirstOrDefault();
             if (latestRelease != null && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)) {
-                StartDownloadRelease(latestRelease);
+                StartDownloadRelease(latestRelease, managerMode: true);
             }
         }
     }

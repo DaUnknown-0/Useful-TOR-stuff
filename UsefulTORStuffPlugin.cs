@@ -62,6 +62,8 @@ public class UsefulTORStuffPlugin : BasePlugin
 
     internal static Assembly TORAssembly;
     internal static ConfigEntry<float> MinDropDistance;
+    internal static ConfigEntry<float> ModManagerButtonX;
+    internal static ConfigEntry<float> ModManagerButtonY;
 
     // True only when the version handshake confirms every connected player runs the same
     // Useful TOR Stuff build. Gates the client-side Snitch fix and is read by HostFixPlugin
@@ -81,10 +83,17 @@ public class UsefulTORStuffPlugin : BasePlugin
         }
 
         // Mod-Manager Config: Wenn aktiviert, werden Update-Buttons in die Mod-Manager-UI verschoben.
-        var modManagerEnabled = Config.Bind("ModManager", "Enabled", false,
+        // Default true: der Mod-Manager-Button ist immer im Hauptmenü sichtbar, also gehören die
+        // Update-Buttons standardmäßig in den Manager statt zusätzlich ins Hauptmenü.
+        var modManagerEnabled = Config.Bind("ModManager", "Enabled", true,
             "When enabled, update buttons move into the Mod Manager UI. When disabled, update buttons " +
             "appear at their original positions.");
         ModManagerRegistry.SetModManagerEnabled(modManagerEnabled.Value);
+
+        ModManagerButtonX = Config.Bind("ModManager", "ButtonPositionX", 0.8f,
+            "X position of the Mod Manager button (anchor point 0-1)");
+        ModManagerButtonY = Config.Bind("ModManager", "ButtonPositionY", 0.21f,
+            "Y position of the Mod Manager button (anchor point 0-1)");
 
         MinDropDistance = Config.Bind(
             "Bloody", "MinDropDistance", 0.35f,
@@ -110,7 +119,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         AddComponent<ModManagerButton>();
         AddComponent<ModManagerUI>();
 
-        // Registriere diese Mod in der Mod-Manager-Registry via AppDomain.
+        // Registriere diese Mod in der Mod-Manager-Registry.
         try {
             var modData = new System.Collections.Generic.Dictionary<string, object> {
                 { "Guid", PluginGuid },
@@ -119,10 +128,10 @@ public class UsefulTORStuffPlugin : BasePlugin
                 { "RepositoryOwner", UsefulTORStuffUpdater.RepositoryOwner },
                 { "RepositoryName", UsefulTORStuffUpdater.RepositoryName },
                 { "ButtonColor", Color.green },
-                { "Enabled", enabled }
+                { "Enabled", enabled },
+                { "RuntimeEnabled", true }
             };
-            AppDomain.CurrentDomain.SetData($"ModManager.RegisteredMod.{PluginGuid}", modData);
-            Logger.LogInfo($"Registered {PluginName} in Mod Manager registry.");
+            ModManagerRegistry.RegisterMod(PluginGuid, modData);
         } catch (Exception ex) {
             Logger.LogError($"Failed to register {PluginName}: {ex}");
         }

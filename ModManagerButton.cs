@@ -48,7 +48,11 @@ namespace UsefulTORStuff
 
                 // Button instantiieren und positionieren
                 _button = Instantiate(template, null);
-                _button.GetComponent<AspectPosition>().anchorPoint = new Vector2(0.8f, 0.21f);
+                var buttonPosition = new Vector2(
+                    UsefulTORStuffPlugin.ModManagerButtonX.Value,
+                    UsefulTORStuffPlugin.ModManagerButtonY.Value
+                );
+                _button.GetComponent<AspectPosition>().anchorPoint = buttonPosition;
 
                 // Text setzen
                 var text = _button.transform.GetComponentInChildren<TMPro.TMP_Text>();
