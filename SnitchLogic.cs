@@ -589,7 +589,13 @@ public static class SnitchLogic
                     {
                         if (!IsSnitchTargetMatch(player)) continue;
                         if (player == null || player.Data == null || player.Data.IsDead) continue;
-                        if (!roomMap.TryGetValue(player.PlayerId, out byte room)) continue;
+
+                        // Robust: einen bösen Spieler IMMER listen, auch wenn sein ShareRoom (noch)
+                        // nicht in roomMap steht. Der Host sendet sein ShareRoom als Meeting-Autorität
+                        // vor allen anderen — geht sein Eintrag verloren, fehlte er bisher KOMPLETT.
+                        // Anwesenheit schlägt korrekten Raum: ohne Eintrag fällt der Raum auf
+                        // "open fields" (byte.MinValue) zurück, der Spieler erscheint trotzdem.
+                        if (!roomMap.TryGetValue(player.PlayerId, out byte room)) room = byte.MinValue;
 
                         var roomName = "open fields";
                         if (room != byte.MinValue)
