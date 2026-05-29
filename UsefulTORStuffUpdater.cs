@@ -262,6 +262,9 @@ namespace UsefulTORStuff {
             for (float t = 20f; t > 0f; t -= 0.25f) {
                 bool allDone = true;
                 foreach (var m in mods) {
+                    // Deaktivierte Mods laufen nicht und haben keinen Update-Check — überspringen,
+                    // sonst würde die Schleife bis zum Timeout warten.
+                    if (!m.RuntimeEnabled) continue;
                     bool done = false;
                     try { done = m.GetCheckCompleted?.Invoke() ?? true; } catch { }
                     if (!done) { allDone = false; break; }
