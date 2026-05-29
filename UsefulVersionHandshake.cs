@@ -170,7 +170,10 @@ namespace UsefulTORStuff {
                 // value naturally persists (latches) into the game that follows.
                 string mismatch = BuildMismatchMessage();
                 bool everyone = mismatch == "";
-                UsefulTORStuffPlugin.SnitchClientFixActive = everyone;
+                // "Aktiv" nur, wenn ALLE den Mod haben UND der Transpiler-Fix hier wirklich angewendet
+                // wurde. Sonst stünde HostFix still, obwohl gar kein funktionierender Client-Fix läuft
+                // (alle Clients teilen denselben Build/dieselbe TOR-Version → lokale Readiness = globale).
+                UsefulTORStuffPlugin.SnitchClientFixActive = everyone && SnitchLogic.TranspilerFixReady;
 
                 var text = __instance.GameStartText;
 
@@ -184,13 +187,21 @@ namespace UsefulTORStuff {
                 }
                 if (text == null) return;
 
-                if (everyone) {
-                    // All players have the mod — show the active-fix confirmation top-left in the
-                    // lobby. It is also posted once to chat when the game actually starts.
-                    string fixType = SnitchLogic.TranspilerFixReady ? "Transpiler-Fix" : "client-side fix";
+                if (UsefulTORStuffPlugin.SnitchClientFixActive) {
+                    // All players have the mod AND the Transpiler-Fix actually applied — show the
+                    // active-fix confirmation top-left. Also posted once to chat at game start.
                     DrawTopLeftMessage(__instance, text,
-                        $"<color=#3FCF4AFF>Snitch {fixType} active — all players have Useful TOR Stuff v{UsefulTORStuffPlugin.PluginVersion}.</color>",
+                        $"<color=#3FCF4AFF>Snitch Transpiler-Fix active — all players have Useful TOR Stuff v{UsefulTORStuffPlugin.PluginVersion}.</color>",
                         "Snitch");
+                } else if (everyone) {
+                    // Everyone has the mod, but the Transpiler-Fix did NOT apply here (TOR version drift
+                    // etc.). The client fix is NOT active, so the Host Fix fallback stays armed — say so
+                    // instead of falsely claiming the fix is active. Only the host needs this heads-up.
+                    if (!AmongUsClient.Instance.AmHost) return;
+                    DrawTopLeftMessage(__instance, text,
+                        "<color=#FFA500FF>All players have Useful TOR Stuff, but the Snitch Transpiler-Fix " +
+                        "is NOT active (TOR mismatch). Falling back to Host Fix re-broadcast.</color>",
+                        "Transpiler-Fix is NOT active");
                 } else {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.
                     // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).

@@ -58,11 +58,23 @@ public static class SnitchLogic
     private static bool mapModeSwapped;
     private static int mapOriginalMode;
 
-    internal static bool RoomMapReady { get; private set; }
+    // Jede Fähigkeit hat ihr eigenes Readiness-Flag und hängt NUR von den Handles ab, die
+    // sie wirklich braucht — so fällt nicht alles aus, nur weil ein einzelnes Handle fehlt.
+    internal static bool ShareRoomRecorderReady { get; private set; }
+    internal static bool ClearReloadResetReady { get; private set; }
     internal static bool ChatRevealReady { get; private set; }
     internal static bool MapRevealReady { get; private set; }
     internal static bool HudRevealReady { get; private set; }
+    internal static bool MeetingEndResetReady { get; private set; }
+    internal static bool LocalSelfEntryReady { get; private set; }
+
+    // True erst, wenn der Transpiler den playerRoomMap-Reset wirklich aus StartMeetingPatch.Prefix
+    // entfernt hat (nicht nur, wenn die Handles vorhanden sind). Das ist der Schalter, an dem
+    // HostFix erkennt, ob der strukturelle Client-Fix tatsächlich aktiv ist.
     internal static bool TranspilerFixReady { get; private set; }
+
+    // Wird vom Transpiler gesetzt, wenn das IL-Muster gefunden und ersetzt wurde.
+    private static bool transpilerPatternRemoved;
 
     public static void Initialize(Harmony harmony)
     {
@@ -78,9 +90,16 @@ public static class SnitchLogic
 
             ResolveHandles(tor);
 
-            RoomMapReady = shareRoomMethod != null && snitchClearAndReloadMethod != null;
-            ChatRevealReady = RoomMapReady
-                && snitchPlayerField != null
+            // --- Readiness pro Fähigkeit, jeweils nur auf die eigenen Handles bezogen ---
+
+            // Room-Recorder: zwei unabhängige Patches. shareRoom füllt die lokale roomMap,
+            // clearAndReload leert sie. Keiner hängt vom anderen ab.
+            ShareRoomRecorderReady = shareRoomMethod != null;
+            ClearReloadResetReady = snitchClearAndReloadMethod != null;
+
+            // Chat-Reveal braucht NICHT den Room-Recorder: fehlt die roomMap, fällt der Raum
+            // pro Spieler auf "open fields" zurück — der böse Spieler erscheint trotzdem.
+            ChatRevealReady = snitchPlayerField != null
                 && snitchModeField != null
                 && snitchTargetsField != null
                 && snitchModeEnumType != null
@@ -100,7 +119,8 @@ public static class SnitchLogic
                 && helpersIsKillerMethod != null
                 && taskInfoMethod != null
                 && mapUtilitiesCachedShipStatusField != null;
-            HudRevealReady = snitchPlayerField != null
+            HudRevealReady = snitchUpdateMethod != null
+                && snitchPlayerField != null
                 && snitchNeedsUpdateField != null
                 && snitchIsRevealedField != null
                 && snitchTextField != null
@@ -110,43 +130,49 @@ public static class SnitchLogic
                 && helpersIsEvilMethod != null
                 && helpersIsKillerMethod != null
                 && taskInfoMethod != null;
-            TranspilerFixReady = startMeetingPatchType != null
-                && snitchPlayerRoomMapField != null
-                && snitchPlayerField != null;
 
-            if (RoomMapReady)
+            // Meeting-Ende-Reset und lokaler Selbsteintrag sind eigenständige Patches (Lösung B,
+            // Patch 2 & 3). Sie dürfen NICHT am Transpiler oder an clearAndReload/snitch hängen:
+            //  - Reset am Meeting-Ende braucht nur das playerRoomMap-Feld.
+            //  - Lokaler Selbsteintrag braucht playerRoomMap + snitch-Feld.
+            MeetingEndResetReady = snitchPlayerRoomMapField != null;
+            LocalSelfEntryReady = snitchPlayerRoomMapField != null && snitchPlayerField != null;
+
+            if (ShareRoomRecorderReady)
             {
                 harmony.Patch(shareRoomMethod,
                     postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(ShareRoomPostfix)));
-                harmony.Patch(snitchClearAndReloadMethod,
-                    postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(ClearAndReloadPostfix)));
                 UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: room map recorder enabled.");
             }
             else
             {
                 UsefulTORStuffPlugin.Logger?.LogWarning(
-                    "SnitchLogic: room map recorder disabled — missing shareRoom/clearAndReload handles.");
+                    "SnitchLogic: room map recorder disabled — missing shareRoom handle.");
+            }
+
+            if (ClearReloadResetReady)
+            {
+                harmony.Patch(snitchClearAndReloadMethod,
+                    postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(ClearAndReloadPostfix)));
+                UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: clearAndReload reset hook enabled.");
+            }
+            else
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "SnitchLogic: clearAndReload reset hook disabled — missing handle (local roomMap still clears at meeting end).");
             }
 
             if (ChatRevealReady)
-            {
                 UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: chat reveal reimplementation enabled.");
-            }
             else
-            {
                 UsefulTORStuffPlugin.Logger?.LogWarning(
                     "SnitchLogic: chat reveal stays on TOR's original path — missing Snitch handles.");
-            }
 
             if (MapRevealReady)
-            {
                 UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: map reveal reimplementation enabled.");
-            }
             else
-            {
                 UsefulTORStuffPlugin.Logger?.LogWarning(
                     "SnitchLogic: map reveal stays on TOR's original path — missing Snitch/MapBehaviour handles.");
-            }
 
             if (HudRevealReady)
             {
@@ -160,8 +186,11 @@ public static class SnitchLogic
                     "SnitchLogic: HUD update stays on TOR's original path — missing Snitch handles.");
             }
 
-            // Lösung B: Transpiler-Fix für den Snitch-Host-Bug
-            if (TranspilerFixReady)
+            // --- Lösung B, Patch 1: Transpiler entfernt den playerRoomMap-Reset aus
+            // StartMeetingPatch.Prefix. Braucht NUR StartMeetingPatch + playerRoomMap-Feld
+            // (keine Abhängigkeit von snitch). Der Transpiler läuft bei harmony.Patch sofort,
+            // daher steht direkt danach fest, ob das Muster wirklich entfernt wurde. ---
+            if (startMeetingPatchType != null && snitchPlayerRoomMapField != null)
             {
                 try
                 {
@@ -169,9 +198,19 @@ public static class SnitchLogic
                         BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
                     if (prefixMethod != null)
                     {
+                        transpilerPatternRemoved = false;
                         harmony.Patch(prefixMethod,
                             transpiler: new HarmonyMethod(typeof(SnitchLogic), nameof(RemovePlayerRoomMapResetTranspiler)));
-                        UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: Transpiler-Fix applied — removed playerRoomMap reset from StartMeetingPatch.Prefix");
+
+                        // TranspilerFixReady spiegelt die TATSÄCHLICHE Anwendung — nicht nur
+                        // vorhandene Handles. Nur so steht HostFix korrekt still bzw. springt ein.
+                        TranspilerFixReady = transpilerPatternRemoved;
+                        if (TranspilerFixReady)
+                            UsefulTORStuffPlugin.Logger?.LogInfo(
+                                "SnitchLogic: Transpiler-Fix APPLIED — playerRoomMap reset removed from StartMeetingPatch.Prefix.");
+                        else
+                            UsefulTORStuffPlugin.Logger?.LogWarning(
+                                "SnitchLogic: Transpiler ran but pattern was NOT removed — Transpiler-Fix NOT active (HostFix fallback stays armed).");
                     }
                     else
                     {
@@ -182,15 +221,17 @@ public static class SnitchLogic
                 {
                     UsefulTORStuffPlugin.Logger?.LogError($"Failed to apply Transpiler-Fix: {ex}");
                 }
-
-                // Meeting-Ende-Reset und lokaler Selbsteintrag werden per attribute-based patches angewendet
-                UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: Transpiler-Fix patches (MeetingEnd reset + local self-entry) enabled.");
             }
             else
             {
                 UsefulTORStuffPlugin.Logger?.LogWarning(
-                    "SnitchLogic: Transpiler-Fix disabled — missing StartMeetingPatch or playerRoomMap handles.");
+                    "SnitchLogic: Transpiler-Fix disabled — missing StartMeetingPatch or playerRoomMap handle.");
             }
+
+            // Lösung B, Patch 2 & 3: laufen eigenständig (attribute-based, eigene Prepare()-Gates).
+            UsefulTORStuffPlugin.Logger?.LogInfo(
+                $"SnitchLogic: meeting-end reset {(MeetingEndResetReady ? "enabled" : "disabled (no playerRoomMap handle)")}, " +
+                $"local self-entry {(LocalSelfEntryReady ? "enabled" : "disabled (no playerRoomMap/snitch handle)")}.");
         }
         catch (Exception ex)
         {
@@ -198,75 +239,131 @@ public static class SnitchLogic
         }
     }
 
+    // Breite Flags: tolerant gegenüber public/internal/static-Unterschieden zwischen TOR-Releases.
+    private const BindingFlags AnyMember =
+        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
+
     private static void ResolveHandles(Assembly tor)
     {
-        snitchType = tor.GetType("TheOtherRoles.TheOtherRoles+Snitch");
-        helpersType = tor.GetType("TheOtherRoles.Helpers");
-        tasksHandlerType = tor.GetType("TheOtherRoles.TasksHandler");
-        roleInfoType = tor.GetType("TheOtherRoles.RoleInfo");
-        mapUtilitiesType = tor.GetType("TheOtherRoles.Utilities.MapUtilities");
-        playerControlPatchType = tor.GetType("TheOtherRoles.Patches.PlayerControlPatch");
-        mapBehaviourPatchType = tor.GetType("TheOtherRoles.Patches.MapBehaviourPatch");
-        startMeetingPatchType = tor.GetType("TheOtherRoles.Patches.MeetingHudPatch+StartMeetingPatch");
+        snitchType = ResolveType(tor, "Snitch", "TheOtherRoles.TheOtherRoles+Snitch");
+        helpersType = ResolveType(tor, "Helpers", "TheOtherRoles.Helpers");
+        tasksHandlerType = ResolveType(tor, "TasksHandler", "TheOtherRoles.TasksHandler");
+        roleInfoType = ResolveType(tor, "RoleInfo", "TheOtherRoles.RoleInfo");
+        mapUtilitiesType = ResolveType(tor, "MapUtilities", "TheOtherRoles.Utilities.MapUtilities");
+        playerControlPatchType = ResolveType(tor, "PlayerControlPatch", "TheOtherRoles.Patches.PlayerControlPatch");
+        mapBehaviourPatchType = ResolveType(tor, "MapBehaviourPatch", "TheOtherRoles.Patches.MapBehaviourPatch");
+        startMeetingPatchType = ResolveType(tor, "StartMeetingPatch", "TheOtherRoles.Patches.MeetingHudPatch+StartMeetingPatch");
 
         if (snitchType != null)
         {
-            snitchPlayerField = snitchType.GetField("snitch", BindingFlags.Public | BindingFlags.Static);
-            snitchModeField = snitchType.GetField("mode", BindingFlags.Public | BindingFlags.Static);
-            snitchTargetsField = snitchType.GetField("targets", BindingFlags.Public | BindingFlags.Static);
-            snitchIsRevealedField = snitchType.GetField("isRevealed", BindingFlags.Public | BindingFlags.Static);
-            snitchNeedsUpdateField = snitchType.GetField("needsUpdate", BindingFlags.Public | BindingFlags.Static);
-            snitchTextField = snitchType.GetField("text", BindingFlags.Public | BindingFlags.Static);
-            snitchTaskCountForRevealField = snitchType.GetField("taskCountForReveal", BindingFlags.Public | BindingFlags.Static);
-            snitchPlayerRoomMapField = snitchType.GetField("playerRoomMap", BindingFlags.Public | BindingFlags.Static);
+            snitchPlayerField = ResolveField(snitchType, "snitch");
+            snitchModeField = ResolveField(snitchType, "mode");
+            snitchTargetsField = ResolveField(snitchType, "targets");
+            snitchIsRevealedField = ResolveField(snitchType, "isRevealed");
+            snitchNeedsUpdateField = ResolveField(snitchType, "needsUpdate");
+            snitchTextField = ResolveField(snitchType, "text");
+            snitchTaskCountForRevealField = ResolveField(snitchType, "taskCountForReveal");
+            snitchPlayerRoomMapField = ResolveField(snitchType, "playerRoomMap");
             snitchModeEnumType = snitchType.GetNestedType("Mode", BindingFlags.Public | BindingFlags.NonPublic);
             snitchTargetsEnumType = snitchType.GetNestedType("Targets", BindingFlags.Public | BindingFlags.NonPublic);
 
             if (snitchModeEnumType != null)
             {
-                snitchModeChatValue = GetEnumValue(snitchModeEnumType, "Chat");
-                snitchModeMapValue = GetEnumValue(snitchModeEnumType, "Map");
-                snitchModeChatAndMapValue = GetEnumValue(snitchModeEnumType, "ChatAndMap");
+                snitchModeChatValue = GetEnumValue(snitchModeEnumType, "Chat", 0);
+                snitchModeMapValue = GetEnumValue(snitchModeEnumType, "Map", 1);
+                snitchModeChatAndMapValue = GetEnumValue(snitchModeEnumType, "ChatAndMap", 2);
             }
 
             if (snitchTargetsEnumType != null)
             {
-                snitchTargetsEvilPlayersValue = GetEnumValue(snitchTargetsEnumType, "EvilPlayers");
-                snitchTargetsKillersValue = GetEnumValue(snitchTargetsEnumType, "Killers");
+                snitchTargetsEvilPlayersValue = GetEnumValue(snitchTargetsEnumType, "EvilPlayers", 0);
+                snitchTargetsKillersValue = GetEnumValue(snitchTargetsEnumType, "Killers", 1);
             }
 
-            snitchClearAndReloadMethod = snitchType.GetMethod("clearAndReload", BindingFlags.Public | BindingFlags.Static);
+            snitchClearAndReloadMethod = ResolveMethod(snitchType, "clearAndReload");
         }
 
-        var rpcProcedureType = tor.GetType("TheOtherRoles.RPCProcedure");
-        shareRoomMethod = rpcProcedureType?.GetMethod("shareRoom", BindingFlags.Public | BindingFlags.Static);
+        var rpcProcedureType = ResolveType(tor, "RPCProcedure", "TheOtherRoles.RPCProcedure");
+        shareRoomMethod = ResolveMethod(rpcProcedureType, "shareRoom");
 
-        if (helpersType != null)
-        {
-            helpersShouldShowGhostInfoMethod = helpersType.GetMethod("shouldShowGhostInfo", BindingFlags.Public | BindingFlags.Static);
-            helpersIsEvilMethod = helpersType.GetMethod("isEvil", BindingFlags.Public | BindingFlags.Static);
-            helpersIsKillerMethod = helpersType.GetMethod("isKiller", BindingFlags.Public | BindingFlags.Static);
-        }
+        helpersShouldShowGhostInfoMethod = ResolveMethod(helpersType, "shouldShowGhostInfo");
+        helpersIsEvilMethod = ResolveMethod(helpersType, "isEvil");
+        helpersIsKillerMethod = ResolveMethod(helpersType, "isKiller");
 
-        if (tasksHandlerType != null)
-            taskInfoMethod = tasksHandlerType.GetMethod("taskInfo", BindingFlags.Public | BindingFlags.Static);
-
-        if (roleInfoType != null)
-            getRolesStringMethod = roleInfoType.GetMethod("GetRolesString", BindingFlags.Public | BindingFlags.Static);
-
-        if (mapUtilitiesType != null)
-            mapUtilitiesCachedShipStatusField = mapUtilitiesType.GetField("CachedShipStatus", BindingFlags.Public | BindingFlags.Static);
-
-        if (playerControlPatchType != null)
-            snitchUpdateMethod = playerControlPatchType.GetMethod("snitchUpdate", BindingFlags.NonPublic | BindingFlags.Static);
-
-        if (mapBehaviourPatchType != null)
-            mapBehaviourHerePointsField = mapBehaviourPatchType.GetField("herePoints", BindingFlags.Public | BindingFlags.Static);
+        taskInfoMethod = ResolveMethod(tasksHandlerType, "taskInfo");
+        getRolesStringMethod = ResolveMethod(roleInfoType, "GetRolesString");
+        mapUtilitiesCachedShipStatusField = ResolveField(mapUtilitiesType, "CachedShipStatus");
+        snitchUpdateMethod = ResolveMethod(playerControlPatchType, "snitchUpdate");
+        mapBehaviourHerePointsField = ResolveField(mapBehaviourPatchType, "herePoints");
     }
 
-    private static int GetEnumValue(Type enumType, string name)
+    // Auflösung mit mehreren Kandidaten plus Fallback-Suche über alle TOR-Typen.
+    // Erster Kandidat ist der einfache Name (für die Fallback-Suche), danach voll qualifizierte
+    // Namen für tor.GetType. So fängt ein Runtime-Mismatch (Namespace-/Nesting-Drift) sauber ab.
+    private static Type ResolveType(Assembly tor, string simpleName, params string[] fullNames)
     {
-        return Convert.ToInt32(Enum.Parse(enumType, name));
+        foreach (var name in fullNames)
+        {
+            var t = tor.GetType(name);
+            if (t != null) return t;
+        }
+
+        // Fallback: über alle Typen nach dem einfachen Namen suchen.
+        var match = SafeGetTypes(tor).FirstOrDefault(t => t.Name == simpleName);
+        if (match != null)
+        {
+            UsefulTORStuffPlugin.Logger?.LogWarning(
+                $"SnitchLogic: resolved '{simpleName}' via fallback type scan → {match.FullName}.");
+            return match;
+        }
+
+        UsefulTORStuffPlugin.Logger?.LogWarning(
+            $"SnitchLogic: could not resolve type '{simpleName}' (tried: {string.Join(", ", fullNames)}).");
+        return null;
+    }
+
+    private static Type[] SafeGetTypes(Assembly asm)
+    {
+        try { return asm.GetTypes(); }
+        catch (ReflectionTypeLoadException ex) { return ex.Types.Where(t => t != null).ToArray(); }
+        catch { return Array.Empty<Type>(); }
+    }
+
+    private static FieldInfo ResolveField(Type type, params string[] names)
+    {
+        if (type == null) return null;
+        foreach (var n in names)
+        {
+            var f = type.GetField(n, AnyMember);
+            if (f != null) return f;
+        }
+        UsefulTORStuffPlugin.Logger?.LogWarning(
+            $"SnitchLogic: field '{names.FirstOrDefault()}' not found on {type.FullName}.");
+        return null;
+    }
+
+    private static MethodInfo ResolveMethod(Type type, params string[] names)
+    {
+        if (type == null) return null;
+        foreach (var n in names)
+        {
+            var m = type.GetMethod(n, AnyMember);
+            if (m != null) return m;
+        }
+        UsefulTORStuffPlugin.Logger?.LogWarning(
+            $"SnitchLogic: method '{names.FirstOrDefault()}' not found on {type.FullName}.");
+        return null;
+    }
+
+    private static int GetEnumValue(Type enumType, string name, int fallback)
+    {
+        try { return Convert.ToInt32(Enum.Parse(enumType, name)); }
+        catch
+        {
+            UsefulTORStuffPlugin.Logger?.LogWarning(
+                $"SnitchLogic: enum value '{name}' not found on {enumType.FullName} — using fallback {fallback}.");
+            return fallback;
+        }
     }
 
     private static PlayerControl GetSnitchPlayer()
@@ -769,6 +866,7 @@ public static class SnitchLogic
                     codes[i] = new CodeInstruction(OpCodes.Nop);
                     codes[i + 1] = new CodeInstruction(OpCodes.Nop);
                     found = true;
+                    transpilerPatternRemoved = true;
                     UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic Transpiler: removed playerRoomMap reset at instruction " + i);
                     break;
                 }
@@ -794,7 +892,7 @@ public static class SnitchLogic
     [HarmonyPriority(Priority.Last)]
     private static class LocalSelfEntryPatch
     {
-        public static bool Prepare() => TranspilerFixReady;
+        public static bool Prepare() => LocalSelfEntryReady;
 
         public static void Postfix()
         {
@@ -829,7 +927,7 @@ public static class SnitchLogic
     [HarmonyPriority(Priority.Last)]
     private static class MeetingEndResetPatch
     {
-        public static bool Prepare() => TranspilerFixReady;
+        public static bool Prepare() => MeetingEndResetReady;
 
         public static void Postfix()
         {

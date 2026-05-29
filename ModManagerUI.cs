@@ -449,6 +449,10 @@ namespace UsefulTORStuff
             // Update-/Download-Zustand ein. So erscheinen auch spät geladene Releases live (Bug 3).
             CreateUpdateButton(entry, mod, refs);
 
+            // Optionaler Live-Toggle (z. B. HostFix' Snitch-Fallback). Wirkt sofort, kein Neustart.
+            if (mod.ExtraToggle != null)
+                CreateExtraToggleButton(entry, mod);
+
             _entryRefs.Add(refs);
 
             // Status-Text und Update-Button sofort in den korrekten Zustand bringen.
@@ -591,6 +595,69 @@ namespace UsefulTORStuff
                 catch (Exception ex)
                 {
                     UsefulTORStuffPlugin.Logger?.LogError($"Failed to toggle mod: {ex}");
+                    btnText.text = "ERROR";
+                    btnText.color = Color.red;
+                }
+            }));
+        }
+
+        // Zusätzlicher Live-Toggle pro Mod (z. B. HostFix' Snitch-Fallback). Anders als der
+        // Enable/Disable-Toggle wirkt dieser SOFORT: der Mod liest ConfigEntry.Value zur Laufzeit,
+        // daher kein "Restart required". Position: unter dem Enable/Disable-Button (links neben GitHub).
+        private void CreateExtraToggleButton(GameObject parent, ModInfo mod)
+        {
+            string label = string.IsNullOrEmpty(mod.ExtraToggleLabel) ? "Option" : mod.ExtraToggleLabel;
+
+            var button = new GameObject("ExtraToggleButton");
+            button.transform.SetParent(parent.transform, false);
+
+            var btnRect = button.AddComponent<RectTransform>();
+            btnRect.anchorMin = new Vector2(1, 1);
+            btnRect.anchorMax = new Vector2(1, 1);
+            btnRect.pivot = new Vector2(1, 1);
+            btnRect.anchoredPosition = new Vector2(-165, -45);
+            btnRect.sizeDelta = new Vector2(140, 30);
+
+            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
+
+            var btnTextObj = new GameObject("Text");
+            btnTextObj.transform.SetParent(button.transform, false);
+            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
+            btnTextRect.anchorMin = Vector2.zero;
+            btnTextRect.anchorMax = Vector2.one;
+            btnTextRect.sizeDelta = Vector2.zero;
+
+            var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
+            btnText.fontSize = 12;
+            btnText.fontStyle = TMPro.FontStyles.Bold;
+            btnText.alignment = TMPro.TextAlignmentOptions.Center;
+            btnText.color = Color.white;
+
+            // Lokale Funktion: Beschriftung + Hintergrund am aktuellen Zustand ausrichten.
+            void Apply(bool on)
+            {
+                btnText.text = $"{label}: {(on ? "ON" : "OFF")}";
+                var tex = new Texture2D(1, 1);
+                tex.SetPixel(0, 0, on ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f));
+                tex.Apply();
+                btnBg.sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            }
+
+            Apply(mod.ExtraToggle.Value);
+
+            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
+            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
+                try
+                {
+                    bool newValue = !mod.ExtraToggle.Value;
+                    mod.ExtraToggle.Value = newValue;     // wirkt sofort (Mod liest live)
+                    mod.ExtraToggle.ConfigFile?.Save();   // persistiert über Neustart hinweg
+                    Apply(newValue);
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"{mod.Name}: {label} set to {(newValue ? "ON" : "OFF")}.");
+                }
+                catch (Exception ex)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogError($"Failed to toggle {label} for {mod.Name}: {ex}");
                     btnText.text = "ERROR";
                     btnText.color = Color.red;
                 }

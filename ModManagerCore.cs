@@ -30,6 +30,10 @@ namespace UsefulTORStuff
         // Enabled.Value, sobald der Nutzer im Manager umschaltet — die Änderung greift erst nach
         // Neustart, der Mod läuft bis dahin weiter.
         public bool RuntimeEnabled;
+        // Optionaler zusätzlicher Live-Toggle (z. B. HostFix' Snitch-Fallback). Wirkt sofort —
+        // der jeweilige Mod liest den Wert zur Laufzeit, daher kein Neustart nötig.
+        public ConfigEntry<bool> ExtraToggle;
+        public string ExtraToggleLabel;
     }
 
     // Zentrale Registry für alle Mods. Liest Mod-Daten aus AppDomain (keine Compile-Zeit-Referenzen).
@@ -130,7 +134,10 @@ namespace UsefulTORStuff
                     Enabled = dict.TryGetValue("Enabled", out var e) ? e as ConfigEntry<bool> : null,
                     // Vorhandensein des Registry-Eintrags bedeutet: der Mod ist beim Start geladen
                     // worden (deaktivierte Mods registrieren sich nicht). Default true für Altdaten.
-                    RuntimeEnabled = !dict.TryGetValue("RuntimeEnabled", out var re) || !(re is bool reb) || reb
+                    RuntimeEnabled = !dict.TryGetValue("RuntimeEnabled", out var re) || !(re is bool reb) || reb,
+                    // Optionaler Live-Toggle (per Referenz vom jeweiligen Mod geteilt).
+                    ExtraToggle = dict.TryGetValue("ExtraToggle", out var et) ? et as ConfigEntry<bool> : null,
+                    ExtraToggleLabel = dict.TryGetValue("ExtraToggleLabel", out var etl) ? etl as string : null
                 };
 
                 // Callbacks für HasUpdate und TriggerUpdate (reflection-basiert auf Updater-Instanzen)
