@@ -19,6 +19,8 @@ namespace UsefulTORStuff
         public Color ButtonColor;
         public Func<bool> HasUpdate;
         public Action TriggerUpdate;
+        // Stößt einen erneuten GitHub-Release-Check an (beim Öffnen des Mod Managers).
+        public Action TriggerCheck;
         // Download-Zustand für die Mod-Manager-Anzeige.
         // GetUpdateState: 0 = idle, 1 = downloading, 2 = success (restart), 3 = error.
         public Func<int> GetUpdateState;
@@ -64,6 +66,51 @@ namespace UsefulTORStuff
             {
                 UsefulTORStuffPlugin.Logger?.LogError($"Failed to register mod {guid}: {ex}");
             }
+        }
+
+        // Drossel für den Update-Re-Check beim Öffnen des Mod Managers: höchstens 1×/Minute,
+        // damit wiederholtes Öffnen (oder ein Öffnen direkt nach dem Start-Check) die GitHub-API
+        // nicht zuspammt.
+        private static DateTime _lastUpdateCheckUtc = DateTime.MinValue;
+        private static readonly TimeSpan UpdateCheckInterval = TimeSpan.FromMinutes(1);
+
+        // Setzt den Drossel-Zeitstempel, ohne einen Check auszulösen. Für den automatischen
+        // Start-Check der Updater gedacht — so zählt dieser als „in der letzten Minute geprüft“.
+        public static void MarkUpdateCheckNow()
+        {
+            _lastUpdateCheckUtc = DateTime.UtcNow;
+        }
+
+        // Stößt für alle laufenden Mods mit GitHub-Repo einen erneuten Release-Check an —
+        // außer der letzte Check liegt weniger als eine Minute zurück. Wird beim Öffnen des
+        // Mod Managers aufgerufen.
+        public static void MaybeCheckForUpdates()
+        {
+            var now = DateTime.UtcNow;
+            var since = now - _lastUpdateCheckUtc;
+            if (since < UpdateCheckInterval)
+            {
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"Mod Manager: Update-Check übersprungen (letzter Check vor {since.TotalSeconds:F0}s).");
+                return;
+            }
+
+            _lastUpdateCheckUtc = now;
+            int n = 0;
+            foreach (var mod in GetAllMods())
+            {
+                if (!mod.RuntimeEnabled) continue;                                  // nicht geladen
+                if (string.IsNullOrWhiteSpace(mod.RepositoryOwner)
+                    || string.IsNullOrWhiteSpace(mod.RepositoryName)) continue;     // lokale Mods ohne Repo
+                try { mod.TriggerCheck?.Invoke(); n++; }
+                catch (Exception ex)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        $"Mod Manager: Re-Check für {mod.Guid} fehlgeschlagen: {ex.Message}");
+                }
+            }
+
+            UsefulTORStuffPlugin.Logger?.LogInfo($"Mod Manager: Update-Re-Check für {n} Mod(s) gestartet.");
         }
 
         // Gibt das Manifest (Liste aller registrierten Mod-GUIDs) zurück.
@@ -189,6 +236,12 @@ namespace UsefulTORStuff
                         var method = type?.GetMethod("GetCheckCompleted");
                         return instance != null && method != null && (bool)method.Invoke(instance, null);
                     };
+                    modInfo.TriggerCheck = () => {
+                        var type = Type.GetType("TOR_ChanceModifier.ChanceModUpdater, TOR-ChanceModifier");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var method = type?.GetMethod("TriggerCheckFromManager");
+                        method?.Invoke(instance, null);
+                    };
                 }
                 else if (modInfo.Guid == "com.trackerteam.hostfix")
                 {
@@ -222,6 +275,12 @@ namespace UsefulTORStuff
                         var method = type?.GetMethod("GetCheckCompleted");
                         return instance != null && method != null && (bool)method.Invoke(instance, null);
                     };
+                    modInfo.TriggerCheck = () => {
+                        var type = Type.GetType("HostFixPlugin.HostFixUpdater, HostFixPlugin");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var method = type?.GetMethod("TriggerCheckFromManager");
+                        method?.Invoke(instance, null);
+                    };
                 }
                 else if (modInfo.Guid == "com.tormod.usefultorstuff")
                 {
@@ -230,6 +289,7 @@ namespace UsefulTORStuff
                     modInfo.GetUpdateState = () => UsefulTORStuffUpdater.Instance?.GetUpdateState() ?? 0;
                     modInfo.GetUpdateProgress = () => UsefulTORStuffUpdater.Instance?.GetUpdateProgress() ?? 0f;
                     modInfo.GetCheckCompleted = () => UsefulTORStuffUpdater.Instance?.GetCheckCompleted() ?? false;
+                    modInfo.TriggerCheck = () => UsefulTORStuffUpdater.Instance?.TriggerCheckFromManager();
                 }
             }
             catch (Exception ex)

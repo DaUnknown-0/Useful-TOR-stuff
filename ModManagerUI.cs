@@ -54,6 +54,10 @@ namespace UsefulTORStuff
                     return;
                 }
 
+                // Beim Öffnen erneut auf neue Versionen prüfen (gedrosselt auf 1×/Minute).
+                // Das Ergebnis erscheint automatisch über die laufende CoRefreshStates-Schleife.
+                ModManagerRegistry.MaybeCheckForUpdates();
+
                 CreateProfessionalUI();
             }
             catch (Exception ex)

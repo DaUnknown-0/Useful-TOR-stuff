@@ -69,6 +69,15 @@ namespace UsefulTORStuff {
             this.StartCoroutine(CoDownloadRelease(release, managerMode));
         }
 
+        // Vom Mod Manager beim Öffnen ausgelöster erneuter GitHub-Release-Check (gedrosselt
+        // auf 1×/Minute durch ModManagerRegistry.MaybeCheckForUpdates).
+        [HideFromIl2Cpp]
+        public void TriggerCheckFromManager() {
+            if (_busy) return;          // läuft bereits ein Check/Download — nicht doppelt starten
+            _checkCompleted = false;    // erlaubt UI/Ankündigung, den laufenden Re-Check zu erkennen
+            this.StartCoroutine(CoCheckForUpdate());
+        }
+
         // Reflection-/direkt-aufrufbare Getter für das Mod-Manager-UI.
         [HideFromIl2Cpp]
         public int GetUpdateState() => _updateState;

@@ -117,6 +117,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Self-updater: checks GitHub releases and offers an in-game update button.
         AddComponent<UsefulTORStuffUpdater>();
 
+        // Der automatische Start-Check der Updater läuft jetzt los — als Drossel-Basis merken,
+        // damit ein Öffnen des Mod Managers direkt nach dem Start keinen redundanten Re-Check
+        // auslöst (zählt als „in der letzten Minute bereits geprüft“).
+        ModManagerRegistry.MarkUpdateCheckNow();
+
         // Mod-Manager UI Components: Button im Hauptmenü + Popup-UI.
         AddComponent<ModManagerButton>();
         AddComponent<ModManagerUI>();
