@@ -6,7 +6,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Reflection.Emit;
 using HarmonyLib;
 using UnityEngine;
 
@@ -25,7 +24,6 @@ public static class SnitchLogic
     private static Type mapUtilitiesType;
     private static Type playerControlPatchType;
     private static Type mapBehaviourPatchType;
-    private static Type startMeetingPatchType;
 
     private static FieldInfo snitchPlayerField;
     private static FieldInfo snitchModeField;
@@ -36,7 +34,6 @@ public static class SnitchLogic
     private static FieldInfo snitchTaskCountForRevealField;
     private static FieldInfo mapBehaviourHerePointsField;
     private static FieldInfo mapUtilitiesCachedShipStatusField;
-    private static FieldInfo snitchPlayerRoomMapField;
 
     private static MethodInfo shareRoomMethod;
     private static MethodInfo snitchClearAndReloadMethod;
@@ -65,16 +62,14 @@ public static class SnitchLogic
     internal static bool ChatRevealReady { get; private set; }
     internal static bool MapRevealReady { get; private set; }
     internal static bool HudRevealReady { get; private set; }
-    internal static bool MeetingEndResetReady { get; private set; }
-    internal static bool LocalSelfEntryReady { get; private set; }
 
-    // True erst, wenn der Transpiler den playerRoomMap-Reset wirklich aus StartMeetingPatch.Prefix
-    // entfernt hat (nicht nur, wenn die Handles vorhanden sind). Das ist der Schalter, an dem
-    // HostFix erkennt, ob der strukturelle Client-Fix tatsächlich aktiv ist.
-    internal static bool TranspilerFixReady { get; private set; }
-
-    // Wird vom Transpiler gesetzt, wenn das IL-Muster gefunden und ersetzt wurde.
-    private static bool transpilerPatternRemoved;
+    // True, wenn der client-seitige Snitch-Fix lokal überhaupt laufen KÖNNTE (alle nötigen
+    // Handles aufgelöst). Kern des Host-Bug-Fix ist die Chat-Reveal-Reimplementierung, die aus
+    // der eigenen, NICHT mid-meeting zurückgesetzten roomMap liest — daher Chat-Reveal +
+    // Room-Recorder. Das tatsächliche Wirken ist zusätzlich auf SnitchClientFixActive gegated
+    // (= alle haben den Mod), das der Handshake aus everyone && ClientFixReady bildet. An genau
+    // diesem Flag erkennt HostFix, ob der Client-Fix scharf ist und der Re-Broadcast stillstehen darf.
+    internal static bool ClientFixReady { get; private set; }
 
     public static void Initialize(Harmony harmony)
     {
@@ -131,12 +126,10 @@ public static class SnitchLogic
                 && helpersIsKillerMethod != null
                 && taskInfoMethod != null;
 
-            // Meeting-Ende-Reset und lokaler Selbsteintrag sind eigenständige Patches (Lösung B,
-            // Patch 2 & 3). Sie dürfen NICHT am Transpiler oder an clearAndReload/snitch hängen:
-            //  - Reset am Meeting-Ende braucht nur das playerRoomMap-Feld.
-            //  - Lokaler Selbsteintrag braucht playerRoomMap + snitch-Feld.
-            MeetingEndResetReady = snitchPlayerRoomMapField != null;
-            LocalSelfEntryReady = snitchPlayerRoomMapField != null && snitchPlayerField != null;
+            // Der client-seitige Snitch-Fix kann lokal laufen, sobald Chat-Reveal + Room-Recorder
+            // bereit sind. Tatsächlich wirksam wird er aber erst, wenn der Handshake daraus zusammen
+            // mit "alle haben den Mod" SnitchClientFixActive bildet (siehe UsefulVersionHandshake).
+            ClientFixReady = ChatRevealReady && ShareRoomRecorderReady;
 
             if (ShareRoomRecorderReady)
             {
@@ -186,52 +179,12 @@ public static class SnitchLogic
                     "SnitchLogic: HUD update stays on TOR's original path — missing Snitch handles.");
             }
 
-            // --- Lösung B, Patch 1: Transpiler entfernt den playerRoomMap-Reset aus
-            // StartMeetingPatch.Prefix. Braucht NUR StartMeetingPatch + playerRoomMap-Feld
-            // (keine Abhängigkeit von snitch). Der Transpiler läuft bei harmony.Patch sofort,
-            // daher steht direkt danach fest, ob das Muster wirklich entfernt wurde. ---
-            if (startMeetingPatchType != null && snitchPlayerRoomMapField != null)
-            {
-                try
-                {
-                    var prefixMethod = startMeetingPatchType.GetMethod("Prefix",
-                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                    if (prefixMethod != null)
-                    {
-                        transpilerPatternRemoved = false;
-                        harmony.Patch(prefixMethod,
-                            transpiler: new HarmonyMethod(typeof(SnitchLogic), nameof(RemovePlayerRoomMapResetTranspiler)));
-
-                        // TranspilerFixReady spiegelt die TATSÄCHLICHE Anwendung — nicht nur
-                        // vorhandene Handles. Nur so steht HostFix korrekt still bzw. springt ein.
-                        TranspilerFixReady = transpilerPatternRemoved;
-                        if (TranspilerFixReady)
-                            UsefulTORStuffPlugin.Logger?.LogInfo(
-                                "SnitchLogic: Transpiler-Fix APPLIED — playerRoomMap reset removed from StartMeetingPatch.Prefix.");
-                        else
-                            UsefulTORStuffPlugin.Logger?.LogWarning(
-                                "SnitchLogic: Transpiler ran but pattern was NOT removed — Transpiler-Fix NOT active (HostFix fallback stays armed).");
-                    }
-                    else
-                    {
-                        UsefulTORStuffPlugin.Logger?.LogWarning("SnitchLogic: StartMeetingPatch.Prefix method not found — Transpiler-Fix disabled.");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    UsefulTORStuffPlugin.Logger?.LogError($"Failed to apply Transpiler-Fix: {ex}");
-                }
-            }
-            else
-            {
-                UsefulTORStuffPlugin.Logger?.LogWarning(
-                    "SnitchLogic: Transpiler-Fix disabled — missing StartMeetingPatch or playerRoomMap handle.");
-            }
-
-            // Lösung B, Patch 2 & 3: laufen eigenständig (attribute-based, eigene Prepare()-Gates).
+            // Der client-seitige Fix wirkt nur, wenn der Handshake SnitchClientFixActive setzt
+            // (alle haben den Mod). Die Reveal-Patches sind angewandt, prüfen das Flag aber zur
+            // Laufzeit und fallen sonst auf TORs Originalverhalten zurück.
             UsefulTORStuffPlugin.Logger?.LogInfo(
-                $"SnitchLogic: meeting-end reset {(MeetingEndResetReady ? "enabled" : "disabled (no playerRoomMap handle)")}, " +
-                $"local self-entry {(LocalSelfEntryReady ? "enabled" : "disabled (no playerRoomMap/snitch handle)")}.");
+                $"SnitchLogic: client-side Snitch fix {(ClientFixReady ? "ready" : "NOT ready (missing chat-reveal/recorder handles)")} " +
+                "— actual effect gated at runtime on SnitchClientFixActive (all players modded).");
         }
         catch (Exception ex)
         {
@@ -252,7 +205,6 @@ public static class SnitchLogic
         mapUtilitiesType = ResolveType(tor, "MapUtilities", "TheOtherRoles.Utilities.MapUtilities");
         playerControlPatchType = ResolveType(tor, "PlayerControlPatch", "TheOtherRoles.Patches.PlayerControlPatch");
         mapBehaviourPatchType = ResolveType(tor, "MapBehaviourPatch", "TheOtherRoles.Patches.MapBehaviourPatch");
-        startMeetingPatchType = ResolveType(tor, "StartMeetingPatch", "TheOtherRoles.Patches.MeetingHudPatch+StartMeetingPatch");
 
         if (snitchType != null)
         {
@@ -263,7 +215,6 @@ public static class SnitchLogic
             snitchNeedsUpdateField = ResolveField(snitchType, "needsUpdate");
             snitchTextField = ResolveField(snitchType, "text");
             snitchTaskCountForRevealField = ResolveField(snitchType, "taskCountForReveal");
-            snitchPlayerRoomMapField = ResolveField(snitchType, "playerRoomMap");
             snitchModeEnumType = snitchType.GetNestedType("Mode", BindingFlags.Public | BindingFlags.NonPublic);
             snitchTargetsEnumType = snitchType.GetNestedType("Targets", BindingFlags.Public | BindingFlags.NonPublic);
 
@@ -565,6 +516,8 @@ public static class SnitchLogic
     private static bool SnitchHudUpdatePrefix()
     {
         if (!HudRevealReady) return true;
+        // Nur wirksam, wenn alle den Mod haben — sonst läuft TORs Original-HUD.
+        if (!UsefulTORStuffPlugin.SnitchClientFixActive) return true;
 
         try
         {
@@ -626,15 +579,17 @@ public static class SnitchLogic
     [HarmonyPriority(Priority.High)]
     private static class StartMeetingChatPatch
     {
-        // Nur als Fallback aktiv, wenn der Transpiler-Fix (Loesung B) NICHT greift.
-        // Ist der Transpiler-Fix aktiv, sendet TORs Original-Code die Snitch-Nachricht
-        // bereits korrekt — diese Reimplementierung wuerde sonst eine zweite, identische
-        // Nachricht erzeugen (Doppelung). TranspilerFixReady steht in Initialize fest,
-        // bevor PatchAll dieses Prepare() auswertet.
-        public static bool Prepare() => ChatRevealReady && !TranspilerFixReady;
+        // Patch wird angewandt, sobald die Chat-Reveal-Handles da sind. Ob er tatsächlich
+        // wirkt, entscheidet zur Laufzeit SnitchClientFixActive (alle haben den Mod) — siehe
+        // Prefix/Postfix. So bleibt das Gate pro Spiel umschaltbar (anders als ein Transpiler).
+        public static bool Prepare() => ChatRevealReady;
 
         public static void Prefix()
         {
+            // Nur wirksam, wenn alle den Mod haben. Sonst KEIN Mode-Swap → TOR sendet seine
+            // eigene Snitch-Nachricht (und HostFix Fix 4 repariert die Daten per Re-Broadcast).
+            if (!UsefulTORStuffPlugin.SnitchClientFixActive) { chatModeSwapped = false; return; }
+
             try
             {
                 var snitch = GetSnitchPlayer();
@@ -731,6 +686,9 @@ public static class SnitchLogic
 
         public static void Prefix()
         {
+            // Nur wirksam, wenn alle den Mod haben — sonst läuft TORs Original-Map-Reveal.
+            if (!UsefulTORStuffPlugin.SnitchClientFixActive) { mapModeSwapped = false; return; }
+
             try
             {
                 var snitch = GetSnitchPlayer();
@@ -829,127 +787,6 @@ public static class SnitchLogic
             finally
             {
                 mapModeSwapped = false;
-            }
-        }
-    }
-
-    // ========================================================================
-    // Lösung B: Transpiler-Fix für den Snitch-Host-Bug
-    //
-    // Der Bug: TOR's StartMeetingPatch.Prefix sendet ShareRoom-RPCs und leert
-    // danach sofort Snitch.playerRoomMap. Der Host ist Meeting-Autorität und
-    // sendet sein ShareRoom früher als andere Clients — es wird vom Reset
-    // verworfen. Andere Einträge überleben, weil sie nach dem Reset eintreffen.
-    //
-    // Fix:
-    // 1. Transpiler entfernt den Reset aus StartMeetingPatch.Prefix
-    // 2. Reset wird stattdessen ans Meeting-Ende (MeetingHud.Close) verschoben
-    // 3. Lokaler Selbsteintrag (Defekt 1): eigener Raum wird lokal gesetzt
-    // ========================================================================
-
-    // Transpiler: Entfernt "Snitch.playerRoomMap = new Dictionary<byte, byte>()" aus TOR's StartMeetingPatch.Prefix
-    private static IEnumerable<CodeInstruction> RemovePlayerRoomMapResetTranspiler(IEnumerable<CodeInstruction> instructions)
-    {
-        var codes = new List<CodeInstruction>(instructions);
-        bool found = false;
-
-        try
-        {
-            // Suche das Muster: newobj Dictionary<byte,byte>::.ctor() gefolgt von stsfld playerRoomMap
-            for (int i = 0; i < codes.Count - 1; i++)
-            {
-                if (codes[i].opcode == OpCodes.Newobj &&
-                    codes[i].operand is System.Reflection.ConstructorInfo ctor &&
-                    ctor.DeclaringType != null &&
-                    ctor.DeclaringType.IsGenericType &&
-                    ctor.DeclaringType.GetGenericTypeDefinition() == typeof(Dictionary<,>) &&
-                    codes[i + 1].opcode == OpCodes.Stsfld &&
-                    codes[i + 1].operand is FieldInfo field &&
-                    field.Name == "playerRoomMap")
-                {
-                    // Gefunden! Ersetze beide Instruktionen durch Nop
-                    codes[i] = new CodeInstruction(OpCodes.Nop);
-                    codes[i + 1] = new CodeInstruction(OpCodes.Nop);
-                    found = true;
-                    transpilerPatternRemoved = true;
-                    UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic Transpiler: removed playerRoomMap reset at instruction " + i);
-                    break;
-                }
-            }
-
-            if (!found)
-            {
-                UsefulTORStuffPlugin.Logger?.LogWarning(
-                    "SnitchLogic Transpiler: playerRoomMap reset pattern not found — TOR version may have changed. " +
-                    "Returning unmodified IL.");
-            }
-        }
-        catch (Exception ex)
-        {
-            UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic Transpiler failed: {ex}. Returning unmodified IL.");
-        }
-
-        return codes;
-    }
-
-    // Postfix auf PlayerControl.StartMeeting: Setzt eigenen Raum lokal (Defekt 1)
-    [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.StartMeeting))]
-    [HarmonyPriority(Priority.Last)]
-    private static class LocalSelfEntryPatch
-    {
-        public static bool Prepare() => LocalSelfEntryReady;
-
-        public static void Postfix()
-        {
-            try
-            {
-                if (snitchPlayerField?.GetValue(null) == null) return;
-
-                var hud = HudManager.Instance;
-                var roomTracker = hud?.roomTracker;
-                if (roomTracker == null) return;
-
-                byte roomId = roomTracker.LastRoom != null ? (byte)roomTracker.LastRoom.RoomId : byte.MinValue;
-                byte localId = PlayerControl.LocalPlayer?.PlayerId ?? byte.MaxValue;
-                if (localId == byte.MaxValue) return;
-
-                // Setze eigenen Eintrag in TOR's playerRoomMap
-                var map = snitchPlayerRoomMapField.GetValue(null) as IDictionary<byte, byte>;
-                if (map != null)
-                {
-                    map[localId] = roomId;
-                }
-            }
-            catch (Exception ex)
-            {
-                UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic LocalSelfEntry failed: {ex}");
-            }
-        }
-    }
-
-    // Postfix auf MeetingHud.Close: Leert playerRoomMap am Meeting-Ende
-    [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Close))]
-    [HarmonyPriority(Priority.Last)]
-    private static class MeetingEndResetPatch
-    {
-        public static bool Prepare() => MeetingEndResetReady;
-
-        public static void Postfix()
-        {
-            try
-            {
-                if (snitchPlayerRoomMapField == null) return;
-
-                var map = snitchPlayerRoomMapField.GetValue(null) as IDictionary<byte, byte>;
-                if (map != null)
-                {
-                    map.Clear();
-                    UsefulTORStuffPlugin.Logger?.LogInfo("SnitchLogic: cleared playerRoomMap at meeting end");
-                }
-            }
-            catch (Exception ex)
-            {
-                UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic MeetingEndReset failed: {ex}");
             }
         }
     }
