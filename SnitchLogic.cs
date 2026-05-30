@@ -626,7 +626,12 @@ public static class SnitchLogic
     [HarmonyPriority(Priority.High)]
     private static class StartMeetingChatPatch
     {
-        public static bool Prepare() => ChatRevealReady;
+        // Nur als Fallback aktiv, wenn der Transpiler-Fix (Loesung B) NICHT greift.
+        // Ist der Transpiler-Fix aktiv, sendet TORs Original-Code die Snitch-Nachricht
+        // bereits korrekt — diese Reimplementierung wuerde sonst eine zweite, identische
+        // Nachricht erzeugen (Doppelung). TranspilerFixReady steht in Initialize fest,
+        // bevor PatchAll dieses Prepare() auswertet.
+        public static bool Prepare() => ChatRevealReady && !TranspilerFixReady;
 
         public static void Prefix()
         {
