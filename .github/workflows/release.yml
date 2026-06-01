@@ -10,6 +10,11 @@ on:
 permissions:
   contents: write
 
+# TOR-Version, gegen die gebaut wird. Muss zu der API passen, die der Mod nutzt
+# (CustomOption.Create, Sheriff-/CheckEndCriteriaPatch-Statics usw.).
+env:
+  TOR_VERSION: '4.8.0'
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -39,8 +44,16 @@ jobs:
           sed -i -E "s|(<Version>)[0-9]+\.[0-9]+\.[0-9]+(</Version>)|\1${VERSION}\2|" UsefulTORStuff.csproj
           echo "Gesetzt auf:"; grep PluginVersion UsefulTORStuffPlugin.cs
 
+      - name: TheOtherRoles.dll laden (Build-Referenz)
+        run: |
+          DEST="$RUNNER_TEMP/TheOtherRoles.dll"
+          URL="https://github.com/TheOtherRolesAU/TheOtherRoles/releases/download/v${TOR_VERSION}/TheOtherRoles.dll"
+          echo "Lade $URL"
+          curl -fL --retry 3 -o "$DEST" "$URL"
+          echo "TOR_DLL=$DEST" >> "$GITHUB_ENV"
+
       - name: Build
-        run: dotnet build -c Release
+        run: dotnet build -c Release -p:TheOtherRolesDll="$TOR_DLL"
 
       - name: Release erstellen + DLL anhaengen
         env:
