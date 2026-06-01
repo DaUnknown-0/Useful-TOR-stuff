@@ -109,6 +109,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         PatchBloodyKillerMap(harmony);
         SnitchLogic.Initialize(harmony);
 
+        // Sheriff "prevents killer parity win" option + win-check patches. CreateOptions must run
+        // after TOR's CustomOptionHolder.Load() (guaranteed by the hard dependency on TOR).
+        SheriffParityWin.CreateOptions();
+        SheriffParityWin.TryPatch(harmony);
+
         // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.

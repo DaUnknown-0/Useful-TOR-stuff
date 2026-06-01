@@ -187,6 +187,18 @@ namespace UsefulTORStuff {
                 }
                 if (text == null) return;
 
+                // Sheriff parity-win warning: the feature is host-enforced and always applies, but
+                // clients without the mod don't see the option. Warn the host (own marker so it
+                // coexists with the Snitch messages below; placed before their non-host returns).
+                if (AmongUsClient.Instance.AmHost
+                    && SheriffParityWin.Option != null && SheriffParityWin.Option.getBool()
+                    && !everyone) {
+                    DrawTopLeftMessage(__instance, text,
+                        "<color=#FFA500FF>'Sheriff Prevents Killer Parity Win' is ON, but not all players have "
+                        + "Useful TOR Stuff — they won't see this rule. It still applies (host-enforced).</color>",
+                        "Sheriff Prevents Killer Parity Win");
+                }
+
                 if (UsefulTORStuffPlugin.SnitchClientFixActive) {
                     // All players have the mod AND the client-side Snitch fix is locally ready — show
                     // the active-fix confirmation top-left. Also posted once to chat at game start.

@@ -17,6 +17,20 @@
         <PackageReference Include="AmongUs.GameLibs.Steam" Version="2024.10.29" />
         <PackageReference Include="BepInEx.IL2CPP.MSBuild" Version="2.1.0-rc.1" />
         <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.697" />
+        <PackageReference Include="Reactor" Version="2.3.1" />
+    </ItemGroup>
+
+    <!-- TOR DLL location: defaults to the local build, overridable in CI via -p:TheOtherRolesDll=... -->
+    <PropertyGroup>
+        <TheOtherRolesDll Condition="'$(TheOtherRolesDll)' == ''">..\TheOtherRoles-main\TheOtherRoles-main\TheOtherRoles\bin\Debug\net6.0\TheOtherRoles.dll</TheOtherRolesDll>
+    </PropertyGroup>
+
+    <!-- Reference TOR as hard dependency (needed for the in-game CustomOption + Sheriff/win statics) -->
+    <ItemGroup>
+        <Reference Include="TheOtherRoles">
+            <HintPath>$(TheOtherRolesDll)</HintPath>
+            <Private>false</Private>
+        </Reference>
     </ItemGroup>
 
     <Target Name="CopyCustomContent" AfterTargets="AfterBuild" Condition="Exists('$(AmongUsLatest)/BepInEx/plugins/')">
