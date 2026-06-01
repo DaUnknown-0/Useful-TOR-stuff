@@ -663,9 +663,6 @@ public static class SnitchLogic
 
                     AddChatMessage(snitch, output);
                 })));
-
-                if (PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.Data != null && PlayerControl.LocalPlayer.Data.IsDead)
-                    AddChatMessage(PlayerControl.LocalPlayer, output);
             }
             catch (Exception ex)
             {
