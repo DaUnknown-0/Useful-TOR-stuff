@@ -24,6 +24,7 @@ public static class SnitchLogic
     private static Type mapUtilitiesType;
     private static Type playerControlPatchType;
     private static Type mapBehaviourPatchType;
+    private static Type startMeetingPatchType;
 
     private static FieldInfo snitchPlayerField;
     private static FieldInfo snitchModeField;
@@ -43,6 +44,7 @@ public static class SnitchLogic
     private static MethodInfo helpersIsKillerMethod;
     private static MethodInfo taskInfoMethod;
     private static MethodInfo getRolesStringMethod;
+    private static MethodInfo torStartMeetingPrefixMethod;
 
     private static int snitchModeChatValue;
     private static int snitchModeMapValue;
@@ -62,6 +64,13 @@ public static class SnitchLogic
     internal static bool ChatRevealReady { get; private set; }
     internal static bool MapRevealReady { get; private set; }
     internal static bool HudRevealReady { get; private set; }
+
+    // True, wenn TORs eigene StartMeetingPatch.Prefix-Methode aufgelöst werden konnte und der
+    // deterministische Wrap (prefix/postfix DIREKT auf diese Methode) installiert ist. Nur dann
+    // ist die Unterdrückung von TORs Snitch-Nachricht reihenfolge-unabhängig garantiert. Ist das
+    // Flag false, fällt StartMeetingChatPatch (mode-swap auf PlayerControl.StartMeeting) als
+    // Best-Effort-Fallback ein (siehe dessen Prepare()).
+    internal static bool TorSuppressReady { get; private set; }
 
     // True, wenn der client-seitige Snitch-Fix lokal überhaupt laufen KÖNNTE (alle nötigen
     // Handles aufgelöst). Kern des Host-Bug-Fix ist die Chat-Reveal-Reimplementierung, die aus
@@ -179,6 +188,28 @@ public static class SnitchLogic
                     "SnitchLogic: HUD update stays on TOR's original path — missing Snitch handles.");
             }
 
+            // Deterministische Unterdrückung von TORs eigener Snitch-Nachricht: prefix/postfix
+            // DIREKT auf TORs StartMeetingPatch.Prefix. Das läuft garantiert unmittelbar um TORs
+            // synchrones Snitch.mode-Lesen herum — anders als der globale-Priorität-abhängige
+            // mode-swap auf PlayerControl.StartMeeting, der je nach geladener TOR-Version zu spät
+            // greifen kann (TOR sendet dann seine leere Nachricht trotzdem -> Doppelung).
+            // Muss VOR harmony.PatchAll (UsefulTORStuffPlugin) feststehen, da StartMeetingChatPatch
+            // (Fallback) sein Prepare() an TorSuppressReady koppelt.
+            TorSuppressReady = torStartMeetingPrefixMethod != null && ChatRevealReady;
+            if (TorSuppressReady)
+            {
+                harmony.Patch(torStartMeetingPrefixMethod,
+                    prefix: new HarmonyMethod(typeof(SnitchLogic), nameof(TorSnitchSuppressPrefix)),
+                    postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(TorSnitchSuppressPostfix)));
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    "SnitchLogic: deterministische TOR-Snitch-Unterdrückung aktiv (TOR StartMeetingPatch.Prefix umschlossen).");
+            }
+            else
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "SnitchLogic: TOR StartMeetingPatch.Prefix nicht auflösbar — Fallback auf mode-swap-Patch (StartMeetingChatPatch).");
+            }
+
             // Der client-seitige Fix wirkt nur, wenn der Handshake SnitchClientFixActive setzt
             // (alle haben den Mod). Die Reveal-Patches sind angewandt, prüfen das Flag aber zur
             // Laufzeit und fallen sonst auf TORs Originalverhalten zurück.
@@ -205,6 +236,7 @@ public static class SnitchLogic
         mapUtilitiesType = ResolveType(tor, "MapUtilities", "TheOtherRoles.Utilities.MapUtilities");
         playerControlPatchType = ResolveType(tor, "PlayerControlPatch", "TheOtherRoles.Patches.PlayerControlPatch");
         mapBehaviourPatchType = ResolveType(tor, "MapBehaviourPatch", "TheOtherRoles.Patches.MapBehaviourPatch");
+        startMeetingPatchType = ResolveType(tor, "StartMeetingPatch", "TheOtherRoles.Patches.MeetingHudPatch+StartMeetingPatch");
 
         if (snitchType != null)
         {
@@ -246,6 +278,11 @@ public static class SnitchLogic
         mapUtilitiesCachedShipStatusField = ResolveField(mapUtilitiesType, "CachedShipStatus");
         snitchUpdateMethod = ResolveMethod(playerControlPatchType, "snitchUpdate");
         mapBehaviourHerePointsField = ResolveField(mapBehaviourPatchType, "herePoints");
+
+        // TORs eigene StartMeetingPatch.Prefix — Ziel des deterministischen Wraps (prefix/postfix
+        // direkt auf diese Methode, damit der Mode-Swap garantiert genau um TORs synchrones
+        // Snitch.mode-Lesen herum aktiv ist, unabhängig von globaler Patch-Reihenfolge).
+        torStartMeetingPrefixMethod = ResolveMethod(startMeetingPatchType, "Prefix");
     }
 
     // Auflösung mit mehreren Kandidaten plus Fallback-Suche über alle TOR-Typen.
@@ -575,40 +612,120 @@ public static class SnitchLogic
         }
     }
 
+    // ── Gemeinsame Suppression-/Sende-Logik ────────────────────────────────────────────────
+    // Geteilt zwischen dem deterministischen Wrap (TorSnitchSuppress*, prefix/postfix DIREKT auf
+    // TORs StartMeetingPatch.Prefix) und dem Best-Effort-Fallback (StartMeetingChatPatch, mode-swap
+    // auf PlayerControl.StartMeeting). Beide Pfade sind inhaltsgleich; sie unterscheiden sich nur
+    // im Hook-Punkt. Genau einer ist aktiv (Fallback gegated auf !TorSuppressReady).
+
+    // Swappt Snitch.mode auf Map, damit TORs synchroner Reveal-Check (mode != Map) seine eigene
+    // (durch die Reset-Race oft leere) Nachricht NICHT sendet. Gibt true zurück, wenn geswappt
+    // wurde — dann MUSS anschließend RestoreChatModeAndEmit() laufen.
+    private static bool TrySwapChatModeToMap()
+    {
+        // Nur wirksam, wenn alle den Mod haben. Sonst KEIN Mode-Swap → TOR sendet seine eigene
+        // Snitch-Nachricht (und HostFix Fix 4 repariert die Daten per Re-Broadcast).
+        if (!UsefulTORStuffPlugin.SnitchClientFixActive) return false;
+
+        var snitch = GetSnitchPlayer();
+        if (!ShouldRunChatReveal(snitch)) return false;
+
+        chatOriginalMode = GetSnitchMode();
+        if (!IsChatRevealMode(chatOriginalMode)) return false;
+
+        SetSnitchMode(snitchModeMapValue);
+        return true;
+    }
+
+    // Setzt den gemerkten Originalmodus zurück und sendet SnitchLogics eigene Reveal-Nachricht
+    // (die einzige, die der Spieler sehen soll).
+    private static void RestoreChatModeAndEmit()
+    {
+        SetSnitchMode(chatOriginalMode);
+        EmitChatReveal(GetSnitchPlayer());
+    }
+
+    // Baut nach kurzer Verzögerung die "Bad alive roles in game"-Liste aus der EIGENEN roomMap auf
+    // und schickt sie als eine einzige Chat-Nachricht vom Snitch.
+    private static void EmitChatReveal(PlayerControl snitch)
+    {
+        if (!ShouldRunChatReveal(snitch)) return;
+
+        var taskInfo = CallTaskInfo(snitch.Data);
+        int playerCompleted = taskInfo.Item1;
+        int playerTotal = taskInfo.Item2;
+        int numberOfTasks = playerTotal - playerCompleted;
+        if (numberOfTasks != 0) return;
+
+        string output = "Bad alive roles in game: \n \n";
+        var hud = DestroyableSingleton<HudManager>.Instance;
+        if (hud == null) return;
+
+        hud.StartCoroutine(Effects.Lerp(0.4f, new Action<float>(x =>
+        {
+            if (x != 1f) return;
+
+            foreach (PlayerControl player in PlayerControl.AllPlayerControls)
+            {
+                if (!IsSnitchTargetMatch(player)) continue;
+                if (player == null || player.Data == null || player.Data.IsDead) continue;
+
+                // Robust: einen bösen Spieler IMMER listen, auch wenn sein ShareRoom (noch)
+                // nicht in roomMap steht. Der Host sendet sein ShareRoom als Meeting-Autorität
+                // vor allen anderen — geht sein Eintrag verloren, fehlte er bisher KOMPLETT.
+                // Anwesenheit schlägt korrekten Raum: ohne Eintrag fällt der Raum auf
+                // "open fields" (byte.MinValue) zurück, der Spieler erscheint trotzdem.
+                if (!roomMap.TryGetValue(player.PlayerId, out byte room)) room = byte.MinValue;
+
+                var roomName = "open fields";
+                if (room != byte.MinValue)
+                    roomName = DestroyableSingleton<TranslationController>.Instance.GetString((SystemTypes)room);
+
+                output += "- " + CallGetRolesString(player, false, false, true) + ", was last seen " + roomName + "\n";
+            }
+
+            AddChatMessage(snitch, output);
+        })));
+    }
+
+    // Deterministischer Wrap auf TORs StartMeetingPatch.Prefix (installiert in Initialize, wenn
+    // TorSuppressReady). Prefix swappt VOR TORs synchronem mode-Lesen, Postfix setzt zurück und
+    // sendet unsere Nachricht — reihenfolge-unabhängig garantiert.
+    private static void TorSnitchSuppressPrefix()
+    {
+        try { chatModeSwapped = TrySwapChatModeToMap(); }
+        catch (Exception ex)
+        {
+            chatModeSwapped = false;
+            UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic TOR-suppress prefix failed: {ex}");
+        }
+    }
+
+    private static void TorSnitchSuppressPostfix()
+    {
+        if (!chatModeSwapped) return;
+
+        try { RestoreChatModeAndEmit(); }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic TOR-suppress postfix failed: {ex}");
+        }
+        finally { chatModeSwapped = false; }
+    }
+
     [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.StartMeeting))]
     [HarmonyPriority(Priority.High)]
     private static class StartMeetingChatPatch
     {
-        // Patch wird angewandt, sobald die Chat-Reveal-Handles da sind. Ob er tatsächlich
-        // wirkt, entscheidet zur Laufzeit SnitchClientFixActive (alle haben den Mod) — siehe
-        // Prefix/Postfix. So bleibt das Gate pro Spiel umschaltbar (anders als ein Transpiler).
-        public static bool Prepare() => ChatRevealReady;
+        // Best-Effort-Fallback: greift NUR, wenn der deterministische Wrap auf TORs eigene
+        // Prefix-Methode NICHT installiert werden konnte (TorSuppressReady == false). Sonst würde
+        // hier eine zweite, identische Nachricht entstehen (Doppelung). TorSuppressReady steht in
+        // Initialize fest, BEVOR PatchAll dieses Prepare() auswertet.
+        public static bool Prepare() => ChatRevealReady && !TorSuppressReady;
 
         public static void Prefix()
         {
-            // Nur wirksam, wenn alle den Mod haben. Sonst KEIN Mode-Swap → TOR sendet seine
-            // eigene Snitch-Nachricht (und HostFix Fix 4 repariert die Daten per Re-Broadcast).
-            if (!UsefulTORStuffPlugin.SnitchClientFixActive) { chatModeSwapped = false; return; }
-
-            try
-            {
-                var snitch = GetSnitchPlayer();
-                if (!ShouldRunChatReveal(snitch))
-                {
-                    chatModeSwapped = false;
-                    return;
-                }
-
-                chatOriginalMode = GetSnitchMode();
-                if (!IsChatRevealMode(chatOriginalMode))
-                {
-                    chatModeSwapped = false;
-                    return;
-                }
-
-                SetSnitchMode(snitchModeMapValue);
-                chatModeSwapped = true;
-            }
+            try { chatModeSwapped = TrySwapChatModeToMap(); }
             catch (Exception ex)
             {
                 chatModeSwapped = false;
@@ -621,57 +738,12 @@ public static class SnitchLogic
         {
             if (!chatModeSwapped) return;
 
-            try
-            {
-                SetSnitchMode(chatOriginalMode);
-
-                var snitch = GetSnitchPlayer();
-                if (!ShouldRunChatReveal(snitch)) return;
-
-                var taskInfo = CallTaskInfo(snitch.Data);
-                int playerCompleted = taskInfo.Item1;
-                int playerTotal = taskInfo.Item2;
-                int numberOfTasks = playerTotal - playerCompleted;
-                if (numberOfTasks != 0) return;
-
-                string output = "Bad alive roles in game: \n \n";
-                var hud = DestroyableSingleton<HudManager>.Instance;
-                if (hud == null) return;
-
-                hud.StartCoroutine(Effects.Lerp(0.4f, new Action<float>(x =>
-                {
-                    if (x != 1f) return;
-
-                    foreach (PlayerControl player in PlayerControl.AllPlayerControls)
-                    {
-                        if (!IsSnitchTargetMatch(player)) continue;
-                        if (player == null || player.Data == null || player.Data.IsDead) continue;
-
-                        // Robust: einen bösen Spieler IMMER listen, auch wenn sein ShareRoom (noch)
-                        // nicht in roomMap steht. Der Host sendet sein ShareRoom als Meeting-Autorität
-                        // vor allen anderen — geht sein Eintrag verloren, fehlte er bisher KOMPLETT.
-                        // Anwesenheit schlägt korrekten Raum: ohne Eintrag fällt der Raum auf
-                        // "open fields" (byte.MinValue) zurück, der Spieler erscheint trotzdem.
-                        if (!roomMap.TryGetValue(player.PlayerId, out byte room)) room = byte.MinValue;
-
-                        var roomName = "open fields";
-                        if (room != byte.MinValue)
-                            roomName = DestroyableSingleton<TranslationController>.Instance.GetString((SystemTypes)room);
-
-                        output += "- " + CallGetRolesString(player, false, false, true) + ", was last seen " + roomName + "\n";
-                    }
-
-                    AddChatMessage(snitch, output);
-                })));
-            }
+            try { RestoreChatModeAndEmit(); }
             catch (Exception ex)
             {
                 UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic chat postfix failed: {ex}");
             }
-            finally
-            {
-                chatModeSwapped = false;
-            }
+            finally { chatModeSwapped = false; }
         }
     }
 
