@@ -200,11 +200,10 @@ namespace UsefulTORStuff {
                 }
 
                 if (UsefulTORStuffPlugin.SnitchClientFixActive) {
-                    // All players have the mod AND the client-side Snitch fix is locally ready — show
-                    // the active-fix confirmation top-left. Also posted once to chat at game start.
-                    DrawTopLeftMessage(__instance, text,
-                        $"<color=#3FCF4AFF>Snitch client-side fix active — all players have Useful TOR Stuff v{UsefulTORStuffPlugin.PluginVersion}.</color>",
-                        "Snitch");
+                    // All players have the mod AND the client-side Snitch fix is locally ready —
+                    // no lobby message. The active-fix confirmation is posted once to chat at game
+                    // start (IntroEndChatPatch); the top-left lobby text is intentionally omitted so
+                    // a Snitch lobby message only ever appears host-only when something is wrong.
                 } else if (everyone) {
                     // Everyone has the mod, but the client-side fix is NOT locally ready here (TOR
                     // version drift → missing reflection handles). The client fix is NOT active, so the
