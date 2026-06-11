@@ -22,6 +22,11 @@ property of Innersloth LLC. © Innersloth LLC.
 - **Sheriff "prevents killer parity win"** — host-enforced option that can stop the impostors from
   winning on parity while a Sheriff is alive. Always applies when enabled (host-authoritative); the
   host is warned in the lobby if not everyone has the mod.
+- **Meeting duration override** — host-authoritative "TOR Settings" option that overrides the
+  meeting timer from the alive/dead counts at meeting start. Separate formulas for the discussion and
+  voting phases (`Base + alive × per-alive − dead × per-dead`, min 0s); the host syncs the result so
+  it applies to everyone, even clients without the mod. The host's configured times are restored when
+  the game ends.
 - **Mod Manager** — an in-game UI listing the installed companion mods, their versions, update
   status, and per-mod enable/disable toggles. Asset-cached so repeatedly opening it / toggling no
   longer leaks textures, sprites, or materials (1.0.1). Since 1.1.0 it also has an **Update All**
@@ -44,6 +49,18 @@ Sheriff options appear in TOR's role-options UI under Sheriff:
 |---|---|---|
 | Sheriff Prevents Killer Parity Win | Off | Host-enforced; applies to everyone when on |
 | ↳ Scope | At Exact Parity Only | or "Always While Sheriff Alive" |
+
+Meeting-duration options appear in the **TOR Settings** tab (host-enforced; synced to everyone when on):
+
+| Option | Default | Notes |
+|---|---|---|
+| Override Meeting Duration | Off | Master toggle |
+| ↳ Discussion Base Time | 15 | seconds |
+| ↳ Discussion Per Alive Player | 0 | seconds added per alive player |
+| ↳ Discussion Reduction Per Dead Player | 0 | seconds removed per dead player |
+| ↳ Voting Base Time | 30 | seconds |
+| ↳ Voting Per Alive Player | 0 | seconds added per alive player |
+| ↳ Voting Reduction Per Dead Player | 0 | seconds removed per dead player |
 
 ### Configuration (BepInEx config)
 

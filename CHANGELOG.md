@@ -1,5 +1,18 @@
 # Changelog — Useful TOR Stuff
 
+## Unreleased
+
+### Features
+- **Meeting Duration Override (TOR Settings).** New host-authoritative option that overrides the
+  meeting timer from the alive/dead player counts at meeting start. A master toggle plus two
+  independent formulas — one for the discussion phase, one for the voting phase — each computed as
+  `Base + aliveCount × PerAlivePlayer − deadCount × ReductionPerDeadPlayer`, clamped to a hard
+  minimum of 0s. On the host, `MeetingHud.Start` writes the results into the vanilla
+  `DiscussionTime`/`VotingTime` and `SyncOptions()`s them, so the override applies to every client
+  regardless of who has the mod (not mod-gated). The host's configured discussion/voting times are
+  snapshotted once per game and restored on `AmongUsClient.OnGameEnd` so the lobby settings don't
+  drift. New file `MeetingDurationOverride.cs`; options 1210–1216.
+
 ## 1.1.0
 
 Adds the two approved features (F1, F2) on top of the 1.0.1 fix base. No wire-format changes

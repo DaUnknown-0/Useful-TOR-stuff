@@ -115,6 +115,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         SheriffParityWin.CreateOptions();
         SheriffParityWin.TryPatch(harmony);
 
+        // Meeting-duration override option (TOR Settings tab). Its MeetingHud.Start / OnGameEnd
+        // patches are attribute-based and picked up by PatchAll below; only the options need
+        // explicit creation, after TOR's CustomOptionHolder.Load().
+        MeetingDurationOverride.CreateOptions();
+
         // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.
