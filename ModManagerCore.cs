@@ -19,6 +19,10 @@ namespace UsefulTORStuff
         public Color ButtonColor;
         public Func<bool> HasUpdate;
         public Action TriggerUpdate;
+        // F2: Liefert die rohen Release-Notes (GitHub-`body`) der neuesten Version, oder null wenn
+        // der Updater diese Methode (noch) nicht hat (ältere installierte Version → Notes werden
+        // dann im UI ausgeblendet statt zu scheitern).
+        public Func<string> GetReleaseNotes;
         // Stößt einen erneuten GitHub-Release-Check an (beim Öffnen des Mod Managers).
         public Action TriggerCheck;
         // Download-Zustand für die Mod-Manager-Anzeige.
@@ -242,6 +246,12 @@ namespace UsefulTORStuff
                         var method = type?.GetMethod("TriggerCheckFromManager");
                         method?.Invoke(instance, null);
                     };
+                    modInfo.GetReleaseNotes = () => {
+                        var type = Type.GetType("TOR_ChanceModifier.ChanceModUpdater, TOR-ChanceModifier");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var method = type?.GetMethod("GetReleaseNotes");   // F2: probe — null on older installs
+                        return instance != null && method != null ? method.Invoke(instance, null) as string : null;
+                    };
                 }
                 else if (modInfo.Guid == "com.trackerteam.hostfix")
                 {
@@ -281,6 +291,12 @@ namespace UsefulTORStuff
                         var method = type?.GetMethod("TriggerCheckFromManager");
                         method?.Invoke(instance, null);
                     };
+                    modInfo.GetReleaseNotes = () => {
+                        var type = Type.GetType("HostFixPlugin.HostFixUpdater, HostFixPlugin");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var method = type?.GetMethod("GetReleaseNotes");   // F2: probe — null on older installs
+                        return instance != null && method != null ? method.Invoke(instance, null) as string : null;
+                    };
                 }
                 else if (modInfo.Guid == "com.tormod.usefultorstuff")
                 {
@@ -290,6 +306,7 @@ namespace UsefulTORStuff
                     modInfo.GetUpdateProgress = () => UsefulTORStuffUpdater.Instance?.GetUpdateProgress() ?? 0f;
                     modInfo.GetCheckCompleted = () => UsefulTORStuffUpdater.Instance?.GetCheckCompleted() ?? false;
                     modInfo.TriggerCheck = () => UsefulTORStuffUpdater.Instance?.TriggerCheckFromManager();
+                    modInfo.GetReleaseNotes = () => UsefulTORStuffUpdater.Instance?.GetReleaseNotes();
                 }
             }
             catch (Exception ex)

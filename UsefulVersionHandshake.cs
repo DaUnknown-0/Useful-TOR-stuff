@@ -6,6 +6,7 @@ using System;
 using System.Linq;
 using System.Reflection;
 using System.Collections.Generic;
+using System.Text;
 using HarmonyLib;
 using Hazel;
 using UnityEngine;
@@ -131,6 +132,118 @@ namespace UsefulTORStuff {
             return message;
         }
 
+        // --- F1: Cross-mod lobby handshake board (presentation-layer merge) ---
+        // Same documented AppDomain contract as ChanceVersionHandshake (plain strings /
+        // Dictionary<int,string> only):
+        //   TORMods.Handshake.Registry        → comma-separated guids that have published
+        //   TORMods.Handshake.{guid}.name     → short display name
+        //   TORMods.Handshake.{guid}.status   → Dictionary<int,string>: clientId → "codeversion"
+        //                                       code ∈ ok | old | new | mod ; missing clients omitted
+        // UsefulTORStuff is the OWNER of the combined per-player overview when it is loaded. The wire
+        // format (RPC 253) is untouched; this is a rendering merge only. Host-only by default.
+        private const string HandshakeRegistryKey = "TORMods.Handshake.Registry";
+        private const string HandshakeKeyPrefix = "TORMods.Handshake.";
+        private const string UsefulGuid = "com.tormod.usefultorstuff";
+        private const string ChanceGuid = "com.tormod.chancemodifier";
+        private const char StatusSep = '';
+
+        // Single switch for visibility. Default = current behaviour (host-side warnings only).
+        private const bool ShowToAllPlayers = false;
+
+        private static void PublishSnapshot() {
+            try {
+                if (AmongUsClient.Instance == null) return;
+                var status = new Dictionary<int, string>();
+                foreach (var kv in playerVersions) {
+                    PlayerVersion pv = kv.Value;
+                    string code;
+                    int diff = UsefulTORStuffPlugin.Version.CompareTo(pv.version);
+                    if (diff > 0) code = "old";
+                    else if (diff < 0) code = "new";
+                    else code = pv.GuidMatches() ? "ok" : "mod";
+                    status[kv.Key] = code + StatusSep + pv.version;
+                }
+                AppDomain.CurrentDomain.SetData(HandshakeKeyPrefix + UsefulGuid + ".name", "Useful");
+                AppDomain.CurrentDomain.SetData(HandshakeKeyPrefix + UsefulGuid + ".status", status);
+                var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
+                if (!reg.Split(',').Contains(UsefulGuid))
+                    AppDomain.CurrentDomain.SetData(HandshakeRegistryKey, reg == "" ? UsefulGuid : reg + "," + UsefulGuid);
+            } catch (Exception ex) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"Handshake snapshot publish failed: {ex.Message}");
+            }
+        }
+
+        // True when the Chance mod is loaded (so the combined overview must include its column).
+        private static bool ChancePresent() =>
+            AppDomain.CurrentDomain.GetData("ModManager.RegisteredMod." + ChanceGuid) != null;
+
+        // Builds the combined "Mod-Check" overview from every published handshake snapshot. Sets
+        // anyWarn = true if any player is missing/mismatched for any present mod. Returns "" only on
+        // error/no data; the all-match case returns a single green confirmation line.
+        private static string BuildCombinedModCheck(out bool anyWarn) {
+            anyWarn = false;
+            if (AmongUsClient.Instance == null) return "";
+
+            var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
+            var guids = reg.Split(',').Where(g => g.Length > 0).Distinct().OrderBy(g => g).ToList();
+            if (guids.Count == 0) return "";
+
+            // Resolve each mod's name + status dict once.
+            var names = new Dictionary<string, string>();
+            var stats = new Dictionary<string, Dictionary<int, string>>();
+            foreach (var g in guids) {
+                names[g] = AppDomain.CurrentDomain.GetData(HandshakeKeyPrefix + g + ".name") as string ?? g;
+                stats[g] = AppDomain.CurrentDomain.GetData(HandshakeKeyPrefix + g + ".status") as Dictionary<int, string>
+                           ?? new Dictionary<int, string>();
+            }
+
+            var sb = new StringBuilder();
+            foreach (InnerNet.ClientData client in AmongUsClient.Instance.allClients.ToArray()) {
+                if (client == null || client.Character == null) continue;
+                string name = client.Character.Data.PlayerName;
+                var segments = new List<string>();
+                foreach (var g in guids) {
+                    string label = names[g];
+                    if (stats[g].TryGetValue(client.Id, out string token)) {
+                        int sep = token.IndexOf(StatusSep);
+                        string code = sep >= 0 ? token.Substring(0, sep) : token;
+                        string ver = sep >= 0 ? token.Substring(sep + 1) : "?";
+                        if (code == "ok") {
+                            segments.Add($"<color=#3FCF4AFF>{label} {ver} ✓</color>");
+                        } else if (code == "mod") {
+                            anyWarn = true;
+                            segments.Add($"<color=#FF0000FF>{label} {ver} (modified)</color>");
+                        } else {
+                            anyWarn = true;
+                            segments.Add($"<color=#FF0000FF>{label} {ver} ✗</color>");
+                        }
+                    } else {
+                        anyWarn = true;
+                        segments.Add($"<color=#AAAAAAFF>{label} — missing</color>");
+                    }
+                }
+                sb.Append($"<color=#FFFFFFFF>{name}</color>  ");
+                sb.Append(string.Join(" <color=#888888FF>|</color> ", segments));
+                sb.Append("\n");
+            }
+
+            if (!anyWarn)
+                return "<color=#3FCF4AFF>Mod-Check: all players match ✓</color>";
+
+            return "<color=#FFD700FF>Mod-Check:</color>\n" + sb.ToString();
+        }
+
+        // P1.5: Beim Betreten einer Lobby den Versions-Cache leeren. ClientIds sind
+        // verbindungsskopiert, sodass alte Einträge sonst nur leaken — das Dictionary soll aber
+        // ausschließlich die aktuelle Lobby widerspiegeln.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class OnGameJoinedPatch {
+            public static void Postfix() {
+                playerVersions.Clear();
+                versionSent = false;
+            }
+        }
+
         // Re-share whenever someone joins, so late joiners learn everyone's version (and vice versa).
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnPlayerJoined))]
         static class OnPlayerJoinedPatch {
@@ -159,6 +272,10 @@ namespace UsefulTORStuff {
                 }
 
                 if (AmongUsClient.Instance == null) return;
+
+                // F1: publish our own snapshot every lobby frame so the combined overview (which we
+                // own) and any future renderer can read it uniformly.
+                PublishSnapshot();
 
                 // Re-arm the chat post each lobby frame so it fires once per started game (the actual
                 // post happens at game start in IntroEndChatPatch, after this stops running).
@@ -199,6 +316,16 @@ namespace UsefulTORStuff {
                         "Sheriff Prevents Killer Parity Win");
                 }
 
+                // F1: when the Chance mod is also present we OWN the combined per-player overview —
+                // draw it here (host-only unless ShowToAllPlayers). It replaces BOTH mods' standalone
+                // version lists; Chance suppresses its own block while we are loaded.
+                bool chancePresent = ChancePresent();
+                if (chancePresent && (ShowToAllPlayers || AmongUsClient.Instance.AmHost)) {
+                    string combined = BuildCombinedModCheck(out _);
+                    if (combined != "")
+                        DrawTopLeftMessage(__instance, text, combined, "Mod-Check:");
+                }
+
                 if (UsefulTORStuffPlugin.SnitchClientFixActive) {
                     // All players have the mod AND the client-side Snitch fix is locally ready —
                     // no lobby message. The active-fix confirmation is posted once to chat at game
@@ -218,8 +345,12 @@ namespace UsefulTORStuff {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.
                     // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).
                     if (!AmongUsClient.Instance.AmHost) return;
+                    // F1: when Chance is present the combined Mod-Check block above already lists the
+                    // per-player versions, so drop the standalone mismatch prefix and show only the
+                    // fallback note. Otherwise keep the full standalone list (single-mod install).
+                    string prefix = chancePresent ? "" : mismatch;
                     DrawTopLeftMessage(__instance, text,
-                        mismatch + "<color=#FFA500FF>The game can still be started, but the snitch bug " +
+                        prefix + "<color=#FFA500FF>The game can still be started, but the snitch bug " +
                         "may still occur (fallback: Host Fix re-broadcast).</color>",
                         "fallback: Host Fix");
                 }

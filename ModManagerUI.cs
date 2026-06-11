@@ -6,6 +6,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using BepInEx.Unity.IL2CPP.Utils;
 using UnityEngine;
 using UnityEngine.UI;
@@ -23,6 +24,27 @@ namespace UsefulTORStuff
 
         private GameObject _popup;
 
+        // P1.2: Wiederverwendbarer 1×1-Solid-Color-Sprite-Cache + einmalig erzeugtes Overlay-
+        // Material. Vorher erzeugte jedes Show() und jeder Toggle-Klick frische Texture2D/Sprite/
+        // Material-Assets, die nie freigegeben wurden (Destroy(_popup) gibt Assets NICHT frei,
+        // da Texturen/Sprites Assets und keine Kinder sind) → GPU/CPU-Leak über die ganze Session.
+        // Diese Sprites leben prozessweit (DontDestroyOnLoad) und werden überall geteilt.
+        private static readonly Dictionary<Color, Sprite> _solidSprites = new Dictionary<Color, Sprite>();
+        private static Material _overlayMaterial;
+
+        private static Sprite GetSolidSprite(Color color)
+        {
+            if (_solidSprites.TryGetValue(color, out var cached) && cached != null) return cached;
+            var tex = new Texture2D(1, 1);
+            tex.SetPixel(0, 0, color);
+            tex.Apply();
+            var sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            UnityEngine.Object.DontDestroyOnLoad(tex);
+            UnityEngine.Object.DontDestroyOnLoad(sprite);
+            _solidSprites[color] = sprite;
+            return sprite;
+        }
+
         // Referenzen pro Mod-Zeile, damit die Polling-Coroutine den Download-Zustand live
         // aktualisieren kann (Fortschritt, "Restart required", Fehler) ohne Neuaufbau.
         private class ModEntryRefs
@@ -37,6 +59,44 @@ namespace UsefulTORStuff
         }
 
         private readonly List<ModEntryRefs> _entryRefs = new List<ModEntryRefs>();
+
+        // F2: "Update All" läuft sequentiell (die Updater sind Single-_busy-Automaten — nicht
+        // parallelisieren). Header-Button + Summary-Text.
+        private bool _updateAllRunning;
+        private GameObject _updateAllButton;
+        private TMPro.TextMeshProUGUI _updateAllButtonText;
+        private TMPro.TextMeshProUGUI _headerSummaryText;
+
+        // F2: Release-Notes für die Anzeige aufbereiten — crude Markdown-Strip auf die ersten
+        // ~10 Zeilen / ~600 Zeichen, mit "…" bei Kürzung. Neutralisiert TMP-Rich-Text, damit die
+        // Notes keine Tags ins Label injizieren können. Liefert "" wenn nichts anzuzeigen ist.
+        private static string StripAndTruncateNotes(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw)) return "";
+            var srcLines = raw.Replace("\r\n", "\n").Replace("\r", "\n").Split('\n');
+            var outLines = new List<string>();
+            foreach (var lineRaw in srcLines)
+            {
+                string line = lineRaw.Trim();
+                line = Regex.Replace(line, @"^#{1,6}\s*", "");        // ## Heading → Heading
+                line = Regex.Replace(line, @"^[\*\-\+]\s+", "• ");      // - item → • item
+                line = Regex.Replace(line, @"\[([^\]]+)\]\([^\)]*\)", "$1"); // [text](url) → text
+                line = line.Replace("**", "").Replace("__", "").Replace("`", "");
+                outLines.Add(line);
+            }
+            string joined = string.Join("\n", outLines).Trim();
+            if (joined.Length == 0) return "";
+
+            bool truncated = false;
+            var keep = joined.Split('\n');
+            if (keep.Length > 10) { joined = string.Join("\n", keep.Take(10)); truncated = true; }
+            if (joined.Length > 600) { joined = joined.Substring(0, 600).TrimEnd(); truncated = true; }
+
+            // TMP-Tags neutralisieren: ein Zero-Width-Space hinter '<' verhindert Tag-Parsing.
+            joined = joined.Replace("<", "<​");
+            if (truncated) joined += " …";
+            return joined;
+        }
 
         public void Awake()
         {
@@ -119,6 +179,13 @@ namespace UsefulTORStuff
         private List<GameObject> _hiddenObjects = new List<GameObject>();
         private List<PassiveButton> _disabledButtons = new List<PassiveButton>();
 
+        // P2.5: HEURISTIK, KEINE exakte Auswahl. Versteckt JEDES Objekt, dessen Name
+        // "update"/"button"/"popup"/"dialog"/"confirm" enthält, um Hintergrund-UI hinter dem
+        // Mod Manager zu deaktivieren; alles wird in EnableBackgroundUI() beim Schließen
+        // wiederhergestellt. Achtung für künftige Maintainer: benennt das Spiel/TOR Elemente um
+        // oder kollidieren neue Namen mit diesen Substrings, kann zu viel/zu wenig versteckt
+        // werden. Objekte unter _popup werden hier explizit ausgenommen, damit der Manager sich
+        // nie selbst deaktiviert.
         private void DisableBackgroundUI()
         {
             _hiddenObjects.Clear();
@@ -136,6 +203,8 @@ namespace UsefulTORStuff
                         var allChildren = canvas.GetComponentsInChildren<Transform>(true);
                         foreach (var child in allChildren)
                         {
+                            // Niemals etwas unter unserem eigenen Popup verstecken.
+                            if (_popup != null && child.IsChildOf(_popup.transform)) continue;
                             if (child.gameObject.activeInHierarchy &&
                                 (child.name.ToLower().Contains("update") ||
                                  child.name.ToLower().Contains("button") ||
@@ -209,14 +278,16 @@ namespace UsefulTORStuff
 
             // Use CanvasRenderer for a simple colored quad
             var canvasRenderer = overlay.AddComponent<CanvasRenderer>();
-            var texture = new Texture2D(1, 1);
-            texture.SetPixel(0, 0, new Color(0, 0, 0, 0.85f));
-            texture.Apply();
+            // P1.2: geteilte Textur aus dem Sprite-Cache + einmalig erzeugtes Material.
+            var texture = GetSolidSprite(new Color(0, 0, 0, 0.85f)).texture;
+            if (_overlayMaterial == null)
+            {
+                _overlayMaterial = new Material(Shader.Find("UI/Default"));
+                UnityEngine.Object.DontDestroyOnLoad(_overlayMaterial);
+            }
+            _overlayMaterial.mainTexture = texture;
 
-            var material = new Material(Shader.Find("UI/Default"));
-            material.mainTexture = texture;
-
-            canvasRenderer.SetMaterial(material, texture);
+            canvasRenderer.SetMaterial(_overlayMaterial, texture);
             canvasRenderer.SetColor(Color.white);
 
             // Click to close
@@ -239,13 +310,13 @@ namespace UsefulTORStuff
 
             // Panel background
             var panelBg = panel.AddComponent<UnityEngine.UI.Image>();
-            var bgTexture = new Texture2D(1, 1);
-            bgTexture.SetPixel(0, 0, new Color(0.1f, 0.1f, 0.15f, 0.98f));
-            bgTexture.Apply();
-            panelBg.sprite = Sprite.Create(bgTexture, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            panelBg.sprite = GetSolidSprite(new Color(0.1f, 0.1f, 0.15f, 0.98f));
 
             // Title
             CreateTitle(panel);
+
+            // F2: "Update All" header button + summary line.
+            CreateUpdateAllButton(panel);
 
             // Content
             CreateContent(panel);
@@ -274,6 +345,135 @@ namespace UsefulTORStuff
             titleText.fontStyle = TMPro.FontStyles.Bold;
             titleText.alignment = TMPro.TextAlignmentOptions.Center;
             titleText.color = new Color(0.3f, 0.7f, 1f);
+        }
+
+        // F2: "Update All" header button (top-left) + a summary line. The button is enabled only
+        // when ≥1 registered mod reports an available update; clicking it runs the per-mod downloads
+        // sequentially (the updaters are single-_busy state machines).
+        private void CreateUpdateAllButton(GameObject parent)
+        {
+            var button = new GameObject("UpdateAllButton");
+            button.transform.SetParent(parent.transform, false);
+            var btnRect = button.AddComponent<RectTransform>();
+            btnRect.anchorMin = new Vector2(0, 1);
+            btnRect.anchorMax = new Vector2(0, 1);
+            btnRect.pivot = new Vector2(0, 1);
+            btnRect.anchoredPosition = new Vector2(20, -18);
+            btnRect.sizeDelta = new Vector2(170, 34);
+
+            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
+            btnBg.sprite = GetSolidSprite(new Color(0.2f, 0.6f, 1f, 0.9f));
+
+            var btnTextObj = new GameObject("Text");
+            btnTextObj.transform.SetParent(button.transform, false);
+            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
+            btnTextRect.anchorMin = Vector2.zero;
+            btnTextRect.anchorMax = Vector2.one;
+            btnTextRect.sizeDelta = Vector2.zero;
+            _updateAllButtonText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
+            _updateAllButtonText.text = "UPDATE ALL";
+            _updateAllButtonText.fontSize = 15;
+            _updateAllButtonText.fontStyle = TMPro.FontStyles.Bold;
+            _updateAllButtonText.alignment = TMPro.TextAlignmentOptions.Center;
+            _updateAllButtonText.color = Color.white;
+
+            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
+            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
+                if (_updateAllRunning) return;
+                this.StartCoroutine(CoUpdateAll());
+            }));
+            _updateAllButton = button;
+
+            // Summary line under the title.
+            var sumObj = new GameObject("UpdateAllSummary");
+            sumObj.transform.SetParent(parent.transform, false);
+            var sumRect = sumObj.AddComponent<RectTransform>();
+            sumRect.anchorMin = new Vector2(0, 1);
+            sumRect.anchorMax = new Vector2(1, 1);
+            sumRect.pivot = new Vector2(0.5f, 1);
+            sumRect.anchoredPosition = new Vector2(0, -56);
+            sumRect.sizeDelta = new Vector2(-40, 22);
+            _headerSummaryText = sumObj.AddComponent<TMPro.TextMeshProUGUI>();
+            _headerSummaryText.text = "";
+            _headerSummaryText.fontSize = 15;
+            _headerSummaryText.alignment = TMPro.TextAlignmentOptions.Center;
+            _headerSummaryText.color = new Color(1f, 1f, 0.6f);
+
+            RefreshUpdateAllButton();
+        }
+
+        // Enables the "Update All" button only when ≥1 mod has an update (and not mid-run).
+        private void RefreshUpdateAllButton()
+        {
+            if (_updateAllButton == null) return;
+            bool any = false;
+            try { any = ModManagerRegistry.GetAllMods().Any(m => { try { return m.RuntimeEnabled && (m.HasUpdate?.Invoke() ?? false); } catch { return false; } }); }
+            catch { }
+            var b = _updateAllButton.GetComponent<UnityEngine.UI.Button>();
+            if (b != null) b.interactable = any && !_updateAllRunning;
+            if (_updateAllButtonText != null)
+                _updateAllButtonText.color = (any && !_updateAllRunning) ? Color.white : new Color(0.6f, 0.6f, 0.6f);
+        }
+
+        // F2: download every updatable mod's release SEQUENTIALLY, then show one summary line. Each
+        // updater is a single-_busy state machine, so we wait for one to finish (state 2/3) before
+        // starting the next. Resilient: a mod whose check/download failed is counted and skipped.
+        private IEnumerator CoUpdateAll()
+        {
+            if (_updateAllRunning) yield break;
+            _updateAllRunning = true;
+            RefreshUpdateAllButton();
+            if (_updateAllButtonText != null) _updateAllButtonText.text = "UPDATING…";
+
+            int updated = 0, failed = 0;
+            List<ModInfo> mods;
+            try { mods = ModManagerRegistry.GetAllMods(); }
+            catch { mods = new List<ModInfo>(); }
+
+            foreach (var mod in mods)
+            {
+                bool has = false;
+                try { has = mod.RuntimeEnabled && (mod.HasUpdate?.Invoke() ?? false); } catch { }
+                if (!has || mod.TriggerUpdate == null || mod.GetUpdateState == null) continue;
+
+                // Already-succeeded mod (state 2) from a previous per-entry click: count, don't re-run.
+                int pre = 0; try { pre = mod.GetUpdateState(); } catch { }
+                if (pre == 2) { updated++; continue; }
+
+                try { mod.TriggerUpdate(); }
+                catch (Exception ex)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"Update All: trigger failed for {mod.Name}: {ex.Message}");
+                    failed++;
+                    continue;
+                }
+
+                // Wait for this mod to reach success (2) or error (3), up to a timeout.
+                float timeout = 90f;
+                int state = 0;
+                while (timeout > 0f)
+                {
+                    try { state = mod.GetUpdateState?.Invoke() ?? 0; } catch { state = 3; }
+                    if (state == 2 || state == 3) break;
+                    timeout -= Time.deltaTime;
+                    yield return null;
+                }
+                if (state == 2) updated++;
+                else failed++;
+            }
+
+            _updateAllRunning = false;
+            if (_headerSummaryText != null)
+            {
+                if (updated == 0 && failed == 0)
+                    _headerSummaryText.text = "Nothing to update";
+                else
+                    _headerSummaryText.text = failed == 0
+                        ? $"{updated} updated — restart required"
+                        : $"{updated} updated, {failed} failed — restart required";
+            }
+            if (_updateAllButtonText != null) _updateAllButtonText.text = "UPDATE ALL";
+            RefreshUpdateAllButton();
         }
 
         // Breite des Scrollbalken-Streifens rechts (Spur + Abstand). Der Viewport wird um
@@ -408,10 +608,7 @@ namespace UsefulTORStuff
 
             // Background
             var bg = entry.AddComponent<UnityEngine.UI.Image>();
-            var bgTex = new Texture2D(1, 1);
-            bgTex.SetPixel(0, 0, runtimeEnabled ? new Color(0.15f, 0.2f, 0.15f, 0.8f) : new Color(0.2f, 0.15f, 0.15f, 0.6f));
-            bgTex.Apply();
-            bg.sprite = Sprite.Create(bgTex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            bg.sprite = GetSolidSprite(runtimeEnabled ? new Color(0.15f, 0.2f, 0.15f, 0.8f) : new Color(0.2f, 0.15f, 0.15f, 0.6f));
 
             // Mod name + version
             var nameObj = new GameObject("Name");
@@ -462,6 +659,44 @@ namespace UsefulTORStuff
             // Status-Text und Update-Button sofort in den korrekten Zustand bringen.
             RefreshEntry(refs);
 
+            // F2: Release-Notes der neuesten Version anzeigen, wenn ein Update verfügbar ist und der
+            // Updater die Notes liefert (ältere installierte Updater haben GetReleaseNotes nicht →
+            // dann einfach ausgeblendet statt Fehler). Notes kommen aus dem bereits geladenen JSON.
+            float notesHeight = 0f;
+            bool updateAvail = false;
+            try { updateAvail = mod.HasUpdate?.Invoke() ?? false; } catch { }
+            if (updateAvail && mod.GetReleaseNotes != null)
+            {
+                string rawNotes = null;
+                try { rawNotes = mod.GetReleaseNotes(); } catch { }
+                string notes = StripAndTruncateNotes(rawNotes);
+                if (notes.Length > 0)
+                {
+                    int lineCount = notes.Split('\n').Length;
+                    notesHeight = Mathf.Clamp(lineCount * 18f + 26f, 50f, 200f);
+
+                    var notesObj = new GameObject("ReleaseNotes");
+                    notesObj.transform.SetParent(entry.transform, false);
+                    var notesRect = notesObj.AddComponent<RectTransform>();
+                    notesRect.anchorMin = new Vector2(0, 1);
+                    notesRect.anchorMax = new Vector2(1, 1);
+                    notesRect.pivot = new Vector2(0, 1);
+                    notesRect.anchoredPosition = new Vector2(15, -72);
+                    notesRect.sizeDelta = new Vector2(-30, notesHeight);
+
+                    var notesText = notesObj.AddComponent<TMPro.TextMeshProUGUI>();
+                    notesText.text = "<b>What's new:</b>\n" + notes;
+                    notesText.fontSize = 13;
+                    notesText.color = new Color(0.82f, 0.82f, 0.86f);
+                    notesText.alignment = TMPro.TextAlignmentOptions.TopLeft;
+                    notesText.enableWordWrapping = true;
+                    notesText.overflowMode = TMPro.TextOverflowModes.Truncate;
+                }
+            }
+            // Entry-Höhe an die Notes anpassen (Basis 140); repo/guid sind bodengeankert und
+            // rutschen mit der neuen Unterkante mit.
+            entryRect.sizeDelta = new Vector2(-20, 140 + notesHeight);
+
             // GitHub link button — nur fuer Mods mit hinterlegtem Repository.
             // Lokale Mods (kein GitHub) bekommen keinen "Open GitHub"-Button.
             if (HasRepository(mod))
@@ -500,7 +735,7 @@ namespace UsefulTORStuff
             guidText.fontSize = 12;
             guidText.color = new Color(0.5f, 0.5f, 0.5f);
 
-            return yPos - 150;
+            return yPos - (150 + notesHeight);
         }
 
         private void CreateToggleButton(GameObject parent, ModInfo mod, bool runtimeEnabled, bool configEnabled)
@@ -520,13 +755,10 @@ namespace UsefulTORStuff
 
             // Button background
             var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            var btnTex = new Texture2D(1, 1);
             // Ausstehende Änderung → orangefarbener Warn-Hintergrund, sonst grün/rot je nach Config.
             Color bgColor = pendingChange ? new Color(1f, 0.6f, 0f, 0.9f)
                 : (configEnabled ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f));
-            btnTex.SetPixel(0, 0, bgColor);
-            btnTex.Apply();
-            btnBg.sprite = Sprite.Create(btnTex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            btnBg.sprite = GetSolidSprite(bgColor);
 
             // Button text
             var btnTextObj = new GameObject("Text");
@@ -570,10 +802,7 @@ namespace UsefulTORStuff
                             btnText.fontSize = 12;
                             btnText.color = new Color(1f, 1f, 0.5f);
 
-                            var warningTex = new Texture2D(1, 1);
-                            warningTex.SetPixel(0, 0, new Color(1f, 0.6f, 0f, 0.9f));
-                            warningTex.Apply();
-                            btnBg.sprite = Sprite.Create(warningTex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+                            btnBg.sprite = GetSolidSprite(new Color(1f, 0.6f, 0f, 0.9f));
                         }
                         else
                         {
@@ -582,11 +811,8 @@ namespace UsefulTORStuff
                             btnText.fontSize = 14;
                             btnText.color = Color.white;
 
-                            var normalTex = new Texture2D(1, 1);
                             Color normalColor = newValue ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f);
-                            normalTex.SetPixel(0, 0, normalColor);
-                            normalTex.Apply();
-                            btnBg.sprite = Sprite.Create(normalTex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+                            btnBg.sprite = GetSolidSprite(normalColor);
                         }
 
                         // Always save the config
@@ -641,10 +867,7 @@ namespace UsefulTORStuff
             void Apply(bool on)
             {
                 btnText.text = $"{label}: {(on ? "ON" : "OFF")}";
-                var tex = new Texture2D(1, 1);
-                tex.SetPixel(0, 0, on ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f));
-                tex.Apply();
-                btnBg.sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+                btnBg.sprite = GetSolidSprite(on ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f));
             }
 
             Apply(mod.ExtraToggle.Value);
@@ -682,10 +905,7 @@ namespace UsefulTORStuff
 
             // Button background
             var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            var btnTex = new Texture2D(1, 1);
-            btnTex.SetPixel(0, 0, new Color(0.2f, 0.6f, 1f, 0.9f));
-            btnTex.Apply();
-            btnBg.sprite = Sprite.Create(btnTex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            btnBg.sprite = GetSolidSprite(new Color(0.2f, 0.6f, 1f, 0.9f));
 
             // Button text
             var btnTextObj = new GameObject("Text");
@@ -831,6 +1051,9 @@ namespace UsefulTORStuff
                     RefreshEntry(r);
                 }
 
+                // F2: keep the "Update All" button's enabled state in sync as checks complete.
+                if (!_updateAllRunning) RefreshUpdateAllButton();
+
                 yield return new WaitForSeconds(0.25f);
             }
         }
@@ -857,10 +1080,7 @@ namespace UsefulTORStuff
 
             // Button background
             var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            var btnTex = new Texture2D(1, 1);
-            btnTex.SetPixel(0, 0, new Color(0.3f, 0.3f, 0.35f, 0.9f));
-            btnTex.Apply();
-            btnBg.sprite = Sprite.Create(btnTex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            btnBg.sprite = GetSolidSprite(new Color(0.3f, 0.3f, 0.35f, 0.9f));
 
             // Button text
             var btnTextObj = new GameObject("Text");
@@ -907,10 +1127,7 @@ namespace UsefulTORStuff
 
             // Button background
             var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            var btnTex = new Texture2D(1, 1);
-            btnTex.SetPixel(0, 0, new Color(0.8f, 0.2f, 0.2f, 0.9f));
-            btnTex.Apply();
-            btnBg.sprite = Sprite.Create(btnTex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+            btnBg.sprite = GetSolidSprite(new Color(0.8f, 0.2f, 0.2f, 0.9f));
 
             // Button text
             var btnTextObj = new GameObject("Text");
@@ -930,112 +1147,6 @@ namespace UsefulTORStuff
             // Button interaction
             var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
             btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)Hide);
-        }
-
-        private string GenerateModListText()
-        {
-            try
-            {
-                var mods = ModManagerRegistry.GetAllMods();
-
-                UsefulTORStuffPlugin.Logger?.LogInfo($"GetAllMods returned {mods?.Count ?? 0} mods.");
-
-                if (mods == null || mods.Count == 0)
-                {
-                    return "<b><size=150%>MOD MANAGER</size></b>\n\n" +
-                           "<color=#FF0000>Keine Mods gefunden!</color>\n\n" +
-                           "Debug-Info:\n" +
-                           "- Stelle sicher, dass alle Mods geladen sind\n" +
-                           "- Prüfe BepInEx/LogOutput.log für Fehler\n" +
-                           "- Mod-Registrierung erfolgt in Plugin.Load() via RegisterMod()";
-                }
-
-                var sb = new StringBuilder();
-
-                // Header
-                sb.AppendLine("<b><size=150%>MOD MANAGER</size></b>");
-                sb.AppendLine($"<size=120%>{mods.Count} Mod(s) geladen</size>\n");
-
-                // Mod entries
-                foreach (var mod in mods)
-                {
-                    bool isEnabled = mod.Enabled?.Value ?? true;
-
-                    // Status icon
-                    string statusIcon = isEnabled ? "●" : "○";
-                    Color statusColor = isEnabled ? Color.green : Color.gray;
-
-                    // Update status
-                    string updateIcon = "?";
-                    string updateText = "Status unbekannt";
-                    Color updateColor = Color.gray;
-
-                    try
-                    {
-                        if (isEnabled && (mod.HasUpdate?.Invoke() ?? false))
-                        {
-                            updateIcon = "⟳";
-                            updateText = "Update verfügbar";
-                            updateColor = new Color(1f, 0.8f, 0f); // Gold/Gelb
-                        }
-                        else if (isEnabled)
-                        {
-                            updateIcon = "✓";
-                            updateText = "Aktuell";
-                            updateColor = Color.green;
-                        }
-                        else
-                        {
-                            updateIcon = "—";
-                            updateText = "Deaktiviert";
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        UsefulTORStuffPlugin.Logger?.LogWarning($"Mod Manager: Failed to check update for {mod.Name}: {ex.Message}");
-                    }
-
-                    // Mod name line (mit Status-Icon)
-                    sb.Append($"<color=#{ColorUtility.ToHtmlStringRGB(statusColor)}>{statusIcon}</color> ");
-
-                    Color nameColor = isEnabled ? mod.ButtonColor : Color.gray;
-                    sb.Append($"<color=#{ColorUtility.ToHtmlStringRGB(nameColor)}><b>{mod.Name}</b></color> ");
-                    sb.AppendLine($"<size=80%>v{mod.Version}</size>");
-
-                    // Update status line (eingerückt)
-                    sb.Append($"  <color=#{ColorUtility.ToHtmlStringRGB(updateColor)}>{updateIcon} {updateText}</color>");
-                    sb.AppendLine();
-
-                    // Repository (kleinerer Text)
-                    sb.AppendLine($"  <size=80%>{mod.RepositoryOwner}/{mod.RepositoryName}</size>");
-
-                    // GUID (noch kleiner, grau, truncated bei Bedarf)
-                    string displayGuid = mod.Guid.Length > 40
-                        ? mod.Guid.Substring(0, 37) + "..."
-                        : mod.Guid;
-                    sb.AppendLine($"  <size=70%><color=#888888>{displayGuid}</color></size>");
-
-                    // Separator
-                    sb.AppendLine("<color=#444444>────────────────────────</color>\n");
-                }
-
-                // Footer (prominent aber nicht aufdringlich)
-                sb.AppendLine("<size=85%><color=#CCCCCC><b>Konfiguration:</b></color></size>");
-                sb.AppendLine("<size=75%><color=#AAAAAA>");
-                sb.AppendLine("Mods aktivieren/deaktivieren:");
-                sb.AppendLine("  BepInEx/config/<mod-guid>.cfg → [General] Enabled");
-                sb.AppendLine("");
-                sb.AppendLine("Mod Manager umschalten:");
-                sb.AppendLine("  com.tormod.usefultorstuff.cfg → [ModManager] Enabled");
-                sb.AppendLine("</color></size>");
-
-                return sb.ToString();
-            }
-            catch (Exception ex)
-            {
-                UsefulTORStuffPlugin.Logger?.LogError($"Failed to generate mod list text: {ex}");
-                return $"<b>Fehler beim Laden der Mod-Liste:</b>\n\n{ex.Message}\n\n{ex.StackTrace}";
-            }
         }
 
         public void Hide()

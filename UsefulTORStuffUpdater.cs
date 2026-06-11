@@ -94,6 +94,8 @@ namespace UsefulTORStuff {
             var www = new UnityWebRequest();
             www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
             www.SetUrl($"https://api.github.com/repos/{RepositoryOwner}/{RepositoryName}/releases");
+            // GitHub weist UA-lose Clients ab (P2.8) — eindeutigen User-Agent setzen.
+            www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
             www.downloadHandler = new DownloadHandlerBuffer();
             var operation = www.SendWebRequest();
 
@@ -102,17 +104,29 @@ namespace UsefulTORStuff {
             }
 
             if (www.isNetworkError || www.isHttpError) {
+                www.downloadHandler.Dispose();
+                www.Dispose();
                 _checkCompleted = true;
                 _busy = false;
                 yield break;
             }
 
-            Releases = JsonSerializer.Deserialize<List<GithubRelease>>(www.downloadHandler.text);
-            www.downloadHandler.Dispose();
-            www.Dispose();
-            Releases.Sort(SortReleases);
-            _checkCompleted = true;
-            _busy = false;
+            // GitHub liefert bei Rate-Limit (403) oder Fehlern ein JSON-OBJEKT statt eines
+            // Arrays; Deserialize/Sort dürfen die Coroutine nicht killen, sonst bliebe _busy
+            // für die ganze Session true und alle weiteren Checks/Downloads wären blockiert
+            // (P0.2). try/catch ist hier möglich, weil dieser Block kein yield enthält.
+            try {
+                Releases = JsonSerializer.Deserialize<List<GithubRelease>>(www.downloadHandler.text);
+                if (Releases != null) Releases.Sort(SortReleases);
+            } catch (Exception ex) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"Useful TOR Stuff update check: failed to parse GitHub releases ({ex.Message}). Treating as 'no update'.");
+                // Releases unverändert lassen (ggf. null) — überall als "kein Update" behandelt.
+            } finally {
+                www.downloadHandler.Dispose();
+                www.Dispose();
+                _checkCompleted = true;
+                _busy = false;
+            }
         }
 
         [HideFromIl2Cpp]
@@ -255,7 +269,8 @@ namespace UsefulTORStuff {
             if (_showPopUp) {
                 var announcement = $"<size=150%>A new USEFUL TOR STUFF update to {latestRelease.Tag} is available</size>\n{latestRelease.Description}";
                 var mgr = FindObjectOfType<MainMenuManager>(true);
-                mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "Useful TOR Stuff Update", date: latestRelease.PublishedAt));
+                if (mgr != null)
+                    mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "Useful TOR Stuff Update", date: latestRelease.PublishedAt));
             }
             _showPopUp = false;
         }
@@ -325,8 +340,10 @@ namespace UsefulTORStuff {
 
             var mgr = FindObjectOfType<MainMenuManager>(true);
             var popUpTemplate = UnityEngine.Object.FindObjectOfType<AnnouncementPopUp>(true);
-            if (popUpTemplate == null) {
-                yield return null;
+            // Ohne Template würde Instantiate(null) sofort werfen; ohne Manager würde
+            // mgr.StartCoroutine(...) weiter unten ein NullRef auslösen (P0.1).
+            if (popUpTemplate == null || mgr == null) {
+                yield break;
             }
             var popUp = UnityEngine.Object.Instantiate(popUpTemplate);
 
@@ -365,6 +382,14 @@ namespace UsefulTORStuff {
             return latestRelease != null
                 && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)
                 && latestRelease.Assets.Any(FilterPluginAsset);
+        }
+
+        // F2: Roh-Release-Notes (GitHub-`body`) der neuesten Version. Aus dem bereits geladenen
+        // JSON — kein zusätzlicher API-Call. Strip/Truncate übernimmt das Mod-Manager-UI.
+        [HideFromIl2Cpp]
+        public string GetReleaseNotes() {
+            if (Releases == null || Releases.Count == 0) return "";
+            return Releases.FirstOrDefault()?.Description ?? "";
         }
 
         // Callback-Methode für ModManagerRegistry: Startet den Update-Download.

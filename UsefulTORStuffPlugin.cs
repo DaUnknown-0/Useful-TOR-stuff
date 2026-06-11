@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "Useful TOR Stuff";
-    public const string PluginVersion = "1.0.0";
+    public const string PluginVersion = "1.1.0";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
@@ -107,6 +107,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // reimplementation.
         PatchBloodyThrottle(harmony);
         PatchBloodyKillerMap(harmony);
+        PatchBloodyResetVariables(harmony);
         SnitchLogic.Initialize(harmony);
 
         // Sheriff "prevents killer parity win" option + win-check patches. CreateOptions must run
@@ -200,6 +201,12 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Last accepted blood-drop position per player id.
         private static readonly Dictionary<byte, Vector2> _lastDropPos = new Dictionary<byte, Vector2>();
 
+        // P1.1: Bei Runden-Reset leeren. Sonst überlebt die Karte über Spiele hinweg, und da
+        // PlayerIds wiederverwendet werden, würde ein blutender Spieler nahe der letzten
+        // Drop-Position des Vorspiels seine ersten Drops fälschlich überspringen. Aufgerufen aus
+        // dem resetVariables-Patch unten.
+        public static void ClearLastDropPositions() => _lastDropPos.Clear();
+
         // __0 = the "player" argument of Bloodytrail(player, bloodyPlayer). Returning false skips the
         // original constructor body, so no blood GameObject is created this tick.
         public static bool Prefix(PlayerControl __0)
@@ -230,6 +237,14 @@ public class UsefulTORStuffPlugin : BasePlugin
         }
     }
 
+    // P1.1: Postfix auf TORs RPCProcedure.resetVariables (per Runde, auf allen Clients), um die
+    // Drop-Positions-Karte des Bloody-Throttle zu leeren. Per Reflection aufgelöst wie die
+    // anderen TOR-Patches; degradiert zum No-op (Log-Warnung), falls die Methode fehlt.
+    public static class BloodyResetVariablesPatch
+    {
+        public static void Postfix() => BloodyThrottlePatch.ClearLastDropPositions();
+    }
+
     // ========================================================================
     // Bloody killer-map fix: TOR's RPCProcedure.bloody records the bloody victim with
     //   if (Bloody.active.ContainsKey(killer)) return;
@@ -247,6 +262,38 @@ public class UsefulTORStuffPlugin : BasePlugin
     // is the only writer of these maps and runs on every client (local kill + RPC handler),
     // so patching it here fixes our own view (host) and any client running this mod.
     // ========================================================================
+
+    // P1.1: Leert die Bloody-Throttle-Drop-Karte bei jedem Runden-Reset, damit sie nicht über
+    // Spiele hinweg leakt (siehe BloodyThrottlePatch.ClearLastDropPositions).
+    private void PatchBloodyResetVariables(Harmony harmony)
+    {
+        try
+        {
+            if (TORAssembly == null)
+            {
+                Logger.LogWarning("TheOtherRoles assembly not found — Bloody throttle reset disabled.");
+                return;
+            }
+
+            var rpcProcedureType = TORAssembly.GetType("TheOtherRoles.RPCProcedure")
+                ?? TORAssembly.GetTypes().FirstOrDefault(t => t.Name == "RPCProcedure");
+            var resetMethod = rpcProcedureType?.GetMethod("resetVariables",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+            if (resetMethod == null)
+            {
+                Logger.LogWarning("RPCProcedure.resetVariables not found — Bloody throttle reset disabled.");
+                return;
+            }
+
+            harmony.Patch(resetMethod,
+                postfix: new HarmonyMethod(typeof(BloodyResetVariablesPatch), nameof(BloodyResetVariablesPatch.Postfix)));
+            Logger.LogInfo("Patched resetVariables() — Bloody throttle drop map cleared each round.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError($"Failed to patch resetVariables for Bloody throttle: {ex}");
+        }
+    }
 
     private void PatchBloodyKillerMap(Harmony harmony)
     {
@@ -369,11 +416,16 @@ public class UsefulTORStuffPlugin : BasePlugin
                     AppDomain.CurrentDomain.SetData(CreditKey, !CreditVisible());
             }
 
-            string line = $"<link=\"{LinkId}\"><color=#3FCF4A>Useful TOR Stuff</color> v{PluginVersion}</link>";
-            int nl = text.IndexOf('\n');
-            text = nl >= 0
-                ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)
-                : text + "\n" + line;
+            // P2.3: Marker-Guard gegen frame-weises Stapeln, falls TOR den Text künftig nicht mehr
+            // jeden Frame neu aufbaut (normalerweise ist die Zeile abwesend und wird eingefügt).
+            if (!text.Contains(LinkId))
+            {
+                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>Useful TOR Stuff</color> v{PluginVersion}</link>";
+                int nl = text.IndexOf('\n');
+                text = nl >= 0
+                    ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)
+                    : text + "\n" + line;
+            }
 
             // Insert the shared credit under TOR's "Design by Bavari" line — but only if no other
             // mod already added it this frame, so "Modded by DaUnknown" appears at most once.
