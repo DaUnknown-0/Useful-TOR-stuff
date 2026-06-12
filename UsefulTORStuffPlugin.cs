@@ -115,6 +115,12 @@ public class UsefulTORStuffPlugin : BasePlugin
         SheriffParityWin.CreateOptions();
         SheriffParityWin.TryPatch(harmony);
 
+        // Vulture "counts guessed players as eaten" option + guesserShoot postfix. Same host-
+        // authoritative win pattern as SheriffParityWin; CreateOptions runs after TOR's
+        // CustomOptionHolder.Load() (guaranteed by the hard dependency on TOR).
+        VultureGuessEat.CreateOptions();
+        VultureGuessEat.TryPatch(harmony);
+
         // Meeting-duration override option (TOR Settings tab). Its MeetingHud.Start / OnGameEnd
         // patches are attribute-based and picked up by PatchAll below; only the options need
         // explicit creation, after TOR's CustomOptionHolder.Load().
