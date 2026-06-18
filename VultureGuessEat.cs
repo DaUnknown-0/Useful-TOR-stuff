@@ -23,6 +23,10 @@
  *
  * guesserShoot is internal/static in TOR's RPCProcedure, so it is patched via reflection + Harmony
  * (like the Bloody patches in UsefulTORStuffPlugin and SheriffParityWin's win-check patches).
+ *
+ * A child sub-option "Play Eat Sound On Counted Guess" (only selectable while the parent is ON)
+ * plays TOR's existing vultureEat sound on a counted guess, mirroring the eat-button. The postfix
+ * runs on every client, so the sound is heard by everyone in the meeting (intended).
  */
 
 using System;
@@ -37,6 +41,7 @@ namespace UsefulTORStuff {
     public static class VultureGuessEat {
         // Set in CreateOptions(); read by the guesserShoot postfix.
         public static CustomOption Option; // Off/On toggle
+        public static CustomOption SoundOption; // Off/On toggle, child of Option — play the eat sound on a counted guess
 
         // Create the in-game option (under Vulture). Called from UsefulTORStuffPlugin.Load() after
         // TOR has already run CustomOptionHolder.Load() (guaranteed by the hard dependency).
@@ -55,7 +60,18 @@ namespace UsefulTORStuff {
                 if (idx < 0) idx = opts.Count - 1;
                 opts.Insert(idx + 1, Option);
 
-                UsefulTORStuffPlugin.Logger?.LogInfo("[VultureGuessEat] Option created under Vulture.");
+                // Child of Option: only selectable when "Counts Guessed Players As Eaten" is on
+                // (auto "- " prefix + visibility filtering). Insert directly after its parent.
+                SoundOption = CustomOption.Create(
+                    1203, Types.Neutral, "Play Eat Sound On Counted Guess",
+                    false, Option);
+
+                opts.Remove(SoundOption);
+                int sIdx = opts.IndexOf(Option);
+                if (sIdx < 0) sIdx = opts.Count - 1;
+                opts.Insert(sIdx + 1, SoundOption);
+
+                UsefulTORStuffPlugin.Logger?.LogInfo("[VultureGuessEat] Options created under Vulture.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[VultureGuessEat] CreateOptions failed: {e}");
             }
@@ -109,6 +125,15 @@ namespace UsefulTORStuff {
                 // Mirror cleanBody's win snippet (RPC.cs:540-543); >= instead of == as a defensive
                 // hardening (harmless since each guess adds exactly 1).
                 Vulture.eatenBodies++;
+
+                // Optional flavor: play the existing Vulture eat sound on a counted guess, mirroring
+                // the eat-button (Buttons.cs:1465). The postfix runs on every client, so an unconditional
+                // play means everyone in the meeting hears it (intended). Reuses the bundled "vultureEat"
+                // clip — SoundEffectsManager is public static in TOR's assembly.
+                if (SoundOption != null && SoundOption.getBool()) {
+                    SoundEffectsManager.play("vultureEat");
+                }
+
                 if (Vulture.eatenBodies >= Vulture.vultureNumberToWin) {
                     Vulture.triggerVultureWin = true;
                 }
