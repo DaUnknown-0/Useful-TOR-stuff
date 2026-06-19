@@ -1,0 +1,186 @@
+// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+// Licensed under GPL-3.0-or-later. See LICENSE for details.
+// Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
+
+/*
+ * TrapperLimp - new Trapper options "Trapped Players Limp" and "Trapper Can Self-Limp".
+ *
+ * TOR traps fully FREEZE a triggering player for Trapper.trapDuration (moveable=false + Halt,
+ * Trap.triggerTrap). This adds a limp (movement slow) ON TOP of that freeze — it has no effect while
+ * frozen (we gate on CanMove) and kicks in for a configurable duration AFTER the player is released.
+ * The trapper can also toggle a self-limp on himself.
+ *
+ * The slow is applied the same way PropHunt does its speed effects: a velocity multiply in the
+ * PlayerPhysics.FixedUpdate (AmOwner) and CustomNetworkTransform.FixedUpdate (!AmOwner) postfixes,
+ * so it looks consistent locally and for remote viewers.
+ *
+ * Sync: Trap.triggerTrap already runs on every client, so the trapped-limp schedule (limpUntil) is
+ * naturally consistent everywhere. The self-limp toggle is broadcast via a small custom RPC (248) so
+ * remote clients slow the trapper's NetTransform too.
+ */
+
+using System;
+using System.Collections.Generic;
+using HarmonyLib;
+using Hazel;
+using UnityEngine;
+using TheOtherRoles;
+using TheOtherRoles.Objects;
+using static TheOtherRoles.TheOtherRoles;
+using Types = TheOtherRoles.CustomOption.CustomOptionType;
+
+namespace UsefulTORStuff {
+    public static class TrapperLimp {
+        public const byte SelfLimpRpcId = 248;
+
+        public static CustomOption TrappedOption;   // Off/On: trapped players limp after the freeze
+        public static CustomOption SelfOption;       // Off/On: trapper gets a self-limp toggle
+        public static CustomOption StrengthOption;   // speed multiplier while limping
+        public static CustomOption DurationOption;   // limp seconds after the freeze
+
+        // PlayerId → realtime (Time.time) until which that player limps (trapped path). Synced because
+        // Trap.triggerTrap runs on every client.
+        private static readonly Dictionary<byte, float> limpUntil = new Dictionary<byte, float>();
+        // Trapper self-limp toggle, broadcast to all clients via SelfLimpRpc.
+        private static bool selfLimping;
+
+        private static CustomButton selfLimpButton;
+
+        public static void CreateOptions() {
+            try {
+                TrappedOption = CustomOption.Create(
+                    1270, Types.Crewmate, "Trapped Players Limp", false, CustomOptionHolder.trapperSpawnRate);
+                SelfOption = CustomOption.Create(
+                    1271, Types.Crewmate, "Trapper Can Self-Limp", false, CustomOptionHolder.trapperSpawnRate);
+                StrengthOption = CustomOption.Create(
+                    1272, Types.Crewmate, "Limp Speed Multiplier", 0.5f, 0.25f, 0.9f, 0.05f, CustomOptionHolder.trapperSpawnRate);
+                DurationOption = CustomOption.Create(
+                    1273, Types.Crewmate, "Limp Duration After Freeze", 5f, 1f, 20f, 1f, CustomOptionHolder.trapperSpawnRate);
+
+                var opts = CustomOption.options;
+                foreach (var o in new[] { TrappedOption, SelfOption, StrengthOption, DurationOption }) opts.Remove(o);
+                int idx = opts.IndexOf(CustomOptionHolder.trapperTrapDuration);
+                if (idx < 0) idx = opts.Count - 1;
+                opts.Insert(idx + 1, TrappedOption);
+                opts.Insert(idx + 2, SelfOption);
+                opts.Insert(idx + 3, StrengthOption);
+                opts.Insert(idx + 4, DurationOption);
+
+                UsefulTORStuffPlugin.Logger?.LogInfo("[TrapperLimp] Options created under Trapper.");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TrapperLimp] CreateOptions failed: {e}");
+            }
+        }
+
+        private static float Ratio() => StrengthOption != null ? StrengthOption.getFloat() : 0.5f;
+
+        private static bool ShouldLimp(byte id) {
+            if (TrappedOption != null && TrappedOption.getBool()
+                && limpUntil.TryGetValue(id, out float until) && Time.time < until) return true;
+            if (SelfOption != null && SelfOption.getBool() && selfLimping
+                && Trapper.trapper != null && Trapper.trapper.PlayerId == id) return true;
+            return false;
+        }
+
+        // ---- Trapped-limp scheduling (runs on every client) -------------------------------------
+        // Patch RPCProcedure.triggerTrap (public) rather than the internal Objects.Trap.triggerTrap;
+        // it simply forwards to it with the same (playerId, trapId) args and runs on every client.
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.triggerTrap))]
+        static class TriggerTrapPatch {
+            public static void Postfix(byte playerId, byte trapId) {
+                try {
+                    if (TrappedOption == null || !TrappedOption.getBool()) return;
+                    float dur = DurationOption != null ? DurationOption.getFloat() : 5f;
+                    // Limp window starts now and lasts through the freeze plus the configured tail, so
+                    // the player keeps limping after being released.
+                    limpUntil[playerId] = Time.time + Trapper.trapDuration + dur;
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[TrapperLimp] triggerTrap postfix failed: {e}");
+                }
+            }
+        }
+
+        // Clear state each round (same reset hook the rest of this mod uses).
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
+        static class ResetPatch {
+            public static void Postfix() {
+                limpUntil.Clear();
+                selfLimping = false;
+            }
+        }
+
+        // ---- Velocity slow (mirrors PropHunt's speed effect) ------------------------------------
+        [HarmonyPatch(typeof(PlayerPhysics), nameof(PlayerPhysics.FixedUpdate))]
+        static class PlayerPhysicsPatch {
+            public static void Postfix(PlayerPhysics __instance) {
+                try {
+                    if (!__instance.AmOwner || __instance.myPlayer == null) return;
+                    if (GameData.Instance != null && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
+                        __instance.body.velocity *= Ratio();
+                } catch { }
+            }
+        }
+        [HarmonyPatch(typeof(CustomNetworkTransform), nameof(CustomNetworkTransform.FixedUpdate))]
+        static class NetTransformPatch {
+            public static void Postfix(CustomNetworkTransform __instance) {
+                try {
+                    if (__instance.AmOwner || __instance.myPlayer == null) return;
+                    if (GameData.Instance != null && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
+                        __instance.body.velocity *= Ratio();
+                } catch { }
+            }
+        }
+
+        // ---- Self-limp toggle (button + synced RPC) ---------------------------------------------
+        private static void ToggleSelfLimp() {
+            selfLimping = !selfLimping;
+            try {
+                MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
+                    PlayerControl.LocalPlayer.NetId, SelfLimpRpcId, SendOption.Reliable, -1);
+                writer.Write(selfLimping ? (byte)1 : (byte)0);
+                AmongUsClient.Instance.FinishRpcImmediately(writer);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TrapperLimp] ToggleSelfLimp send failed: {e}");
+            }
+        }
+
+        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
+        [HarmonyPriority(Priority.High)]
+        static class HandleRpcPatch {
+            public static bool Prefix(byte callId, MessageReader reader) {
+                if (callId == SelfLimpRpcId) {
+                    try { selfLimping = reader.ReadByte() != 0; } catch { }
+                    return false;
+                }
+                return true;
+            }
+        }
+
+        [HarmonyPatch(typeof(HudManager), nameof(HudManager.Start))]
+        [HarmonyPriority(Priority.Low)]
+        static class HudStartPatch {
+            public static void Postfix(HudManager __instance) {
+                try {
+                    selfLimpButton = new CustomButton(
+                        () => ToggleSelfLimp(),
+                        () => SelfOption != null && SelfOption.getBool()
+                              && Trapper.trapper != null && Trapper.trapper == PlayerControl.LocalPlayer
+                              && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
+                        () => PlayerControl.LocalPlayer.CanMove,
+                        () => { },
+                        Trapper.getButtonSprite(),
+                        CustomButton.ButtonPositions.lowerRowCenter,
+                        __instance,
+                        KeyCode.H,
+                        false,
+                        "LIMP"
+                    );
+                    selfLimpButton.MaxTimer = 0f;
+                    selfLimpButton.Timer = -1f;
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[TrapperLimp] Button creation failed: {e}");
+                }
+            }
+        }
+    }
+}
