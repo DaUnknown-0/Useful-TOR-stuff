@@ -126,6 +126,52 @@ public class UsefulTORStuffPlugin : BasePlugin
         // explicit creation, after TOR's CustomOptionHolder.Load().
         MeetingDurationOverride.CreateOptions();
 
+        // Bomber "can cancel bomb" option. Its HudManager.Start / HandleRpc patches are
+        // attribute-based (picked up by PatchAll); only the option needs explicit creation here.
+        BomberCancel.CreateOptions();
+
+        // Swapper "can fix lights/comms" options. All patches (Console.CanUse, minigame Begin/Close)
+        // are attribute-based and picked up by PatchAll below; only the options need creation here.
+        SwapperLightsFix.CreateOptions();
+
+        // Medic "can reshield" option. HudManager.Start / HandleRpc patches are attribute-based.
+        MedicReshield.CreateOptions();
+
+        // Sidekick "can kill Jackal" option (reflection postfix on the private sidekickSetTarget).
+        SidekickKillJackal.CreateOptions();
+        SidekickKillJackal.TryPatch(harmony);
+
+        // Spy "can fully vent" option. Spy.clearAndReload / Vent.Use / Vent.SetButtons patches are
+        // attribute-based (PatchAll); only the option needs explicit creation here.
+        SpyFullVent.CreateOptions();
+
+        // Time Master "unguessable after shield saved a kill" option. RPCProcedure patches are
+        // attribute-based (PatchAll); the guesser-list hide is a reflection patch (TryPatch).
+        TimeMasterUnguessable.CreateOptions();
+        TimeMasterUnguessable.TryPatch(harmony);
+
+        // Trapper "trapped players limp / self-limp" options. Trap.triggerTrap / physics / HandleRpc /
+        // HudManager.Start patches are attribute-based (PatchAll); only the options need creation.
+        TrapperLimp.CreateOptions();
+
+        // Invert "Inverted Vision" option. HudManager.Update patch is attribute-based (PatchAll).
+        InvertVision.CreateOptions();
+
+        // Trickster "Avatar Mixup Sabotage" option (Fungle). HudManager.Start patch is attribute-based;
+        // TryPatch resolves TOR's private lightsOutButton for the shared cooldown.
+        TricksterAvatarSabotage.CreateOptions();
+        TricksterAvatarSabotage.TryPatch();
+
+        // Lawyer/Lover "knows target/partner position on map" options. MapBehaviour / HudManager
+        // patches are attribute-based (PatchAll); only the options need explicit creation.
+        LawyerLoverTracker.CreateOptions();
+
+        // Tiebreaker quantity (max 3). setModifier/resetVariables/CheckForEndVoting patches are
+        // attribute-based; TryPatch adds the reflection patches (getSelectionForRoleId multiply,
+        // CalculateVotes/swapped handles for the resolution).
+        TiebreakerMultiple.CreateOptions();
+        TiebreakerMultiple.TryPatch(harmony);
+
         // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.
