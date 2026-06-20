@@ -1,0 +1,168 @@
+// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+// Licensed under GPL-3.0-or-later. See LICENSE for details.
+// Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
+
+/*
+ * SpyExtras - two new Spy option groups:
+ *
+ * 1) Evil Flash on Death: when the Spy (who also has the VIP modifier) is killed, a red
+ *    (impostor-coloured) flash is shown to all local players. The Seer can optionally
+ *    receive the true crewmate-blue flash instead, revealing the Spy's actual alignment.
+ *    Only activates when Spy also has VIP — layering on top of the VIP flash keeps the
+ *    interaction consistent. Our postfix runs after TOR's VIP flash (yellow/white for
+ *    crewmate) and overrides it visually.
+ *
+ * 2) Shifter Interaction: three-way option controlling what happens when the Shifter's
+ *    target is the Spy.
+ *      0 "Shift Succeeds"  — vanilla behaviour, Shifter takes the Spy role.
+ *      1 "Shifter Dies"    — mirrors TOR's impostor-target path (RPC.cs:602-611): the
+ *                            Shifter is exiled and the shift is cancelled.
+ *      2 "Shift Cancelled" — shift silently fails; nobody dies. Sub-option: Shifter Gets
+ *                            Shift Back → resets all button cooldowns for the Shifter so
+ *                            they can immediately pick a new target.
+ */
+
+using System;
+using HarmonyLib;
+using TheOtherRoles;
+using TheOtherRoles.Objects;
+using UnityEngine;
+using static TheOtherRoles.TheOtherRoles;
+using Types = TheOtherRoles.CustomOption.CustomOptionType;
+
+namespace UsefulTORStuff {
+    public static class SpyExtras {
+        public static CustomOption OptionDeathFlash;
+        public static CustomOption OptionSeerTrueFlash;
+        public static CustomOption OptionShifterInteraction;
+        public static CustomOption OptionShifterGetsShiftBack;
+
+        private static readonly string[] ShifterModes = {
+            "Shift Succeeds",   // 0 = vanilla
+            "Shifter Dies",     // 1 = exiled, shift cancelled
+            "Shift Cancelled"   // 2 = silent cancel, no death
+        };
+
+        public static void CreateOptions() {
+            try {
+                OptionDeathFlash = CustomOption.Create(
+                    1300, Types.Crewmate, "Evil Flash on Death",
+                    false, CustomOptionHolder.spySpawnRate);
+
+                OptionSeerTrueFlash = CustomOption.Create(
+                    1301, Types.Crewmate, "Seer Sees True Flash",
+                    false, OptionDeathFlash);
+
+                OptionShifterInteraction = CustomOption.Create(
+                    1302, Types.Crewmate, "Shifter Interaction",
+                    ShifterModes, CustomOptionHolder.spySpawnRate);
+
+                // Shown when OptionShifterInteraction > 0 (any non-vanilla mode)
+                OptionShifterGetsShiftBack = CustomOption.Create(
+                    1303, Types.Crewmate, "Shifter Gets Shift Back",
+                    false, OptionShifterInteraction);
+
+                var opts = CustomOption.options;
+                opts.Remove(OptionDeathFlash);
+                opts.Remove(OptionSeerTrueFlash);
+                opts.Remove(OptionShifterInteraction);
+                opts.Remove(OptionShifterGetsShiftBack);
+
+                int idx = opts.IndexOf(CustomOptionHolder.spyHasImpostorVision);
+                if (idx < 0) idx = opts.Count - 1;
+
+                // Insert in reverse so the final sequence is:
+                // spyHasImpostorVision → DeathFlash → SeerTrueFlash → ShifterInteraction → ShifterGetsShiftBack
+                opts.Insert(idx + 1, OptionShifterGetsShiftBack);
+                opts.Insert(idx + 1, OptionShifterInteraction);
+                opts.Insert(idx + 1, OptionSeerTrueFlash);
+                opts.Insert(idx + 1, OptionDeathFlash);
+
+                UsefulTORStuffPlugin.Logger?.LogInfo("[SpyExtras] Options created.");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[SpyExtras] CreateOptions failed: {e}");
+            }
+        }
+
+        // Evil Flash: runs after TOR's MurderPlayer postfix (including the VIP flash).
+        // Our red/blue flash overlays TOR's yellow/white VIP flash.
+        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.MurderPlayer))]
+        static class SpyDeathFlashPatch {
+            public static void Postfix(PlayerControl __instance, PlayerControl target) {
+                try {
+                    if (OptionDeathFlash == null || !OptionDeathFlash.getBool()) return;
+                    if (target == null || target != Spy.spy) return;
+
+                    // Only when the dying Spy also has the VIP modifier
+                    bool spyHasVip = false;
+                    for (int i = 0; i < Vip.vip.Count; i++) {
+                        if (Vip.vip[i] != null && Vip.vip[i].PlayerId == target.PlayerId) {
+                            spyHasVip = true;
+                            break;
+                        }
+                    }
+                    if (!spyHasVip) return;
+
+                    var lp = PlayerControl.LocalPlayer;
+                    if (lp == null || lp.Data == null || lp.Data.IsDead) return;
+
+                    bool isSeer = Seer.seer != null
+                                  && lp.PlayerId == Seer.seer.PlayerId
+                                  && !Seer.seer.Data.IsDead;
+
+                    if (isSeer && OptionSeerTrueFlash != null && OptionSeerTrueFlash.getBool())
+                        // Blue = true crewmate colour (Seer sees the Spy's real nature)
+                        Helpers.showFlash(new Color(42f / 255f, 187f / 255f, 245f / 255f), 1.5f);
+                    else
+                        // Red = evil flash (Spy appeared impostor-like)
+                        Helpers.showFlash(Spy.color, 1.5f);
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[SpyExtras] DeathFlash postfix failed: {e}");
+                }
+            }
+        }
+
+        // Shifter interaction: prefix intercepts before TOR processes the shift.
+        // Mode 0 falls through to TOR (vanilla). Modes 1/2 cancel TOR's shift (return false).
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.shifterShift))]
+        static class ShifterSpyInteractionPatch {
+            public static bool Prefix(byte targetId) {
+                try {
+                    if (OptionShifterInteraction == null) return true;
+                    int mode = OptionShifterInteraction.getSelection();
+                    if (mode == 0) return true; // Shift Succeeds = vanilla
+
+                    var target = Helpers.playerById(targetId);
+                    if (target == null || target != Spy.spy) return true;
+
+                    PlayerControl oldShifter = Shifter.shifter;
+                    Shifter.futureShift = null;
+                    Shifter.clearAndReload();
+
+                    if (mode == 1) {
+                        // Shifter Dies — mirrors RPC.cs:602-611
+                        if (oldShifter != null && !oldShifter.Data.IsDead) {
+                            oldShifter.Exiled();
+                            GameHistory.overrideDeathReasonAndKiller(
+                                oldShifter, DeadPlayer.CustomDeathReason.Shift, target);
+                        }
+                    } else {
+                        // Shift Cancelled, No One Dies
+                        bool giveback = OptionShifterGetsShiftBack != null
+                                        && OptionShifterGetsShiftBack.getBool();
+                        if (giveback && oldShifter != null
+                            && PlayerControl.LocalPlayer != null
+                            && PlayerControl.LocalPlayer.PlayerId == oldShifter.PlayerId) {
+                            CustomButton.ResetAllCooldowns();
+                        }
+                    }
+
+                    return false; // cancel TOR's shift in both non-vanilla modes
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[SpyExtras] ShifterInteraction prefix failed: {e}");
+                    return true;
+                }
+            }
+        }
+    }
+}

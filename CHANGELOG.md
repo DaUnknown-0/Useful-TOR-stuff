@@ -1,4 +1,4 @@
-# Changelog — Useful TOR Stuff
+# Changelog — TOR - Forgotten Fixes
 
 ## Unreleased
 
@@ -20,7 +20,7 @@ Adds the two approved features (F1, F2) on top of the 1.0.1 fix base. No wire-fo
 
 ### Features
 - **F1 — Consolidated lobby version handshake (presentation only).** When the Chance mod is also
-  loaded, Useful TOR Stuff now owns and renders a single combined **Mod-Check** per-player overview
+  loaded, TOR - Forgotten Fixes now owns and renders a single combined **Mod-Check** per-player overview
   (green ok / red mismatch / gray missing), collapsing to "all players match ✓" when nothing is
   wrong, instead of two separate red lists. Each mod publishes its snapshot over the documented
   `TORMods.Handshake.*` AppDomain keys (plain strings / `Dictionary<int,string>` only — no shared

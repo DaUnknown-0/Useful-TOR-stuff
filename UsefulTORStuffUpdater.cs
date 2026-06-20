@@ -119,7 +119,7 @@ namespace UsefulTORStuff {
                 Releases = JsonSerializer.Deserialize<List<GithubRelease>>(www.downloadHandler.text);
                 if (Releases != null) Releases.Sort(SortReleases);
             } catch (Exception ex) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"Useful TOR Stuff update check: failed to parse GitHub releases ({ex.Message}). Treating as 'no update'.");
+                UsefulTORStuffPlugin.Logger?.LogWarning($"TOR - Forgotten Fixes update check: failed to parse GitHub releases ({ex.Message}). Treating as 'no update'.");
                 // Releases unverändert lassen (ggf. null) — überall als "kein Update" behandelt.
             } finally {
                 www.downloadHandler.Dispose();
@@ -148,7 +148,7 @@ namespace UsefulTORStuff {
 
                 button = popup.transform.GetChild(2).gameObject;
                 button.SetActive(false);
-                popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...";
+                popup.TextAreaTMP.text = "Updating TOR - Forgotten Fixes\nPlease wait...";
             }
 
             var asset = release.Assets.Find(FilterPluginAsset);
@@ -162,7 +162,7 @@ namespace UsefulTORStuff {
                 _updateProgress = www.downloadProgress;
                 if (!managerMode) {
                     int stars = Mathf.CeilToInt(www.downloadProgress * 10);
-                    string progress = $"Updating Useful TOR Stuff\nPlease wait...\nDownloading...\n{new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars)}";
+                    string progress = $"Updating TOR - Forgotten Fixes\nPlease wait...\nDownloading...\n{new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars)}";
                     popup.TextAreaTMP.text = progress;
                 }
                 yield return new WaitForEndOfFrame();
@@ -178,7 +178,7 @@ namespace UsefulTORStuff {
                 yield break;
             }
             if (!managerMode) {
-                popup.TextAreaTMP.text = "Updating Useful TOR Stuff\nPlease wait...\n\nDownload complete\ncopying file...";
+                popup.TextAreaTMP.text = "Updating TOR - Forgotten Fixes\nPlease wait...\n\nDownload complete\ncopying file...";
             }
 
             var filePath = Path.Combine(Paths.PluginPath, asset.Name);
@@ -203,7 +203,7 @@ namespace UsefulTORStuff {
             if (!hasError) {
                 _updateState = 2;
                 if (!managerMode) {
-                    popup.TextAreaTMP.text = "Useful TOR Stuff\nupdated successfully\nPlease restart the game.";
+                    popup.TextAreaTMP.text = "TOR - Forgotten Fixes\nupdated successfully\nPlease restart the game.";
                 }
             } else {
                 _updateState = 3;
@@ -260,17 +260,17 @@ namespace UsefulTORStuff {
             }));
 
             var text = button.transform.GetComponentInChildren<TMPro.TMP_Text>();
-            string t = "Update Useful TOR Stuff";
+            string t = "Update TOR - Forgotten Fixes";
             StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(t))));
             passiveButton.OnMouseOut.AddListener((Action)(() => text.color = Color.green));
             passiveButton.OnMouseOver.AddListener((Action)(() => text.color = Color.white));
             text.color = Color.green;
 
             if (_showPopUp) {
-                var announcement = $"<size=150%>A new USEFUL TOR STUFF update to {latestRelease.Tag} is available</size>\n{latestRelease.Description}";
+                var announcement = $"<size=150%>A new TOR - FORGOTTEN FIXES update to {latestRelease.Tag} is available</size>\n{latestRelease.Description}";
                 var mgr = FindObjectOfType<MainMenuManager>(true);
                 if (mgr != null)
-                    mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "Useful TOR Stuff Update", date: latestRelease.PublishedAt));
+                    mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "TOR - Forgotten Fixes Update", date: latestRelease.PublishedAt));
             }
             _showPopUp = false;
         }
@@ -318,7 +318,7 @@ namespace UsefulTORStuff {
         }
 
         [HideFromIl2Cpp]
-        public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = "Useful TOR Stuff Update", string title = "", string date = "") {
+        public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = "TOR - Forgotten Fixes Update", string title = "", string date = "") {
             // Stagger behind other mods so the other update popups appear first.
             yield return new WaitForSeconds(2f);
             // Show last of all mods. The other updaters wait for a clear popup field and then
@@ -353,7 +353,7 @@ namespace UsefulTORStuff {
                 Id = "usefulTORStuffAnnouncement",
                 Language = 0,
                 Number = 6972,
-                Title = title == "" ? "Useful TOR Stuff Announcement" : title,
+                Title = title == "" ? "TOR - Forgotten Fixes Announcement" : title,
                 ShortTitle = shortTitle,
                 SubTitle = "",
                 PinState = false,

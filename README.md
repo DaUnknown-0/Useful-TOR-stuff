@@ -1,4 +1,4 @@
-# Useful TOR Stuff
+# TOR - Forgotten Fixes
 
 A companion plugin for [The Other Roles](https://github.com/TheOtherRolesAU/TheOtherRoles) (TOR)
 4.8.0 that bundles several quality-of-life fixes and a cross-mod Mod Manager. It resolves TOR types
@@ -17,7 +17,7 @@ property of Innersloth LLC. © Innersloth LLC.
 - **Bloody killer-map fix** — makes a Bloody trail track the *latest* victim instead of pinning to
   the first one for the whole game.
 - **Client-side Snitch reveal** — a reimplementation of the Snitch reveal that runs on every client,
-  gated on *all players having this mod*. When active, the host-only Host Fix re-broadcast stands
+  gated on *all players having this mod*. When active, the host-only TOR - Hostfix re-broadcast stands
   down. Surfaced via lobby messages and a one-time chat confirmation.
 - **Sheriff "prevents killer parity win"** — host-enforced option that can stop the impostors from
   winning on parity while a Sheriff is alive. Always applies when enabled (host-authoritative); the
@@ -32,78 +32,23 @@ property of Innersloth LLC. © Innersloth LLC.
   longer leaks textures, sprites, or materials (1.0.1). Since 1.1.0 it also has an **Update All**
   header button (sequential, with a summary line) and shows each updatable mod's **release notes**
   in its entry — both from the already-fetched GitHub JSON (no extra API calls), and both degrade
-  gracefully for older installed updaters that lack the new hooks. *(F2)*
+  gracefully for older installed updaters that lack the new hooks.
 - **Combined lobby Mod-Check** — when the Chance mod is also installed, the lobby shows a single
   per-player version overview (green ok / red mismatch / gray missing) that this mod renders,
-  instead of two separate warning lists. HostFix is excluded by design (host-only). Host-side by
-  default; the RPC wire format is unchanged. *(F1)*
+  instead of two separate warning lists. TOR - Hostfix is excluded by design (host-only). Host-side by
+  default; the RPC wire format is unchanged.
 - **Auto-update** — checks this repo's GitHub releases on the main menu and offers an in-game update
   button.
-- **Version display** — shows `Useful TOR Stuff vX.Y.Z` in the top-corner version readout.
+- **Version display** — shows `TOR - Forgotten Fixes vX.Y.Z` in the top-corner version readout.
 
-## Options
-
-Sheriff options appear in TOR's role-options UI under Sheriff:
-
-| Option | Default | Notes |
-|---|---|---|
-| Sheriff Prevents Killer Parity Win | Off | Host-enforced; applies to everyone when on |
-| ↳ Scope | At Exact Parity Only | or "Always While Sheriff Alive" |
-
-Meeting-duration options appear in the **TOR Settings** tab (host-enforced; synced to everyone when on):
-
-| Option | Default | Notes |
-|---|---|---|
-| Override Meeting Duration | Off | Master toggle |
-| ↳ Discussion Base Time | 15 | seconds |
-| ↳ Discussion Per Alive Player | 0 | seconds added per alive player |
-| ↳ Discussion Reduction Per Dead Player | 0 | seconds removed per dead player |
-| ↳ Voting Base Time | 30 | seconds |
-| ↳ Voting Per Alive Player | 0 | seconds added per alive player |
-| ↳ Voting Reduction Per Dead Player | 0 | seconds removed per dead player |
-
-### Configuration (BepInEx config)
-
-`com.tormod.usefultorstuff.cfg`:
-- `[General] Enabled` — load the mod (default `true`).
-- `[ModManager] Enabled` — show the Mod Manager button/UI (default `true`).
-- `[ModManager] ButtonPositionX` / `ButtonPositionY` — main-menu button position (default `0.8` / `0.21`).
-- `[Bloody] MinDropDistance` — world-unit distance before a new blood drop spawns (default `0.35`;
-  `0` disables throttling).
-
-## Mod version handshake (RPC 253)
-
-Each client broadcasts its version + assembly GUID at lobby time so every client can tell whether
-all players share the same build (the precondition for the client-side Snitch fix). The handshake
-cache is cleared on joining a lobby so it only reflects the current lobby. Wire format is unchanged
-across 1.0.x, so mixed lobbies keep working.
-
-## Requirements
-
-- [The Other Roles](https://github.com/TheOtherRolesAU/TheOtherRoles) 4.8.0 (hard dependency)
-- BepInEx IL2CPP 6.0.0-be.697
-- Among Us (Steam build matching your TOR version)
-
-## Building
-
-```
-dotnet build -c Release
-```
-
-The output `UsefulTORStuff.dll` lands in `bin/Release/net6.0/`. Set the `AmongUsLatest` environment
-variable to your Among Us folder to auto-copy on build.
-
-## Installation
+## Download & Install
 
 1. Install The Other Roles into your Among Us BepInEx setup.
-2. Copy `UsefulTORStuff.dll` into `<Among Us>/BepInEx/plugins/`.
-3. Start the game.
+2. Download the latest `UsefulTORStuff.dll` from the [Releases page](https://github.com/DaUnknown-0/Useful-TOR-stuff/releases/latest).
+3. Copy `UsefulTORStuff.dll` into `<Among Us>/BepInEx/plugins/`.
+4. Start the game.
 
-## Compatibility
-
-| Useful TOR Stuff | The Other Roles | Among Us |
-|---|---|---|
-| 1.1.0 | 4.8.0 | Steam build matching TOR 4.8.0 |
+After the first install, the in-game auto-updater checks this repo's GitHub releases on the main menu and offers an update button — manual downloads are only needed for the initial setup.
 
 ## License
 

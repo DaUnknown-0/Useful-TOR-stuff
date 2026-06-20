@@ -1,11 +1,11 @@
-# In-game verification checklist — Useful TOR Stuff 1.1.0
+# In-game verification checklist — TOR - Forgotten Fixes 1.1.0
 
 ## F1 — Combined lobby Mod-Check (needs Chance installed + a second client)
 - [ ] With Chance + Useful installed: in a lobby with another player, the host sees **one**
       "Mod-Check:" block listing each player's Chance/Useful status (not two separate red lists).
 - [ ] A player missing one mod shows "— missing" (gray) for that column; a different version shows
       red; all-matching collapses to "Mod-Check: all players match ✓".
-- [ ] With Chance NOT installed: Useful shows its original standalone "missing Useful TOR Stuff"
+- [ ] With Chance NOT installed: Forgotten Fixes shows its original standalone "missing TOR - Forgotten Fixes"
       list (unchanged single-mod behaviour).
 - [ ] HostFix is never listed in the combined block.
 - [ ] Block is host-only by default and does not stack per frame.
@@ -37,7 +37,7 @@
 - [ ] Leave and re-join lobbies; the mod-presence list reflects only current-lobby players.
 
 ## P2.3 — PingTracker line
-- [ ] "Useful TOR Stuff vX" appears once in the top-corner version block, never stacking per frame.
+- [ ] "TOR - Forgotten Fixes vX" appears once in the top-corner version block, never stacking per frame.
 
 ## Regression sweep (unchanged behaviour to confirm still works)
 - [ ] Bloody lag throttle still thins drops while moving.

@@ -50,7 +50,7 @@ namespace UsefulTORStuff;
 public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
-    public const string PluginName = "Useful TOR Stuff";
+    public const string PluginName = "TOR - Forgotten Fixes";
     public const string PluginVersion = "1.1.0";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
@@ -145,6 +145,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // attribute-based (PatchAll); only the option needs explicit creation here.
         SpyFullVent.CreateOptions();
 
+        // Spy "Evil Flash on Death" + "Shifter Dies When Targeting Spy" options. Both patches are
+        // attribute-based ([HarmonyPatch]) and picked up by PatchAll below.
+        SpyExtras.CreateOptions();
+
         // Time Master "unguessable after shield saved a kill" option. RPCProcedure patches are
         // attribute-based (PatchAll); the guesser-list hide is a reflection patch (TryPatch).
         TimeMasterUnguessable.CreateOptions();
@@ -156,6 +160,10 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Invert "Inverted Vision" option. HudManager.Update patch is attribute-based (PatchAll).
         InvertVision.CreateOptions();
+
+        // Invert modifier "Rename to Drunk" option. Mutates CustomOption and RoleInfo strings
+        // at runtime; no patches needed.
+        DrunkRename.CreateOptions();
 
         // Trickster "Avatar Mixup Sabotage" option (Fungle). HudManager.Start patch is attribute-based;
         // TryPatch resolves TOR's private lightsOutButton for the shared cooldown.
@@ -477,7 +485,7 @@ public class UsefulTORStuffPlugin : BasePlugin
             // jeden Frame neu aufbaut (normalerweise ist die Zeile abwesend und wird eingefügt).
             if (!text.Contains(LinkId))
             {
-                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>Useful TOR Stuff</color> v{PluginVersion}</link>";
+                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>TOR - Forgotten Fixes</color> v{PluginVersion}</link>";
                 int nl = text.IndexOf('\n');
                 text = nl >= 0
                     ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)
