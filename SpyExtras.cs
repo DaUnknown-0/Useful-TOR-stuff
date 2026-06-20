@@ -23,6 +23,7 @@
  */
 
 using System;
+using System.Reflection;
 using HarmonyLib;
 using TheOtherRoles;
 using TheOtherRoles.Objects;
@@ -122,6 +123,30 @@ namespace UsefulTORStuff {
             }
         }
 
+        // TheOtherRoles.GameHistory is internal, so its overrideDeathReasonAndKiller
+        // can't be called directly from this assembly. Resolve it once via reflection
+        // (mirrors the rest of this mod's TOR-internal access pattern).
+        private static MethodInfo _overrideDeathReason;
+        private static bool _overrideDeathReasonResolved;
+
+        private static void OverrideDeathReasonAndKiller(
+            PlayerControl player, DeadPlayer.CustomDeathReason deathReason, PlayerControl killer) {
+            if (!_overrideDeathReasonResolved) {
+                _overrideDeathReasonResolved = true;
+                var torAsm = typeof(CustomOption).Assembly;
+                var type = torAsm.GetType("TheOtherRoles.GameHistory");
+                _overrideDeathReason = type?.GetMethod(
+                    "overrideDeathReasonAndKiller",
+                    BindingFlags.Public | BindingFlags.Static, null,
+                    new[] { typeof(PlayerControl), typeof(DeadPlayer.CustomDeathReason), typeof(PlayerControl) },
+                    null);
+                if (_overrideDeathReason == null)
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        "[SpyExtras] GameHistory.overrideDeathReasonAndKiller not found — death reason won't be tagged.");
+            }
+            _overrideDeathReason?.Invoke(null, new object[] { player, deathReason, killer });
+        }
+
         // Shifter interaction: prefix intercepts before TOR processes the shift.
         // Mode 0 falls through to TOR (vanilla). Modes 1/2 cancel TOR's shift (return false).
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.shifterShift))]
@@ -143,7 +168,8 @@ namespace UsefulTORStuff {
                         // Shifter Dies — mirrors RPC.cs:602-611
                         if (oldShifter != null && !oldShifter.Data.IsDead) {
                             oldShifter.Exiled();
-                            GameHistory.overrideDeathReasonAndKiller(
+                            // GameHistory is internal in TOR, so call via reflection.
+                            OverrideDeathReasonAndKiller(
                                 oldShifter, DeadPlayer.CustomDeathReason.Shift, target);
                         }
                     } else {
