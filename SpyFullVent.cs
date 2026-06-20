@@ -33,6 +33,15 @@ namespace UsefulTORStuff {
     public static class SpyFullVent {
         public static CustomOption Option;  // Off/On toggle
 
+        // true, während TORs Vent.Use läuft — nur dann überschreiben wir das SetButtons-Argument
+        // (TORs gegateter Aufruf). Native SetButtons-Aufrufe (z.B. aus TryMoveToVent beim Vent-Wechsel)
+        // bleiben unangetastet, damit die Traversal-Pfeile vom Spiel selbst korrekt gesetzt werden.
+        private static bool _inVentUse;
+        // Vorzustand beim Klick: true = Einsteigen (Pfeile zeigen), false = Aussteigen (Pfeile aus).
+        // Aus dem inVent VOR dem Klick bestimmt — zuverlässig, anders als das während der Aussteige-
+        // Animation noch kurz true bleibende Live-inVent.
+        private static bool _pendingIsEnter;
+
         public static void CreateOptions() {
             try {
                 Option = CustomOption.Create(
@@ -66,35 +75,59 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Re-enable the directional move buttons for the Spy while inside a vent. TOR calls SetButtons
-        // after RpcEnterVent/RpcExitVent has toggled inVent, so inVent here is the post-click state:
-        // true right after entering (show arrows), false right after exiting (leave TOR's false → hide).
+        // Bewegungspfeile für den Spy genau wie für einen Impostor schalten: SetButtons(isEnter).
+        // TOR ruft in Vent.Use SetButtons(isEnter && canMoveInVents) auf, und canMoveInVents ist für
+        // den Spy IMMER false → Pfeile aus. Wir überschreiben das Argument nur während Vent.Use
+        // (_inVentUse) mit dem zuverlässigen _pendingIsEnter (Vorzustand des Klicks): true beim
+        // Einsteigen (Pfeile an), false beim Aussteigen (Pfeile sofort aus — kein Nachflackern während
+        // der Aussteige-Animation, weil wir NICHT das live noch kurz true bleibende inVent lesen).
+        // Native SetButtons-Aufrufe (Vent-Wechsel via TryMoveToVent) lassen wir unangetastet.
         [HarmonyPatch(typeof(Vent), nameof(Vent.SetButtons))]
         static class VentSetButtonsPatch {
             public static void Prefix(Vent __instance, ref bool __0) {
                 try {
-                    if (!LocalIsSpy()) return;
-                    bool inVent = PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.inVent;
+                    if (!LocalIsSpy() || !_inVentUse) return;
                     bool incoming = __0;
-                    if (inVent) __0 = true;
+                    __0 = _pendingIsEnter;
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         $"[SpyFullVent][DIAG] SetButtons vent={(__instance != null ? __instance.Id : -1)} " +
-                        $"inVent={inVent} incoming={incoming} -> {__0}");
+                        $"isEnter={_pendingIsEnter} incoming={incoming} -> {__0}");
                 } catch { }
             }
         }
 
-        // DIAG: log the enter/exit decision exactly where TOR computes it, to compare against the
-        // SetButtons call above (reveals the real ordering / inVent state at click time).
-        [HarmonyPatch(typeof(Vent), nameof(Vent.Use))]
-        static class VentUseDiagPatch {
-            public static void Prefix() {
+        // DIAG: feuert, sobald ein Bewegungspfeil-Klick die Traversal-Methode erreicht. Reines Logging
+        // (kein Skip) — zeigt im nächsten Test, ob Klicks ankommen (dann sitzt die Sperre tiefer) oder
+        // gar nicht (dann ist es die Pfeil-Sichtbarkeit/Interaktivität).
+        [HarmonyPatch(typeof(Vent), nameof(Vent.TryMoveToVent))]
+        static class VentTryMoveDiagPatch {
+            public static void Prefix(Vent __instance, Vent otherVent) {
                 try {
                     if (!LocalIsSpy()) return;
                     bool inVent = PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.inVent;
-                    UsefulTORStuffPlugin.Logger?.LogInfo($"[SpyFullVent][DIAG] Vent.Use click: inVent(before)={inVent}");
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[SpyFullVent][DIAG] TryMoveToVent from={(__instance != null ? __instance.Id : -1)} " +
+                        $"to={(otherVent != null ? otherVent.Id : -1)} inVent={inVent}");
                 } catch { }
             }
+        }
+
+        // Markiert das Zeitfenster von Vent.Use und erfasst den Vorzustand (isEnter) VOR dem Klick.
+        // Priority.First, damit unser Prefix vor TORs VentUsePatch.Prefix läuft (das intern SetButtons
+        // aufruft) — so steht _inVentUse/_pendingIsEnter, wenn unser SetButtons-Prefix greift. Der
+        // Postfix räumt das Fenster wieder ab (läuft auch, wenn TORs Prefix das Original überspringt).
+        [HarmonyPatch(typeof(Vent), nameof(Vent.Use))]
+        static class VentUseScopePatch {
+            [HarmonyPriority(Priority.First)]
+            public static void Prefix() {
+                try {
+                    if (!LocalIsSpy()) return;
+                    _pendingIsEnter = !(PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.inVent);
+                    _inVentUse = true;
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"[SpyFullVent][DIAG] Vent.Use click: isEnter={_pendingIsEnter}");
+                } catch { }
+            }
+            public static void Postfix() { _inVentUse = false; }
         }
     }
 }

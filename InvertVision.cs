@@ -32,7 +32,7 @@ namespace UsefulTORStuff {
 
         private static SpriteRenderer overlay;       // our dedicated full-screen overlay
         private static Material invertMaterial;       // Internal-Colored with invert blend
-        private static bool materialTried;
+        private static bool shaderMissing;            // Shader.Find dauerhaft fehlgeschlagen → nicht retrien
         private static bool lastActive;              // DIAG: log only on state change
 
         public static void CreateOptions() {
@@ -52,17 +52,48 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Build the invert material from the built-in Internal-Colored shader (once).
+        // Per-Runden-Reset: nach Spielwechsel wird der HudManager (und damit unser Overlay-Kind)
+        // neu erzeugt; der statische overlay-Verweis zeigt dann auf ein zerstörtes GameObject und
+        // wird nicht zuverlässig als null erkannt → ohne Reset bliebe der Negativ-Filter ab Runde 2
+        // aus. Wir zerstören ein noch lebendes Overlay und nullen die Laufzeit-Statics. Das Material
+        // bleibt erhalten (in EnsureMaterial vor dem Entladen geschützt bzw. bei Bedarf neu gebaut).
+        public static void Reset() {
+            try {
+                if (overlay != null) {
+                    try { UnityEngine.Object.Destroy(overlay.gameObject); } catch { }
+                }
+            } catch { }
+            overlay = null;
+            lastActive = false;
+        }
+
+        // Läuft pro Runde auf jedem Client (gleiches Muster wie TiebreakerMultiple.ResetPatch).
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
+        static class ResetPatch {
+            public static void Postfix() { Reset(); }
+        }
+
+        // Build the invert material from the built-in Internal-Colored shader.
+        // Wichtig: Unity zerstört ein per `new Material(...)` erzeugtes Material beim Szenenwechsel
+        // (Spielende → neue Runde). Beim ersten Build überlebte das Material genau einen Spielwechsel
+        // nicht, ein `materialTried`-Flag verhinderte den Neuaufbau → der Negativ-Filter „erschien
+        // einmal, danach nie wieder". Fix: (1) `HideAndDontSave` + `DontDestroyOnLoad` schützen das
+        // Material vor dem Entladen; (2) ist es trotzdem zerstört (fake-null), bauen wir es neu auf,
+        // solange der Shader grundsätzlich verfügbar ist (`shaderMissing` verhindert nur Endlos-Retries
+        // bei wirklich fehlendem Shader).
         private static void EnsureMaterial() {
-            if (materialTried) return;
-            materialTried = true;
+            if (invertMaterial != null) return;   // gültiges Material vorhanden
+            if (shaderMissing) return;            // Shader dauerhaft nicht da → nicht weiter versuchen
             try {
                 var shader = Shader.Find("Hidden/Internal-Colored");
                 if (shader == null) {
+                    shaderMissing = true;
                     UsefulTORStuffPlugin.Logger?.LogWarning("[InvertVision] Hidden/Internal-Colored not found — inverted vision unavailable.");
                     return;
                 }
                 invertMaterial = new Material(shader);
+                invertMaterial.hideFlags = HideFlags.HideAndDontSave; // überlebt Szenenwechsel
+                UnityEngine.Object.DontDestroyOnLoad(invertMaterial);
                 invertMaterial.SetColor("_Color", Color.white);
                 // final = src*(1-dst) + dst*0 = 1 - dst  -> colour negative
                 invertMaterial.SetInt("_SrcBlend", (int)BlendMode.OneMinusDstColor);
@@ -101,6 +132,16 @@ namespace UsefulTORStuff {
                         UsefulTORStuffPlugin.Logger?.LogInfo(
                             $"[InvertVision][DIAG] active={active}, material={(invertMaterial != null)}, " +
                             $"overlay={(overlay != null)}, FullScreen={(__instance.FullScreen != null)}.");
+                    }
+
+                    // Stale-Overlay aussortieren: ein zerstörtes oder unter einem anderen (neuen)
+                    // HudManager hängendes Overlay verwerfen, damit es frisch unter __instance
+                    // erzeugt wird. Selbstheilung auch ohne den resetVariables-Hook.
+                    if (overlay != null) {
+                        try {
+                            if (overlay.gameObject == null || overlay.transform.parent != __instance.transform)
+                                overlay = null;
+                        } catch { overlay = null; }
                     }
 
                     if (overlay == null && __instance.FullScreen != null) {

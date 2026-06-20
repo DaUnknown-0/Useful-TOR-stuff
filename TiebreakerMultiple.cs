@@ -77,6 +77,14 @@ namespace UsefulTORStuff {
                 else
                     UsefulTORStuffPlugin.Logger?.LogWarning("[TiebreakerMultiple] getSelectionForRoleId not found — multi-assignment disabled.");
 
+                // Host-authoritative top-up postfix on assignModifiers (runs in both the classic and the
+                // RoleDraft path, after every Tiebreaker SetModifier RPC has been tracked).
+                var assignModifiers = rmsr?.GetMethod("assignModifiers", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                if (assignModifiers != null)
+                    harmony.Patch(assignModifiers, postfix: new HarmonyMethod(typeof(TiebreakerMultiple), nameof(TopUp)));
+                else
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[TiebreakerMultiple] assignModifiers not found — multi-tiebreaker top-up disabled.");
+
                 // Resolve the vote-count helper + swapper-swap fields used by the resolution prefix.
                 var mhp = torAsm.GetType("TheOtherRoles.Patches.MeetingHudPatch+MeetingCalculateVotesPatch");
                 calculateVotes = mhp?.GetMethod("CalculateVotes", BindingFlags.NonPublic | BindingFlags.Static);
@@ -88,6 +96,7 @@ namespace UsefulTORStuff {
 
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[TiebreakerMultiple][DIAG] Reflection resolved: getSelectionForRoleId={(gsfr != null)}, " +
+                    $"assignModifiers={(assignModifiers != null)}, " +
                     $"CalculateVotes={(calculateVotes != null)}, swapped1={(swapped1Field != null)}, swapped2={(swapped2Field != null)}.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] TryPatch failed: {e}");
@@ -122,39 +131,41 @@ namespace UsefulTORStuff {
 
         // Host-authoritative top-up: TOR's chance path under-assigns the Tiebreaker (it consumes the
         // ticket pool with the NON-multiplied count, RoleAssignmentPatch.cs:480), so quantity > 1 only
-        // reliably works at 100%. After TOR finishes role assignment we ensure up to `quantity`
+        // reliably works at 100%. After TOR finishes modifier assignment we ensure up to `quantity`
         // Tiebreakers exist — but only if at least one already spawned, preserving the chance gate.
-        // Runs at Priority.Low so it executes AFTER TOR's RoleManagerSelectRolesPatch.Postfix.
-        [HarmonyPatch(typeof(RoleManager), nameof(RoleManager.SelectRoles))]
-        [HarmonyPriority(Priority.Low)]
-        static class TopUpPatch {
-            public static void Postfix() {
-                try {
-                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
-                    if (CustomOptionHolder.modifierTieBreaker == null
-                        || CustomOptionHolder.modifierTieBreaker.getSelection() <= 0) return; // not in play
-                    int want = Qty();
-                    if (myTiebreakers.Count == 0 || myTiebreakers.Count >= want) return; // chance gate / already enough
+        //
+        // Hooked as a postfix on RoleManagerSelectRolesPatch.assignModifiers (see TryPatch), NOT on
+        // RoleManager.SelectRoles: with RoleDraft enabled the classic Postfix returns early and the
+        // draft coroutine assigns modifiers asynchronously later (RoleAssignmentPatch.cs:56-57). A
+        // SelectRoles postfix would therefore run with myTiebreakers still empty. assignModifiers runs
+        // in BOTH paths and only after every Tiebreaker SetModifier RPC has been tracked, so the
+        // top-up is timing-safe.
+        public static void TopUp() {
+            try {
+                if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
+                if (CustomOptionHolder.modifierTieBreaker == null
+                    || CustomOptionHolder.modifierTieBreaker.getSelection() <= 0) return; // not in play
+                int want = Qty();
+                if (myTiebreakers.Count == 0 || myTiebreakers.Count >= want) return; // chance gate / already enough
 
-                    // TOR assigns the Tiebreaker modifier from the full player pool (any alignment),
-                    // so just exclude players who already hold it.
-                    var eligible = PlayerControl.AllPlayerControls.ToArray()
-                        .Where(p => p != null && p.Data != null && !p.Data.Disconnected && !p.Data.IsDead)
-                        .Where(p => !myTiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId))
-                        .ToList();
+                // TOR assigns the Tiebreaker modifier from the full player pool (any alignment),
+                // so just exclude players who already hold it.
+                var eligible = PlayerControl.AllPlayerControls.ToArray()
+                    .Where(p => p != null && p.Data != null && !p.Data.Disconnected && !p.Data.IsDead)
+                    .Where(p => !myTiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId))
+                    .ToList();
 
-                    int toAdd = Math.Min(want - myTiebreakers.Count, eligible.Count);
-                    for (int i = 0; i < toAdd; i++) {
-                        int idx = rng.Next(eligible.Count);
-                        byte playerId = eligible[idx].PlayerId;
-                        eligible.RemoveAt(idx);
-                        AssignTiebreaker(playerId); // SetModifierPatch tracks it into myTiebreakers
-                    }
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[TiebreakerMultiple] Tiebreakers assigned: {myTiebreakers.Count} (target {want}).");
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] top-up failed: {e}");
+                int toAdd = Math.Min(want - myTiebreakers.Count, eligible.Count);
+                for (int i = 0; i < toAdd; i++) {
+                    int idx = rng.Next(eligible.Count);
+                    byte playerId = eligible[idx].PlayerId;
+                    eligible.RemoveAt(idx);
+                    AssignTiebreaker(playerId); // SetModifierPatch tracks it into myTiebreakers
                 }
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[TiebreakerMultiple] Tiebreakers assigned: {myTiebreakers.Count} (target {want}).");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] top-up failed: {e}");
             }
         }
 
