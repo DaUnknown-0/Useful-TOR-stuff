@@ -14,9 +14,13 @@
  *   1) Force Spy.canEnterVents = true (postfix on Spy.clearAndReload) so the entry is allowed
  *      regardless of TOR's own option. roleCanUseVents() then also allows the connected vents in
  *      VentCanUsePatch, so movement is permitted.
- *   2) Re-enable the move arrows: a Vent.Use prefix records whether this click is an ENTER (computed
- *      from inVent exactly like TOR's isEnter), and a Vent.SetButtons prefix forces the argument to
- *      true on that enter — leaving exits untouched so the arrows still hide when leaving.
+ *   2) Re-enable the move arrows: TOR always calls Vent.SetButtons AFTER toggling inVent via
+ *      RpcEnterVent/RpcExitVent (UsablesPatch.cs:130-134), so at the SetButtons call inVent already
+ *      reflects the new state (== TOR's captured isEnter). A Vent.SetButtons prefix therefore forces
+ *      the argument to true whenever the local Spy is inside a vent — showing arrows on enter and
+ *      leaving exits untouched (inVent already false) so they hide when leaving. Reading inVent at
+ *      SetButtons time is order-independent (no fragile cross-patch flag), which is why the previous
+ *      Vent.Use-prefix approach showed the arrows inverted.
  */
 
 using System;
@@ -28,10 +32,6 @@ using Types = TheOtherRoles.CustomOption.CustomOptionType;
 namespace UsefulTORStuff {
     public static class SpyFullVent {
         public static CustomOption Option;  // Off/On toggle
-
-        // Set at the Vent.Use click (before TOR's prefix calls SetButtons): true when the local Spy
-        // is entering a vent, false when exiting. Drives the SetButtons override below.
-        private static bool spyEntering;
 
         public static void CreateOptions() {
             try {
@@ -66,26 +66,15 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Record enter vs exit before TOR's VentUsePatch.Prefix runs its SetButtons call. isEnter is
-        // computed the same way TOR does it (UsablesPatch.cs:115): isEnter = !inVent at click time.
-        [HarmonyPatch(typeof(Vent), nameof(Vent.Use))]
-        [HarmonyPriority(Priority.High)]
-        static class VentUsePrefixPatch {
-            public static void Prefix() {
-                try {
-                    spyEntering = LocalIsSpy() && PlayerControl.LocalPlayer != null
-                                  && !PlayerControl.LocalPlayer.inVent;
-                } catch { spyEntering = false; }
-            }
-        }
-
-        // Re-enable the directional move buttons for the Spy on enter (TOR passed false). Exits leave
-        // spyEntering false, so SetButtons(false) still hides the arrows when leaving.
+        // Re-enable the directional move buttons for the Spy while inside a vent. TOR calls SetButtons
+        // after RpcEnterVent/RpcExitVent has toggled inVent, so inVent here is the post-click state:
+        // true right after entering (show arrows), false right after exiting (leave TOR's false → hide).
         [HarmonyPatch(typeof(Vent), nameof(Vent.SetButtons))]
         static class VentSetButtonsPatch {
             public static void Prefix(ref bool __0) {
                 try {
-                    if (spyEntering && LocalIsSpy()) __0 = true;
+                    if (LocalIsSpy() && PlayerControl.LocalPlayer != null
+                        && PlayerControl.LocalPlayer.inVent) __0 = true;
                 } catch { }
             }
         }

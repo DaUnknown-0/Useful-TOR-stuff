@@ -27,6 +27,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using HarmonyLib;
+using Hazel;
 using TheOtherRoles;
 using static TheOtherRoles.TheOtherRoles;
 using Types = TheOtherRoles.CustomOption.CustomOptionType;
@@ -35,7 +36,11 @@ namespace UsefulTORStuff {
     public static class TiebreakerMultiple {
         public static CustomOption Quantity;  // 1-3 (getQuantity)
 
+        // CustomRPC.SetModifier (enum is internal to TOR; value is stable, see RPC.cs:89-94).
+        private const byte TorSetModifierRpcId = 105;
+
         private static readonly List<PlayerControl> myTiebreakers = new List<PlayerControl>();
+        private static readonly System.Random rng = new System.Random();
 
         // Reflection handles resolved in TryPatch.
         private static MethodInfo calculateVotes;   // MeetingHudPatch+MeetingCalculateVotesPatch.CalculateVotes
@@ -111,6 +116,56 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
             public static void Postfix() { myTiebreakers.Clear(); }
+        }
+
+        // Host-authoritative top-up: TOR's chance path under-assigns the Tiebreaker (it consumes the
+        // ticket pool with the NON-multiplied count, RoleAssignmentPatch.cs:480), so quantity > 1 only
+        // reliably works at 100%. After TOR finishes role assignment we ensure up to `quantity`
+        // Tiebreakers exist — but only if at least one already spawned, preserving the chance gate.
+        // Runs at Priority.Low so it executes AFTER TOR's RoleManagerSelectRolesPatch.Postfix.
+        [HarmonyPatch(typeof(RoleManager), nameof(RoleManager.SelectRoles))]
+        [HarmonyPriority(Priority.Low)]
+        static class TopUpPatch {
+            public static void Postfix() {
+                try {
+                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
+                    if (CustomOptionHolder.modifierTieBreaker == null
+                        || CustomOptionHolder.modifierTieBreaker.getSelection() <= 0) return; // not in play
+                    int want = Qty();
+                    if (myTiebreakers.Count == 0 || myTiebreakers.Count >= want) return; // chance gate / already enough
+
+                    // TOR assigns the Tiebreaker modifier from the full player pool (any alignment),
+                    // so just exclude players who already hold it.
+                    var eligible = PlayerControl.AllPlayerControls.ToArray()
+                        .Where(p => p != null && p.Data != null && !p.Data.Disconnected && !p.Data.IsDead)
+                        .Where(p => !myTiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId))
+                        .ToList();
+
+                    int toAdd = Math.Min(want - myTiebreakers.Count, eligible.Count);
+                    for (int i = 0; i < toAdd; i++) {
+                        int idx = rng.Next(eligible.Count);
+                        byte playerId = eligible[idx].PlayerId;
+                        eligible.RemoveAt(idx);
+                        AssignTiebreaker(playerId); // SetModifierPatch tracks it into myTiebreakers
+                    }
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[TiebreakerMultiple] Tiebreakers assigned: {myTiebreakers.Count} (target {want}).");
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] top-up failed: {e}");
+                }
+            }
+        }
+
+        // Broadcast + locally apply an extra Tiebreaker modifier via TOR's own SetModifier RPC, so
+        // every TOR client (modded or not) applies it — the same path TOR's setModifierToRandomPlayer uses.
+        private static void AssignTiebreaker(byte playerId) {
+            MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
+                PlayerControl.LocalPlayer.NetId, TorSetModifierRpcId, SendOption.Reliable, -1);
+            writer.Write((byte)RoleId.Tiebreaker);
+            writer.Write(playerId);
+            writer.Write((byte)0); // flag
+            AmongUsClient.Instance.FinishRpcImmediately(writer);
+            RPCProcedure.setModifier((byte)RoleId.Tiebreaker, playerId, 0); // host applies locally
         }
 
         private static byte ApplySwap(byte vote) {
