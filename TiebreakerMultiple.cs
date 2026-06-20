@@ -86,7 +86,9 @@ namespace UsefulTORStuff {
                 if (calculateVotes == null)
                     UsefulTORStuffPlugin.Logger?.LogWarning("[TiebreakerMultiple] CalculateVotes not found — multi-tiebreak resolution disabled.");
 
-                UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple] Patched.");
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[TiebreakerMultiple][DIAG] Reflection resolved: getSelectionForRoleId={(gsfr != null)}, " +
+                    $"CalculateVotes={(calculateVotes != null)}, swapped1={(swapped1Field != null)}, swapped2={(swapped2Field != null)}.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] TryPatch failed: {e}");
             }
@@ -187,19 +189,26 @@ namespace UsefulTORStuff {
         static class ResolvePatch {
             public static void Prefix(MeetingHud __instance) {
                 try {
-                    if (calculateVotes == null) return;
-                    if (myTiebreakers.Count < 2) return; // 0-1 tiebreaker: let TOR handle it unchanged
                     if (__instance == null || __instance.playerStates == null) return;
                     // Only act once everyone has voted (mirror TOR's own entry guard).
                     bool allVoted = true;
                     foreach (var ps in __instance.playerStates) if (!(ps.AmDead || ps.DidVote)) { allVoted = false; break; }
                     if (!allVoted) return;
 
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[TiebreakerMultiple][DIAG] CheckForEndVoting (all voted): myTiebreakers={myTiebreakers.Count}, " +
+                        $"reflectionOk={(calculateVotes != null)}, TOR.tiebreaker={(Tiebreaker.tiebreaker != null ? Tiebreaker.tiebreaker.PlayerId.ToString() : "null")}.");
+
+                    if (calculateVotes == null) return;
+                    if (myTiebreakers.Count < 2) return; // 0-1 tiebreaker: let TOR handle it unchanged
+
                     var self = calculateVotes.Invoke(null, new object[] { __instance }) as Dictionary<byte, int>;
                     if (self == null || self.Count == 0) return;
 
                     int maxV = self.Values.Max();
                     var tied = self.Where(kv => kv.Value == maxV).Select(kv => kv.Key).ToList();
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[TiebreakerMultiple][DIAG] maxVotes={maxV}, tiedCandidates={tied.Count} [{string.Join(",", tied)}].");
                     if (tied.Count <= 1) return; // not a tie → nothing to resolve
 
                     // Count tiebreaker votes for each tied candidate (skip = 253 / no-vote excluded).
@@ -218,15 +227,23 @@ namespace UsefulTORStuff {
                         voteByTb[tb.PlayerId] = vote;
                     }
 
-                    if (counts.Count == 0) { Tiebreaker.tiebreaker = null; return; } // no votes on tied → stays tie
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[TiebreakerMultiple][DIAG] tiebreaker votes on tied candidates: " +
+                        $"[{string.Join(", ", counts.Select(kv => kv.Key + ":" + kv.Value))}].");
+
+                    if (counts.Count == 0) { Tiebreaker.tiebreaker = null;
+                        UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] no tiebreaker voted on a tied candidate → stays tie."); return; }
                     int top = counts.Values.Max();
                     var winners = counts.Where(kv => kv.Value == top).Select(kv => kv.Key).ToList();
-                    if (winners.Count != 1) { Tiebreaker.tiebreaker = null; return; } // tie among tiebreakers → stays tie
+                    if (winners.Count != 1) { Tiebreaker.tiebreaker = null;
+                        UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] tiebreakers split evenly → stays tie."); return; }
 
                     byte winner = winners[0];
                     // Point TOR's single field at a Tiebreaker whose (post-swap) vote is the winner.
                     byte deciderId = voteByTb.First(kv => kv.Value == winner).Key;
                     Tiebreaker.tiebreaker = Helpers.playerById(deciderId);
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[TiebreakerMultiple][DIAG] winner={winner}, decider(set as TOR tiebreaker)={deciderId}.");
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] resolution prefix failed: {e}");
                 }

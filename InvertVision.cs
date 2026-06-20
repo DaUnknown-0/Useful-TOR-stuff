@@ -6,14 +6,16 @@
  * InvertVision - new Invert option "Inverted Vision": a TRUE colour negative for the inverted player
  * while the modifier is active (Invert.meetings > 0).
  *
- * The earlier approach drew the invert material onto a cloned HUD SpriteRenderer (HudManager.FullScreen).
- * That sits in the UI render pass *over* the world, so an OneMinusDstColor blend there does not reliably
- * invert the rendered game world. This version composites the negative over the WORLD camera instead:
- * a small Il2Cpp MonoBehaviour on Camera.main implements OnRenderImage and, after copying the rendered
- * scene through, draws a white full-screen quad with blend (OneMinusDstColor, Zero) in GL immediate
- * mode -> final = white*(1-dst) = 1 - dst, a real per-pixel negative of the scene. GL immediate-mode
- * drawing is exactly what the built-in "Hidden/Internal-Colored" shader is designed for, so no custom
- * shader / AssetBundle is needed. Only the world camera is inverted; the separate HUD stays readable.
+ * No AssetBundle / custom shader file is needed. Unity ships the built-in shader
+ * "Hidden/Internal-Colored", which (unlike Sprites/Default) exposes its blend factors as material
+ * properties _SrcBlend/_DstBlend. Setting them to (OneMinusDstColor, Zero) and drawing a white
+ * fullscreen quad gives  final = white*(1-dst) + dst*0 = 1 - dst  -> a real per-pixel inversion of
+ * the framebuffer.
+ *
+ * We hold our own fullscreen SpriteRenderer overlay (cloned from HudManager.FullScreen so it's sized
+ * correctly) with that material; the sprite texture is ignored by Internal-Colored, only its quad
+ * geometry + white vertex colour matter. Using our own overlay avoids fighting TOR's transient uses
+ * of the shared HudManager.FullScreen (Time Master rewind, lights, ...).
  */
 
 using System;
@@ -28,10 +30,10 @@ namespace UsefulTORStuff {
     public static class InvertVision {
         public static CustomOption Option;  // Off/On toggle
 
-        private static Material invertMaterial;  // Internal-Colored with invert blend
+        private static SpriteRenderer overlay;       // our dedicated full-screen overlay
+        private static Material invertMaterial;       // Internal-Colored with invert blend
         private static bool materialTried;
-        private static bool typeRegistered;
-        private static Camera attachedCam;       // camera we last added the component to
+        private static bool lastActive;              // DIAG: log only on state change
 
         public static void CreateOptions() {
             try {
@@ -47,16 +49,6 @@ namespace UsefulTORStuff {
                 UsefulTORStuffPlugin.Logger?.LogInfo("[InvertVision] Option created under Invert.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[InvertVision] CreateOptions failed: {e}");
-            }
-
-            // Register the Il2Cpp camera component once so it can be attached to Camera.main later.
-            try {
-                if (!typeRegistered) {
-                    ClassInjector.RegisterTypeInIl2Cpp<InvertVisionCamera>();
-                    typeRegistered = true;
-                }
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[InvertVision] component registration failed: {e.Message}");
             }
         }
 
@@ -96,57 +88,39 @@ namespace UsefulTORStuff {
             } catch { return false; }
         }
 
-        // Keep the invert component attached to the live world camera. Cheap GetComponent check; the
-        // component survives until the camera is destroyed (scene change), then gets re-added.
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         static class HudUpdatePatch {
-            public static void Postfix() {
-                try {
-                    if (!typeRegistered) return;
-                    var cam = Camera.main;
-                    if (cam == null) return;
-                    if (cam == attachedCam) return; // already attached to this camera
-                    if (cam.GetComponent<InvertVisionCamera>() == null)
-                        cam.gameObject.AddComponent<InvertVisionCamera>();
-                    attachedCam = cam;
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[InvertVision] camera attach failed: {e}");
-                }
-            }
-        }
-
-        // Il2Cpp MonoBehaviour: inverts the rendered scene in OnRenderImage. When inactive it just
-        // blits the scene through unchanged, so it is safe to leave attached permanently.
-        public class InvertVisionCamera : MonoBehaviour {
-            public InvertVisionCamera(IntPtr ptr) : base(ptr) { }
-
-            public void OnRenderImage(RenderTexture src, RenderTexture dest) {
+            public static void Postfix(HudManager __instance) {
                 try {
                     EnsureMaterial();
-                    if (invertMaterial == null || !Active()) {
-                        Graphics.Blit(src, dest);
-                        return;
+                    if (invertMaterial == null) return;
+
+                    bool active = Active();
+                    if (active != lastActive) {
+                        lastActive = active;
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[InvertVision][DIAG] active={active}, material={(invertMaterial != null)}, " +
+                            $"overlay={(overlay != null)}, FullScreen={(__instance.FullScreen != null)}.");
                     }
-                    // Copy the rendered scene, then overlay a white full-screen quad with the
-                    // OneMinusDstColor/Zero blend → the destination becomes 1 - scene.
-                    Graphics.Blit(src, dest);
-                    var prev = RenderTexture.active;
-                    RenderTexture.active = dest;
-                    GL.PushMatrix();
-                    GL.LoadOrtho();
-                    invertMaterial.SetPass(0);
-                    GL.Begin(7); // 7 == GL.QUADS (the const isn't exposed in the Il2Cpp binding)
-                    GL.Color(Color.white);
-                    GL.Vertex3(0f, 0f, 0f);
-                    GL.Vertex3(1f, 0f, 0f);
-                    GL.Vertex3(1f, 1f, 0f);
-                    GL.Vertex3(0f, 1f, 0f);
-                    GL.End();
-                    GL.PopMatrix();
-                    RenderTexture.active = prev;
+
+                    if (overlay == null && __instance.FullScreen != null) {
+                        overlay = UnityEngine.Object.Instantiate(__instance.FullScreen, __instance.transform);
+                        overlay.name = "UsefulInvertOverlay";
+                        overlay.material = invertMaterial; // true colour negative (1 - rgb)
+                        overlay.color = Color.white;
+                        overlay.gameObject.SetActive(false);
+                    }
+                    if (overlay == null) return;
+
+                    if (active) {
+                        overlay.enabled = true;
+                        if (!overlay.gameObject.activeSelf) overlay.gameObject.SetActive(true);
+                    } else if (overlay.gameObject.activeSelf) {
+                        overlay.enabled = false;
+                        overlay.gameObject.SetActive(false);
+                    }
                 } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[InvertVision] OnRenderImage failed: {e}");
-                    try { Graphics.Blit(src, dest); } catch { }
+                    UsefulTORStuffPlugin.Logger?.LogError($"[InvertVision] HudManager.Update postfix failed: {e}");
                 }
             }
         }

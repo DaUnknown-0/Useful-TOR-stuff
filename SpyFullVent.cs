@@ -71,10 +71,28 @@ namespace UsefulTORStuff {
         // true right after entering (show arrows), false right after exiting (leave TOR's false → hide).
         [HarmonyPatch(typeof(Vent), nameof(Vent.SetButtons))]
         static class VentSetButtonsPatch {
-            public static void Prefix(ref bool __0) {
+            public static void Prefix(Vent __instance, ref bool __0) {
                 try {
-                    if (LocalIsSpy() && PlayerControl.LocalPlayer != null
-                        && PlayerControl.LocalPlayer.inVent) __0 = true;
+                    if (!LocalIsSpy()) return;
+                    bool inVent = PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.inVent;
+                    bool incoming = __0;
+                    if (inVent) __0 = true;
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[SpyFullVent][DIAG] SetButtons vent={(__instance != null ? __instance.Id : -1)} " +
+                        $"inVent={inVent} incoming={incoming} -> {__0}");
+                } catch { }
+            }
+        }
+
+        // DIAG: log the enter/exit decision exactly where TOR computes it, to compare against the
+        // SetButtons call above (reveals the real ordering / inVent state at click time).
+        [HarmonyPatch(typeof(Vent), nameof(Vent.Use))]
+        static class VentUseDiagPatch {
+            public static void Prefix() {
+                try {
+                    if (!LocalIsSpy()) return;
+                    bool inVent = PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.inVent;
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"[SpyFullVent][DIAG] Vent.Use click: inVent(before)={inVent}");
                 } catch { }
             }
         }
