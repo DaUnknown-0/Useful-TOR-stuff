@@ -7,7 +7,9 @@
  *
  * 1) Evil Flash on Death: when the Spy (who also has the VIP modifier) is killed, a red
  *    (impostor-coloured) flash is shown to all local players. The Seer can optionally
- *    receive the true crewmate-blue flash instead, revealing the Spy's actual alignment.
+ *    receive the true crewmate-white flash instead (matching VIP's showColor scheme, where
+ *    Crew = white), revealing the Spy's actual alignment. Only applies when VIP colours are
+ *    active (Vip.showColor); otherwise the Seer sees the same red evil flash as everyone.
  *    Only activates when Spy also has VIP — layering on top of the VIP flash keeps the
  *    interaction consistent. Our postfix runs after TOR's VIP flash (yellow/white for
  *    crewmate) and overrides it visually.
@@ -111,9 +113,11 @@ namespace UsefulTORStuff {
                                   && lp.PlayerId == Seer.seer.PlayerId
                                   && !Seer.seer.Data.IsDead;
 
-                    if (isSeer && OptionSeerTrueFlash != null && OptionSeerTrueFlash.getBool())
-                        // Blue = true crewmate colour (Seer sees the Spy's real nature)
-                        Helpers.showFlash(new Color(42f / 255f, 187f / 255f, 245f / 255f), 1.5f);
+                    if (isSeer && OptionSeerTrueFlash != null && OptionSeerTrueFlash.getBool() && Vip.showColor)
+                        // White = true crewmate colour (Spy is a Crew role; matches VIP showColor scheme).
+                        // Only when Vip.showColor is on — with colours off there is nothing to reveal,
+                        // so the Seer falls through to the red evil flash like everyone else.
+                        Helpers.showFlash(Color.white, 1.5f);
                     else
                         // Red = evil flash (Spy appeared impostor-like)
                         Helpers.showFlash(Spy.color, 1.5f);

@@ -27,7 +27,7 @@ namespace UsefulTORStuff {
         private const string OriginalName       = "Invert";
         private const string OriginalIntroDesc  = "Your movement is inverted";
         private const string DrunkName          = "Drunk";
-        private const string DrunkIntroDesc     = "You are Drunk";
+        private const string DrunkIntroDesc     = "ArEeee you D-D-druuunk?";
 
         public static void CreateOptions() {
             try {
