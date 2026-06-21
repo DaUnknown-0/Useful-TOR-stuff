@@ -20,8 +20,9 @@
  *      1 "Shifter Dies"    — mirrors TOR's impostor-target path (RPC.cs:602-611): the
  *                            Shifter is exiled and the shift is cancelled.
  *      2 "Shift Cancelled" — shift silently fails; nobody dies. Sub-option: Shifter Gets
- *                            Shift Back → resets all button cooldowns for the Shifter so
- *                            they can immediately pick a new target.
+ *                            Shift Back → keeps the player as the Shifter and clears the queued
+ *                            shift (+ resets cooldowns) so the shift button returns and they can
+ *                            pick a new target. Without it the shift is consumed (Shifter role dropped).
  */
 
 using System;
@@ -171,11 +172,11 @@ namespace UsefulTORStuff {
                     if (target == null || target != Spy.spy) return true;
 
                     PlayerControl oldShifter = Shifter.shifter;
-                    Shifter.futureShift = null;
-                    Shifter.clearAndReload();
 
                     if (mode == 1) {
                         // Shifter Dies — mirrors RPC.cs:602-611
+                        Shifter.futureShift = null;
+                        Shifter.clearAndReload();
                         if (oldShifter != null && !oldShifter.Data.IsDead) {
                             oldShifter.Exiled();
                             // GameHistory is internal in TOR, so call via reflection.
@@ -186,10 +187,23 @@ namespace UsefulTORStuff {
                         // Shift Cancelled, No One Dies
                         bool giveback = OptionShifterGetsShiftBack != null
                                         && OptionShifterGetsShiftBack.getBool();
-                        if (giveback && oldShifter != null
-                            && PlayerControl.LocalPlayer != null
-                            && PlayerControl.LocalPlayer.PlayerId == oldShifter.PlayerId) {
-                            CustomButton.ResetAllCooldowns();
+                        if (giveback) {
+                            // Hand the shift back: keep the player as the Shifter and only clear the
+                            // queued shift, so the shift button returns. HasButton needs
+                            // Shifter.shifter == LocalPlayer && futureShift == null (Buttons.cs:529),
+                            // so we must NOT clearAndReload() here — that nulls Shifter.shifter and
+                            // strips the role, which is exactly why the shift never came back. Runs on
+                            // every client (RPC), so all agree the Shifter is still the Shifter.
+                            Shifter.futureShift = null;
+                            Shifter.currentTarget = null;
+                            if (oldShifter != null && PlayerControl.LocalPlayer != null
+                                && PlayerControl.LocalPlayer.PlayerId == oldShifter.PlayerId)
+                                CustomButton.ResetAllCooldowns();
+                        } else {
+                            // No giveback: the shift is consumed. Drop the Shifter role (as vanilla
+                            // does after any shift) so the button does not return.
+                            Shifter.futureShift = null;
+                            Shifter.clearAndReload();
                         }
                     }
 
