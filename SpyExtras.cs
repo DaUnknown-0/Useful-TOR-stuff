@@ -48,21 +48,27 @@ namespace UsefulTORStuff {
 
         public static void CreateOptions() {
             try {
+                // IDs 1320-1323: must NOT collide with any other CustomOption id. The 1300-1303
+                // range overlaps TricksterAvatarSabotage (1300/1301/1302); duplicate ids share a
+                // config slot and TOR resolves options via options.First(id==...), so the colliding
+                // options scramble each other's selections (serializeOptions' consecutive-id delta
+                // scheme makes it worse). That made "Shifter Interaction" read the wrong mode and
+                // exile the Shifter even when "Shift Cancelled" was selected.
                 OptionDeathFlash = CustomOption.Create(
-                    1300, Types.Crewmate, "Evil Flash on Death",
+                    1320, Types.Crewmate, "Evil Flash on Death",
                     false, CustomOptionHolder.spySpawnRate);
 
                 OptionSeerTrueFlash = CustomOption.Create(
-                    1301, Types.Crewmate, "Seer Sees True Flash",
+                    1321, Types.Crewmate, "Seer Sees True Flash",
                     false, OptionDeathFlash);
 
                 OptionShifterInteraction = CustomOption.Create(
-                    1302, Types.Crewmate, "Shifter Interaction",
+                    1322, Types.Crewmate, "Shifter Interaction",
                     ShifterModes, CustomOptionHolder.spySpawnRate);
 
                 // Shown when OptionShifterInteraction > 0 (any non-vanilla mode)
                 OptionShifterGetsShiftBack = CustomOption.Create(
-                    1303, Types.Crewmate, "Shifter Gets Shift Back",
+                    1323, Types.Crewmate, "Shifter Gets Shift Back",
                     false, OptionShifterInteraction);
 
                 var opts = CustomOption.options;

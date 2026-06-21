@@ -31,8 +31,10 @@ namespace UsefulTORStuff {
 
         public static void CreateOptions() {
             try {
+                // ID 1311: must be unique. 1310 collided with TiebreakerMultiple's "Tiebreaker
+                // Quantity", which shares the config slot and scrambles both options' selections.
                 Option = CustomOption.Create(
-                    1310, Types.Modifier, "Rename to Drunk",
+                    1311, Types.Modifier, "Rename to Drunk",
                     false, CustomOptionHolder.modifierInvert,
                     onChange: () => ApplyRename(Option.getBool()));
 

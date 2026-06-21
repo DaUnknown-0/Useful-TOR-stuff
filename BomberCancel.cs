@@ -41,8 +41,10 @@ namespace UsefulTORStuff {
         // CustomOptionHolder.Load() (guaranteed by the hard dependency).
         public static void CreateOptions() {
             try {
+                // ID 1217: must be unique. 1210 collided with MeetingDurationOverride (1210-1216),
+                // which shares the config slot and scrambles both options' selections.
                 Option = CustomOption.Create(
-                    1210, Types.Impostor, "Bomber Can Cancel Bomb",
+                    1217, Types.Impostor, "Bomber Can Cancel Bomb",
                     false, CustomOptionHolder.bomberSpawnRate);
 
                 // Move directly under the Bomber core options (late-created options otherwise land

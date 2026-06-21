@@ -23,9 +23,11 @@
  *  - Resolution (full reimplementation): a high-priority prefix on MeetingHud.CheckForEndVoting
  *    REPLACES TOR's vote-resolution prefix (returns false → TOR's prefix is skipped). It reuses TOR's
  *    own CalculateVotes (Mayor double vote + Swapper swap) via reflection and only swaps the
- *    single-Tiebreaker block for the MAJORITY rule: among the tied candidates, the one the most
- *    living Tiebreakers voted for is exiled; if the Tiebreakers split evenly (or none voted on a tied
- *    candidate) it stays a tie. With 0-1 Tiebreakers this collapses to TOR's original behaviour.
+ *    single-Tiebreaker block for the MAJORITY rule: among the tied options the one the most living
+ *    Tiebreakers voted for wins. When Skip is part of the tie it counts as its own side, so a player
+ *    only loses on a strict Tiebreaker majority over Skip; if Skip wins the majority, the Tiebreakers
+ *    split evenly, or none voted on a tied option, it stays a tie. With 0-1 Tiebreakers this collapses
+ *    to TOR's original behaviour.
  *
  * Defensive: if the reflection handles needed for resolution can't be resolved the prefix is NOT
  * registered, so TOR's original single-Tiebreaker resolution stays in effect.
@@ -245,6 +247,7 @@ namespace UsefulTORStuff {
         }
 
         private static bool IsRealVote(byte vote) => vote < 252; // 252/253(skip)/254/255 are not player votes
+        private const byte SkipVote = 253;                       // the Skip "candidate" key (matches CalculateVotes)
 
         // FULL REIMPLEMENTATION of TOR's MeetingHud.CheckForEndVoting prefix (MeetingPatch.cs:70-136),
         // with the single-Tiebreaker block replaced by the MAJORITY rule across `tiebreakers`. Runs at
@@ -301,8 +304,15 @@ namespace UsefulTORStuff {
                             if (x.TargetPlayerId == tb.PlayerId) { pva = x; break; }
                         if (pva == null || pva.AmDead) continue;
                         byte vote = ApplySwap(pva.VotedFor);
-                        if (!IsRealVote(vote)) continue;
-                        if (!potentialExiled.Any(x => x != null && x.PlayerId == vote)) continue;
+                        if (vote == SkipVote) {
+                            // Skip is its own side: a Tiebreaker voting Skip counts for "Skip", but only
+                            // when Skip is one of the tied options (a vote-vs-skip tie). So a Tiebreaker on
+                            // X and a Tiebreaker on Skip cancel out → stays a tie ("bei beiden ein Tiebreaker").
+                            if (!skipIsTie) continue;
+                        } else {
+                            if (!IsRealVote(vote)) continue;                                  // 252/254/255: no/invalid vote
+                            if (!potentialExiled.Any(x => x != null && x.PlayerId == vote)) continue; // not a tied candidate
+                        }
                         counts[vote] = counts.TryGetValue(vote, out var c) ? c + 1 : 1;
                     }
 
@@ -313,7 +323,7 @@ namespace UsefulTORStuff {
                     if (counts.Count > 0) {
                         int top = counts.Values.Max();
                         var winners = counts.Where(kv => kv.Value == top).Select(kv => kv.Key).ToList();
-                        if (winners.Count == 1) {
+                        if (winners.Count == 1 && winners[0] != SkipVote) {
                             byte winner = winners[0];
                             exiled = potentialExiled.FirstOrDefault(v => v != null && v.PlayerId == winner);
                             tie = false;
@@ -323,6 +333,9 @@ namespace UsefulTORStuff {
                             AmongUsClient.Instance.FinishRpcImmediately(writer);
                             RPCProcedure.setTiebreak();
                             UsefulTORStuffPlugin.Logger?.LogInfo($"[TiebreakerMultiple][DIAG] majority winner={winner} → exiled.");
+                        } else if (winners.Count == 1 && winners[0] == SkipVote) {
+                            // Skip has the Tiebreaker majority → no one is exiled, stays a tie.
+                            UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] tiebreaker majority for Skip → stays tie.");
                         } else {
                             UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] tiebreakers split evenly → stays tie.");
                         }
