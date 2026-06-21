@@ -174,9 +174,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // patches are attribute-based (PatchAll); only the options need explicit creation.
         LawyerLoverTracker.CreateOptions();
 
-        // Tiebreaker quantity (max 3). setModifier/resetVariables/CheckForEndVoting patches are
-        // attribute-based; TryPatch adds the reflection patches (getSelectionForRoleId multiply,
-        // CalculateVotes/swapped handles for the resolution).
+        // Tiebreaker quantity (max 3): multiple Tiebreakers, all shown as such, majority tie-break.
+        // setModifier/resetVariables tracking + the RoleInfo.getRoleInfoForPlayer display postfix are
+        // attribute-based (PatchAll); TryPatch adds the reflection/manual patches (getSelectionForRoleId
+        // multiply, assignModifiers top-up, and the full CheckForEndVoting resolution reimplementation
+        // that reuses TOR's CalculateVotes).
         TiebreakerMultiple.CreateOptions();
         TiebreakerMultiple.TryPatch(harmony);
 

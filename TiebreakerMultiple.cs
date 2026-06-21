@@ -3,23 +3,32 @@
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
 /*
- * TiebreakerMultiple - new option "Tiebreaker Quantity" (1-3): allow up to three Tiebreakers.
+ * TiebreakerMultiple - new option "Tiebreaker Quantity" (1-3): allow up to three Tiebreakers,
+ * all of which are SHOWN as Tiebreaker and which together break a tie by majority.
  *
- * TOR models the Tiebreaker as a single PlayerControl (Tiebreaker.tiebreaker) and assigns it once.
- * This adds a quantity (max 3) and a multi-tiebreaker tie resolution, WITHOUT rewriting TOR's whole
- * vote-counting prefix (which would be very fragile):
+ * TOR models the Tiebreaker as a single PlayerControl (Tiebreaker.tiebreaker) and assigns it once,
+ * so out of the box only ONE player ever shows the modifier (RoleInfo.cs:180 checks
+ * `p == Tiebreaker.tiebreaker`) and only that one counts in the vote resolution. This rewrite makes
+ * OUR OWN list `tiebreakers` the single source of truth and stops touching TOR's single field:
  *
  *  - Assignment: a postfix on RoleManagerSelectRolesPatch.getSelectionForRoleId multiplies the
  *    Tiebreaker spawn count by the quantity (exactly how Invert/Sunglasses/... already do it), so TOR
- *    assigns the modifier to up to `quantity` players.
- *  - Tracking: a postfix on RPCProcedure.setModifier collects every Tiebreaker into our own list
- *    (TOR's single field only keeps the last one). Cleared each round.
- *  - Resolution (the chosen rule): ONLY on a tie, the Tiebreakers' votes are applied to the tied
- *    candidates — the tied candidate the MOST Tiebreakers voted for wins; if that is itself tied it
- *    stays a tie. No extra vote is shown. We implement this with a tiny, low-risk trick: a
- *    high-priority prefix on MeetingHud.CheckForEndVoting computes the winner and then points TOR's
- *    existing single-tiebreaker field at a Tiebreaker who voted for that winner (or null to keep the
- *    tie). TOR's own logic then exiles the winner. With 0-1 Tiebreakers we don't interfere at all.
+ *    assigns the modifier to up to `quantity` players. A host-authoritative top-up on assignModifiers
+ *    covers TOR's chance path under-assigning at quantity > 1.
+ *  - Tracking: a postfix on RPCProcedure.setModifier collects every Tiebreaker into `tiebreakers`
+ *    (TOR's single field only keeps the last one). Cleared each round on resetVariables.
+ *  - Display: a postfix on RoleInfo.getRoleInfoForPlayer adds the Tiebreaker RoleInfo for EVERY
+ *    player in our list, so all Tiebreakers are shown as such everywhere TOR renders roles (intro,
+ *    name suffix, role tab, exile, end game). De-duped against the one TOR already adds.
+ *  - Resolution (full reimplementation): a high-priority prefix on MeetingHud.CheckForEndVoting
+ *    REPLACES TOR's vote-resolution prefix (returns false → TOR's prefix is skipped). It reuses TOR's
+ *    own CalculateVotes (Mayor double vote + Swapper swap) via reflection and only swaps the
+ *    single-Tiebreaker block for the MAJORITY rule: among the tied candidates, the one the most
+ *    living Tiebreakers voted for is exiled; if the Tiebreakers split evenly (or none voted on a tied
+ *    candidate) it stays a tie. With 0-1 Tiebreakers this collapses to TOR's original behaviour.
+ *
+ * Defensive: if the reflection handles needed for resolution can't be resolved the prefix is NOT
+ * registered, so TOR's original single-Tiebreaker resolution stays in effect.
  */
 
 using System;
@@ -39,13 +48,20 @@ namespace UsefulTORStuff {
         // CustomRPC.SetModifier (enum is internal to TOR; value is stable, see RPC.cs:89-94).
         private const byte TorSetModifierRpcId = 105;
 
-        private static readonly List<PlayerControl> myTiebreakers = new List<PlayerControl>();
+        // Single source of truth for BOTH display and resolution. TOR's Tiebreaker.tiebreaker field
+        // is left alone (it only ever holds the last-assigned one).
+        private static readonly List<PlayerControl> tiebreakers = new List<PlayerControl>();
         private static readonly System.Random rng = new System.Random();
 
         // Reflection handles resolved in TryPatch.
         private static MethodInfo calculateVotes;   // MeetingHudPatch+MeetingCalculateVotesPatch.CalculateVotes
         private static FieldInfo swapped1Field;      // MeetingHudPatch.swapped1
         private static FieldInfo swapped2Field;      // MeetingHudPatch.swapped2
+        private static FieldInfo targetField;        // MeetingHudPatch.target
+        private static FieldInfo blockSkipField;      // TORMapOptions.blockSkippingInEmergencyMeetings (internal class)
+        private static FieldInfo noVoteSelfField;     // TORMapOptions.noVoteIsSelfVote (internal class)
+        private static byte setTiebreakRpcId = 255;  // CustomRPC.SetTiebreak (resolved via enum reflection)
+        private static bool resolutionReady;         // gates the resolution prefix registration
 
         public static void CreateOptions() {
             try {
@@ -85,19 +101,41 @@ namespace UsefulTORStuff {
                 else
                     UsefulTORStuffPlugin.Logger?.LogWarning("[TiebreakerMultiple] assignModifiers not found — multi-tiebreaker top-up disabled.");
 
-                // Resolve the vote-count helper + swapper-swap fields used by the resolution prefix.
+                // Resolve the vote-count helper + swapper/target fields used by the resolution prefix.
                 var mhp = torAsm.GetType("TheOtherRoles.Patches.MeetingHudPatch+MeetingCalculateVotesPatch");
                 calculateVotes = mhp?.GetMethod("CalculateVotes", BindingFlags.NonPublic | BindingFlags.Static);
                 var outer = torAsm.GetType("TheOtherRoles.Patches.MeetingHudPatch");
                 swapped1Field = outer?.GetField("swapped1", BindingFlags.NonPublic | BindingFlags.Static);
                 swapped2Field = outer?.GetField("swapped2", BindingFlags.NonPublic | BindingFlags.Static);
-                if (calculateVotes == null)
-                    UsefulTORStuffPlugin.Logger?.LogWarning("[TiebreakerMultiple] CalculateVotes not found — multi-tiebreak resolution disabled.");
+                targetField = outer?.GetField("target", BindingFlags.NonPublic | BindingFlags.Static);
+
+                // TORMapOptions is an internal class — resolve the two skip flags by reflection.
+                var mapOpts = torAsm.GetType("TheOtherRoles.TORMapOptions");
+                blockSkipField = mapOpts?.GetField("blockSkippingInEmergencyMeetings", BindingFlags.Public | BindingFlags.Static);
+                noVoteSelfField = mapOpts?.GetField("noVoteIsSelfVote", BindingFlags.Public | BindingFlags.Static);
+
+                // Resolve CustomRPC.SetTiebreak by name (no magic number).
+                var customRpc = torAsm.GetType("TheOtherRoles.CustomRPC");
+                if (customRpc != null && Enum.IsDefined(customRpc, "SetTiebreak"))
+                    setTiebreakRpcId = Convert.ToByte(Enum.Parse(customRpc, "SetTiebreak"));
+
+                // Register the full resolution reimplementation ONLY if we have what we need; otherwise
+                // TOR's original single-Tiebreaker resolution stays in effect.
+                resolutionReady = calculateVotes != null && customRpc != null && Enum.IsDefined(customRpc, "SetTiebreak");
+                if (resolutionReady) {
+                    var checkForEndVoting = typeof(MeetingHud).GetMethod(nameof(MeetingHud.CheckForEndVoting));
+                    harmony.Patch(checkForEndVoting,
+                        prefix: new HarmonyMethod(typeof(TiebreakerMultiple), nameof(ResolvePrefix)) { priority = Priority.First });
+                } else {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        "[TiebreakerMultiple] resolution handles missing — multi-tiebreak resolution disabled (TOR's single-tiebreaker logic stays active).");
+                }
 
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[TiebreakerMultiple][DIAG] Reflection resolved: getSelectionForRoleId={(gsfr != null)}, " +
-                    $"assignModifiers={(assignModifiers != null)}, " +
-                    $"CalculateVotes={(calculateVotes != null)}, swapped1={(swapped1Field != null)}, swapped2={(swapped2Field != null)}.");
+                    $"assignModifiers={(assignModifiers != null)}, CalculateVotes={(calculateVotes != null)}, " +
+                    $"swapped1={(swapped1Field != null)}, swapped2={(swapped2Field != null)}, target={(targetField != null)}, " +
+                    $"SetTiebreak={setTiebreakRpcId}, resolutionReady={resolutionReady}.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] TryPatch failed: {e}");
             }
@@ -119,14 +157,29 @@ namespace UsefulTORStuff {
                 try {
                     if (modifierId != (byte)RoleId.Tiebreaker) return;
                     var p = Helpers.playerById(playerId);
-                    if (p != null && !myTiebreakers.Contains(p)) myTiebreakers.Add(p);
+                    if (p != null && !tiebreakers.Any(t => t != null && t.PlayerId == playerId)) tiebreakers.Add(p);
                 } catch { }
             }
         }
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
-            public static void Postfix() { myTiebreakers.Clear(); }
+            public static void Postfix() { tiebreakers.Clear(); }
+        }
+
+        // DISPLAY: show the Tiebreaker modifier for EVERY player in our list (TOR's RoleInfo.cs:180
+        // only matches its single field). De-dupe against the one TOR already added. We mirror TOR's
+        // gating: the Tiebreaker is shown whenever modifiers are shown at all (it sits OUTSIDE the
+        // modifiersAreHidden block in TOR), so respecting `showModifier` is enough.
+        [HarmonyPatch(typeof(RoleInfo), nameof(RoleInfo.getRoleInfoForPlayer))]
+        static class DisplayPatch {
+            public static void Postfix(List<RoleInfo> __result, PlayerControl p, bool showModifier) {
+                try {
+                    if (!showModifier || p == null || __result == null) return;
+                    if (!tiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId)) return;
+                    if (!__result.Contains(RoleInfo.tiebreaker)) __result.Add(RoleInfo.tiebreaker);
+                } catch { }
+            }
         }
 
         // Host-authoritative top-up: TOR's chance path under-assigns the Tiebreaker (it consumes the
@@ -136,34 +189,32 @@ namespace UsefulTORStuff {
         //
         // Hooked as a postfix on RoleManagerSelectRolesPatch.assignModifiers (see TryPatch), NOT on
         // RoleManager.SelectRoles: with RoleDraft enabled the classic Postfix returns early and the
-        // draft coroutine assigns modifiers asynchronously later (RoleAssignmentPatch.cs:56-57). A
-        // SelectRoles postfix would therefore run with myTiebreakers still empty. assignModifiers runs
-        // in BOTH paths and only after every Tiebreaker SetModifier RPC has been tracked, so the
-        // top-up is timing-safe.
+        // draft coroutine assigns modifiers asynchronously later. assignModifiers runs in BOTH paths
+        // and only after every Tiebreaker SetModifier RPC has been tracked, so the top-up is timing-safe.
         public static void TopUp() {
             try {
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
                 if (CustomOptionHolder.modifierTieBreaker == null
                     || CustomOptionHolder.modifierTieBreaker.getSelection() <= 0) return; // not in play
                 int want = Qty();
-                if (myTiebreakers.Count == 0 || myTiebreakers.Count >= want) return; // chance gate / already enough
+                if (tiebreakers.Count == 0 || tiebreakers.Count >= want) return; // chance gate / already enough
 
                 // TOR assigns the Tiebreaker modifier from the full player pool (any alignment),
                 // so just exclude players who already hold it.
                 var eligible = PlayerControl.AllPlayerControls.ToArray()
                     .Where(p => p != null && p.Data != null && !p.Data.Disconnected && !p.Data.IsDead)
-                    .Where(p => !myTiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId))
+                    .Where(p => !tiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId))
                     .ToList();
 
-                int toAdd = Math.Min(want - myTiebreakers.Count, eligible.Count);
+                int toAdd = Math.Min(want - tiebreakers.Count, eligible.Count);
                 for (int i = 0; i < toAdd; i++) {
                     int idx = rng.Next(eligible.Count);
                     byte playerId = eligible[idx].PlayerId;
                     eligible.RemoveAt(idx);
-                    AssignTiebreaker(playerId); // SetModifierPatch tracks it into myTiebreakers
+                    AssignTiebreaker(playerId); // SetModifierPatch tracks it into `tiebreakers`
                 }
                 UsefulTORStuffPlugin.Logger?.LogInfo(
-                    $"[TiebreakerMultiple] Tiebreakers assigned: {myTiebreakers.Count} (target {want}).");
+                    $"[TiebreakerMultiple] Tiebreakers assigned: {tiebreakers.Count} (target {want}).");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] top-up failed: {e}");
             }
@@ -193,71 +244,108 @@ namespace UsefulTORStuff {
             return vote;
         }
 
-        // High priority → runs before TOR's CheckForEndVoting prefix. Returns void (no skip): we only
-        // pre-set TOR's single Tiebreaker field so its own logic resolves the tie our way.
-        [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.CheckForEndVoting))]
-        [HarmonyPriority(Priority.High)]
-        static class ResolvePatch {
-            public static void Prefix(MeetingHud __instance) {
-                try {
-                    if (__instance == null || __instance.playerStates == null) return;
-                    // Only act once everyone has voted (mirror TOR's own entry guard).
-                    bool allVoted = true;
-                    foreach (var ps in __instance.playerStates) if (!(ps.AmDead || ps.DidVote)) { allVoted = false; break; }
-                    if (!allVoted) return;
+        private static bool IsRealVote(byte vote) => vote < 252; // 252/253(skip)/254/255 are not player votes
 
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[TiebreakerMultiple][DIAG] CheckForEndVoting (all voted): myTiebreakers={myTiebreakers.Count}, " +
-                        $"reflectionOk={(calculateVotes != null)}, TOR.tiebreaker={(Tiebreaker.tiebreaker != null ? Tiebreaker.tiebreaker.PlayerId.ToString() : "null")}.");
+        // FULL REIMPLEMENTATION of TOR's MeetingHud.CheckForEndVoting prefix (MeetingPatch.cs:70-136),
+        // with the single-Tiebreaker block replaced by the MAJORITY rule across `tiebreakers`. Runs at
+        // Priority.First and returns false → TOR's own prefix is skipped. CalculateVotes (Mayor +
+        // Swapper) is reused via reflection so we never duplicate that logic.
+        public static bool ResolvePrefix(MeetingHud __instance) {
+            try {
+                if (!resolutionReady || __instance == null || __instance.playerStates == null) return true;
 
-                    if (calculateVotes == null) return;
-                    if (myTiebreakers.Count < 2) return; // 0-1 tiebreaker: let TOR handle it unchanged
+                // Guard: only resolve once every living player has voted (TOR's own entry guard).
+                bool allVoted = true;
+                foreach (var ps in __instance.playerStates) if (!(ps.AmDead || ps.DidVote)) { allVoted = false; break; }
+                if (!allVoted) return true; // not ready — let nothing run yet (TOR's prefix would also no-op)
 
-                    var self = calculateVotes.Invoke(null, new object[] { __instance }) as Dictionary<byte, int>;
-                    if (self == null || self.Count == 0) return;
+                // Block-skipping self-vote mutation (only in emergency meetings, i.e. target == null).
+                var target = targetField?.GetValue(null);
+                bool blockSkip = blockSkipField?.GetValue(null) is bool b1 && b1;
+                bool noVoteSelf = noVoteSelfField?.GetValue(null) is bool b2 && b2;
+                if (target == null && blockSkip && noVoteSelf) {
+                    foreach (PlayerVoteArea pva in __instance.playerStates)
+                        if (pva.VotedFor == byte.MaxValue - 1) pva.VotedFor = pva.TargetPlayerId;
+                }
 
-                    int maxV = self.Values.Max();
-                    var tied = self.Where(kv => kv.Value == maxV).Select(kv => kv.Key).ToList();
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[TiebreakerMultiple][DIAG] maxVotes={maxV}, tiedCandidates={tied.Count} [{string.Join(",", tied)}].");
-                    if (tied.Count <= 1) return; // not a tie → nothing to resolve
+                var self = calculateVotes.Invoke(null, new object[] { __instance }) as Dictionary<byte, int>;
+                if (self == null) return true; // reflection mismatch — fall back to TOR
 
-                    // Count tiebreaker votes for each tied candidate (skip = 253 / no-vote excluded).
+                bool tie;
+                KeyValuePair<byte, int> max = self.MaxPair(out tie);
+                NetworkedPlayerInfo exiled = GameData.Instance.AllPlayers.ToArray()
+                    .FirstOrDefault(v => !tie && v.PlayerId == max.Key && !v.IsDead);
+
+                // Determine the tied candidates (all at the max vote value) and whether skip ties.
+                List<NetworkedPlayerInfo> potentialExiled = new List<NetworkedPlayerInfo>();
+                bool skipIsTie = false;
+                if (self.Count > 0) {
+                    Tiebreaker.isTiebreak = false;
+                    int maxVoteValue = self.Values.Max();
+                    foreach (KeyValuePair<byte, int> pair in self) {
+                        if (pair.Value != maxVoteValue) continue;
+                        if (pair.Key != 253)
+                            potentialExiled.Add(GameData.Instance.AllPlayers.ToArray().FirstOrDefault(x => x.PlayerId == pair.Key));
+                        else
+                            skipIsTie = true;
+                    }
+                }
+
+                // MAJORITY rule: only on a real tie (more than one tied candidate, or skip ties a candidate).
+                if (potentialExiled.Count > 1 || (skipIsTie && potentialExiled.Count >= 1)) {
                     var counts = new Dictionary<byte, int>();
-                    var voteByTb = new Dictionary<byte, byte>();
-                    foreach (var tb in myTiebreakers) {
+                    foreach (var tb in tiebreakers) {
                         if (tb == null) continue;
                         PlayerVoteArea pva = null;
                         foreach (var x in __instance.playerStates)
                             if (x.TargetPlayerId == tb.PlayerId) { pva = x; break; }
                         if (pva == null || pva.AmDead) continue;
                         byte vote = ApplySwap(pva.VotedFor);
-                        if (vote == 253 || vote == byte.MaxValue || vote == byte.MaxValue - 1) continue;
-                        if (!tied.Contains(vote)) continue;
+                        if (!IsRealVote(vote)) continue;
+                        if (!potentialExiled.Any(x => x != null && x.PlayerId == vote)) continue;
                         counts[vote] = counts.TryGetValue(vote, out var c) ? c + 1 : 1;
-                        voteByTb[tb.PlayerId] = vote;
                     }
 
                     UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[TiebreakerMultiple][DIAG] tiebreaker votes on tied candidates: " +
-                        $"[{string.Join(", ", counts.Select(kv => kv.Key + ":" + kv.Value))}].");
+                        $"[TiebreakerMultiple][DIAG] tiebreakers={tiebreakers.Count}, tiedCandidates={potentialExiled.Count}, " +
+                        $"skipIsTie={skipIsTie}, votes=[{string.Join(", ", counts.Select(kv => kv.Key + ":" + kv.Value))}].");
 
-                    if (counts.Count == 0) { Tiebreaker.tiebreaker = null;
-                        UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] no tiebreaker voted on a tied candidate → stays tie."); return; }
-                    int top = counts.Values.Max();
-                    var winners = counts.Where(kv => kv.Value == top).Select(kv => kv.Key).ToList();
-                    if (winners.Count != 1) { Tiebreaker.tiebreaker = null;
-                        UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] tiebreakers split evenly → stays tie."); return; }
+                    if (counts.Count > 0) {
+                        int top = counts.Values.Max();
+                        var winners = counts.Where(kv => kv.Value == top).Select(kv => kv.Key).ToList();
+                        if (winners.Count == 1) {
+                            byte winner = winners[0];
+                            exiled = potentialExiled.FirstOrDefault(v => v != null && v.PlayerId == winner);
+                            tie = false;
 
-                    byte winner = winners[0];
-                    // Point TOR's single field at a Tiebreaker whose (post-swap) vote is the winner.
-                    byte deciderId = voteByTb.First(kv => kv.Value == winner).Key;
-                    Tiebreaker.tiebreaker = Helpers.playerById(deciderId);
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[TiebreakerMultiple][DIAG] winner={winner}, decider(set as TOR tiebreaker)={deciderId}.");
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] resolution prefix failed: {e}");
+                            MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
+                                PlayerControl.LocalPlayer.NetId, setTiebreakRpcId, SendOption.Reliable, -1);
+                            AmongUsClient.Instance.FinishRpcImmediately(writer);
+                            RPCProcedure.setTiebreak();
+                            UsefulTORStuffPlugin.Logger?.LogInfo($"[TiebreakerMultiple][DIAG] majority winner={winner} → exiled.");
+                        } else {
+                            UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] tiebreakers split evenly → stays tie.");
+                        }
+                    } else {
+                        UsefulTORStuffPlugin.Logger?.LogInfo("[TiebreakerMultiple][DIAG] no tiebreaker voted a tied candidate → stays tie.");
+                    }
                 }
+
+                // Build the voter-state array and finish the vote (mirrors TOR).
+                MeetingHud.VoterState[] array = new MeetingHud.VoterState[__instance.playerStates.Length];
+                for (int i = 0; i < __instance.playerStates.Length; i++) {
+                    PlayerVoteArea pva = __instance.playerStates[i];
+                    array[i] = new MeetingHud.VoterState {
+                        VoterId = pva.TargetPlayerId,
+                        VotedForId = pva.VotedFor
+                    };
+                }
+
+                __instance.RpcVotingComplete(array, exiled, tie);
+                return false; // suppress TOR's original prefix
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] resolution prefix failed — falling back to TOR: {e}");
+                return true; // never block the meeting on our account
             }
         }
     }
