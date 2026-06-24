@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.1.7";
+    public const string PluginVersion = "1.1.8";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
@@ -181,6 +181,12 @@ public class UsefulTORStuffPlugin : BasePlugin
         // that reuses TOR's CalculateVotes).
         TiebreakerMultiple.CreateOptions();
         TiebreakerMultiple.TryPatch(harmony);
+
+        // Sabotage Tuning: per-sabotage cooldowns (+ per-use reduction) for all menu sabotages and
+        // per-sabotage durations for the deadly ones (TOR Settings tab). All MapRoom / InfectedOverlay /
+        // ShipStatus / MeetingHud / AmongUsClient patches are attribute-based (PatchAll); only the
+        // options need explicit creation here, after TOR's CustomOptionHolder.Load().
+        SabotageTuning.CreateOptions();
 
         // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
