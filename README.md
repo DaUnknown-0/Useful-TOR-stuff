@@ -102,6 +102,25 @@ per phase: `Base + alive × perAlive − dead × perDead`, clamped to a minimum 
 configured times are snapshotted once per game and restored on game end so the lobby settings don't
 drift.
 
+Sabotage tuning (master toggle defaults off → vanilla):
+
+| Option | Default | Notes |
+|---|---|---|
+| Sabotage Tuning | Off | Master toggle. Replaces the shared sabotage cooldown with an independent timer per type; all timers reset to their max when a sabotage ends |
+| ↳ Minimum Cooldown (Reduction Floor) | 10 s | 0–30 s; global floor the per-use reduction can't go below |
+| ↳ Reactor/Meltdown · Oxygen · Communications · Lights · Airship Crash — Cooldown | 30 s | 10–60 s; independent cooldown per type |
+| ↳ ↳ …Cooldown Reduction per Use | 0 s | 0–15 s; each use lowers that type's cooldown by X (floored at the minimum, reset every meeting; counted globally for all impostors) |
+| ↳ Reactor/Meltdown Duration | 30 s | 10–90 s; reactor/Polus-laboratory fix time (deadly only) |
+| ↳ Oxygen Duration | 30 s | 10–90 s; oxygen depletion time (deadly only) |
+| ↳ Airship Crash Duration | 30 s | 10–120 s; airship crash countdown (deadly only) |
+
+Map-aware (each option only applies where the sabotage exists; Reactor and the Polus laboratory are
+one type). Cooldowns are enforced client-side (need every impostor to have the mod); durations are
+host-authoritative (stamped onto the system's `Countdown` on the host and synced to all clients).
+Mutually exclusive with the Chance modifier's sabotage-cooldown override — while Sabotage Tuning is
+on, the Chance override stands down (Sabotage Tuning takes precedence). New file `SabotageTuning.cs`;
+options 1330–1344.
+
 ## Mod Manager & lobby Mod-Check
 
 - **Mod Manager** — an in-game UI listing the installed companion mods, their versions, update
@@ -160,7 +179,7 @@ variable to your Among Us folder to auto-copy on build.
 
 | TOR - Forgotten Fixes | The Other Roles | Among Us |
 |---|---|---|
-| 1.1.13 | 4.8.0 | Steam build matching TOR 4.8.0 |
+| 1.2.0 | 4.8.0 | Steam build matching TOR 4.8.0 |
 
 ## License
 

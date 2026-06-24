@@ -3,6 +3,21 @@
 ## Unreleased
 
 ### Features
+- **Sabotage Tuning (TOR Settings).** Master toggle (default off) that replaces Among Us's single
+  shared sabotage cooldown with an independent cooldown timer per sabotage type. While no sabotage is
+  active each type's timer ticks down on its own; when any sabotage ends, all timers reset to their
+  maximum. Each type (Reactor/Meltdown, Oxygen, Communications, Lights, Airship Crash) has its own
+  cooldown and a per-use reduction that lowers that type's cooldown by X seconds, floored at a
+  configurable Minimum Cooldown and reset every meeting; the reduction is counted globally for all
+  impostors (on the synced active-edge). The deadly sabotages (Reactor/Meltdown, Oxygen, Airship
+  Crash) additionally get a configurable duration, stamped host-authoritatively onto the system's
+  `Countdown` (LifeSupp via its public field, Reactor/Heli via the non-public Countdown setter since
+  `HeliSabotageSystem.CharlesDuration` is a const) and synced to all clients. Cooldowns are enforced
+  client-side via `MapRoom.Sabotage*` prefixes plus a forced `InfectedOverlay.CanUseSabotage`; the
+  host's shared `SabotageSystemType.Timer` is neutralised while idle so it never rejects a per-type
+  allowed sabotage. Mutually exclusive with the Chance modifier's sabotage-cooldown override (Chance
+  stands down via reflection while Sabotage Tuning is on; Sabotage Tuning takes precedence). Map-aware
+  via `ShipStatus.Systems`. New file `SabotageTuning.cs`; options 1330–1344.
 - **Meeting Duration Override (TOR Settings).** New host-authoritative option that overrides the
   meeting timer from the alive/dead player counts at meeting start. A master toggle plus two
   independent formulas — one for the discussion phase, one for the voting phase — each computed as

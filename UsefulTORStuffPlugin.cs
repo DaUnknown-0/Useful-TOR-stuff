@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.1.8";
+    public const string PluginVersion = "1.2.0";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
