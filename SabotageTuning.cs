@@ -14,7 +14,7 @@
  * Three features:
  *   1. Per-type cooldown (configurable, applies to all impostors) - for every menu sabotage.
  *   2. Per-type cooldown reduction: each use of a type lowers THAT type's cooldown by X seconds
- *      (X per type), floored at MIN_COOLDOWN (10s), reset on every meeting.
+ *      (X per type), floored at the configurable Minimum Cooldown (default 10s), reset every meeting.
  *   3. Per-type duration for the deadly sabotages only (Reactor/Meltdown, Oxygen, Airship Crash);
  *      the non-deadly ones (Comms, Lights) run until fixed and have no duration.
  *
@@ -73,6 +73,7 @@ namespace UsefulTORStuff {
         // Master toggle (header) + per-type cooldown / reduction options. Durations only for the
         // three deadly types.
         public static CustomOption Enabled;
+        private static CustomOption minCooldownOpt;                           // reduction floor (global)
         private static readonly CustomOption[] cdOpt = new CustomOption[N];   // base cooldown
         private static readonly CustomOption[] redOpt = new CustomOption[N];  // reduction per use
         private static CustomOption reactorDur, oxygenDur, heliDur;           // deadly durations
@@ -101,6 +102,8 @@ namespace UsefulTORStuff {
                 Enabled = CustomOption.Create(
                     1330, Types.General, "Sabotage Tuning", false, null, true);
 
+                minCooldownOpt = CustomOption.Create(1344, Types.General, "Minimum Cooldown (Reduction Floor)", 10f, 0f, 30f, 2.5f, Enabled);
+
                 cdOpt[(int)SabType.Reactor] = CustomOption.Create(1331, Types.General, "Reactor/Meltdown Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
                 redOpt[(int)SabType.Reactor] = CustomOption.Create(1332, Types.General, "Reactor/Meltdown Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
                 reactorDur = CustomOption.Create(1333, Types.General, "Reactor/Meltdown Duration", 30f, 10f, 90f, 5f, Enabled);
@@ -127,12 +130,15 @@ namespace UsefulTORStuff {
 
         private static bool Active => Enabled != null && Enabled.getBool();
 
-        // Cooldown maximum for a type after applying its accumulated reduction (floored at 10s).
+        // Cooldown maximum for a type after applying its accumulated reduction, floored at the
+        // configurable minimum cooldown. The floor is clamped to the base so it can never raise a
+        // cooldown above its configured value (only stop the reduction from going lower).
         private static float CurrentMax(SabType t) {
             int i = (int)t;
             float baseMax = cdOpt[i] != null ? cdOpt[i].getFloat() : 30f;
             float red = redOpt[i] != null ? redOpt[i].getFloat() : 0f;
-            return Mathf.Max(MIN_COOLDOWN, baseMax - usage[i] * red);
+            float floor = Mathf.Min(minCooldownOpt != null ? minCooldownOpt.getFloat() : MIN_COOLDOWN, baseMax);
+            return Mathf.Max(floor, baseMax - usage[i] * red);
         }
 
         private static void ResetTimersToMax() {
