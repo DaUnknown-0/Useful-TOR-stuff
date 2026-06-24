@@ -50,8 +50,8 @@ namespace UsefulTORStuff;
 public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
-    public const string PluginName = "Useful TOR Stuff";
-    public const string PluginVersion = "1.1.0";
+    public const string PluginName = "TOR - Forgotten Fixes";
+    public const string PluginVersion = "1.1.7";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
@@ -145,6 +145,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // attribute-based (PatchAll); only the option needs explicit creation here.
         SpyFullVent.CreateOptions();
 
+        // Spy "Evil Flash on Death" + "Shifter Dies When Targeting Spy" options. Both patches are
+        // attribute-based ([HarmonyPatch]) and picked up by PatchAll below.
+        SpyExtras.CreateOptions();
+
         // Time Master "unguessable after shield saved a kill" option. RPCProcedure patches are
         // attribute-based (PatchAll); the guesser-list hide is a reflection patch (TryPatch).
         TimeMasterUnguessable.CreateOptions();
@@ -157,6 +161,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Invert "Inverted Vision" option. HudManager.Update patch is attribute-based (PatchAll).
         InvertVision.CreateOptions();
 
+        // Invert modifier "Rename to Drunk" option. Mutates CustomOption and RoleInfo strings
+        // at runtime; no patches needed.
+        DrunkRename.CreateOptions();
+
         // Trickster "Avatar Mixup Sabotage" option (Fungle). HudManager.Start patch is attribute-based;
         // TryPatch resolves TOR's private lightsOutButton for the shared cooldown.
         TricksterAvatarSabotage.CreateOptions();
@@ -166,9 +174,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // patches are attribute-based (PatchAll); only the options need explicit creation.
         LawyerLoverTracker.CreateOptions();
 
-        // Tiebreaker quantity (max 3). setModifier/resetVariables/CheckForEndVoting patches are
-        // attribute-based; TryPatch adds the reflection patches (getSelectionForRoleId multiply,
-        // CalculateVotes/swapped handles for the resolution).
+        // Tiebreaker quantity (max 3): multiple Tiebreakers, all shown as such, majority tie-break.
+        // setModifier/resetVariables tracking + the RoleInfo.getRoleInfoForPlayer display postfix are
+        // attribute-based (PatchAll); TryPatch adds the reflection/manual patches (getSelectionForRoleId
+        // multiply, assignModifiers top-up, and the full CheckForEndVoting resolution reimplementation
+        // that reuses TOR's CalculateVotes).
         TiebreakerMultiple.CreateOptions();
         TiebreakerMultiple.TryPatch(harmony);
 
@@ -477,7 +487,7 @@ public class UsefulTORStuffPlugin : BasePlugin
             // jeden Frame neu aufbaut (normalerweise ist die Zeile abwesend und wird eingefügt).
             if (!text.Contains(LinkId))
             {
-                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>Useful TOR Stuff</color> v{PluginVersion}</link>";
+                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>TOR - Forgotten Fixes</color> v{PluginVersion}</link>";
                 int nl = text.IndexOf('\n');
                 text = nl >= 0
                     ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)

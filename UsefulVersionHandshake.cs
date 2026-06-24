@@ -34,7 +34,7 @@ namespace UsefulTORStuff {
             snitchFixChatShown = true;
 
             hud.Chat.AddChat(PlayerControl.LocalPlayer,
-                "Snitch client-side fix active — all players have Useful TOR Stuff.");
+                "Snitch client-side fix active — all players have TOR - Forgotten Fixes.");
         }
 
         // Draw a message anchored to the top-left corner on TOR's shared GameStartText. Guards
@@ -117,17 +117,17 @@ namespace UsefulTORStuff {
                 string name = client.Character.Data.PlayerName;
 
                 if (!playerVersions.TryGetValue(client.Id, out PlayerVersion pv)) {
-                    message += $"<color=#FF0000FF>{name} is missing Useful TOR Stuff (or has a different version)\n</color>";
+                    message += $"<color=#FF0000FF>{name} is missing TOR - Forgotten Fixes (or has a different version)\n</color>";
                     continue;
                 }
 
                 int diff = UsefulTORStuffPlugin.Version.CompareTo(pv.version);
                 if (diff > 0)
-                    message += $"<color=#FF0000FF>{name} has an older Useful TOR Stuff (v{pv.version})\n</color>";
+                    message += $"<color=#FF0000FF>{name} has an older TOR - Forgotten Fixes (v{pv.version})\n</color>";
                 else if (diff < 0)
-                    message += $"<color=#FF0000FF>{name} has a newer Useful TOR Stuff (v{pv.version})\n</color>";
+                    message += $"<color=#FF0000FF>{name} has a newer TOR - Forgotten Fixes (v{pv.version})\n</color>";
                 else if (!pv.GuidMatches())
-                    message += $"<color=#FF0000FF>{name} has a modified Useful TOR Stuff v{pv.version} <size=30%>({pv.guid})</size>\n</color>";
+                    message += $"<color=#FF0000FF>{name} has a modified TOR - Forgotten Fixes v{pv.version} <size=30%>({pv.guid})</size>\n</color>";
             }
             return message;
         }
@@ -312,7 +312,7 @@ namespace UsefulTORStuff {
                     && !everyone) {
                     DrawTopLeftMessage(__instance, text,
                         "<color=#FFA500FF>'Sheriff Prevents Killer Parity Win' is ON, but not all players have "
-                        + "Useful TOR Stuff — they won't see this rule. It still applies (host-enforced).</color>",
+                        + "TOR - Forgotten Fixes — they won't see this rule. It still applies (host-enforced).</color>",
                         "Sheriff Prevents Killer Parity Win");
                 }
 
@@ -338,8 +338,8 @@ namespace UsefulTORStuff {
                     // active. Only the host needs this heads-up.
                     if (!AmongUsClient.Instance.AmHost) return;
                     DrawTopLeftMessage(__instance, text,
-                        "<color=#FFA500FF>All players have Useful TOR Stuff, but the client-side Snitch fix " +
-                        "is NOT active (TOR mismatch). Falling back to Host Fix re-broadcast.</color>",
+                        "<color=#FFA500FF>All players have TOR - Forgotten Fixes, but the client-side Snitch fix " +
+                        "is NOT active (TOR mismatch). Falling back to TOR - Hostfix re-broadcast.</color>",
                         "Snitch fix is NOT active");
                 } else {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.

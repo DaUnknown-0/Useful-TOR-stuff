@@ -34,13 +34,16 @@ namespace UsefulTORStuff {
 
         public static void CreateOptions() {
             try {
+                // invertedParent: true → option is visible when jackalCanCreateSidekickFromImpostor
+                // is OFF, meaning Fake-SK is possible. Only then does betraying the Jackal make sense.
                 Option = CustomOption.Create(
                     1240, Types.Neutral, "Sidekick Can Kill Jackal",
-                    false, CustomOptionHolder.jackalCanCreateSidekick);
+                    false, CustomOptionHolder.jackalCanCreateSidekickFromImpostor,
+                    invertedParent: true);
 
                 var opts = CustomOption.options;
                 opts.Remove(Option);
-                int idx = opts.IndexOf(CustomOptionHolder.sidekickCanKill);
+                int idx = opts.IndexOf(CustomOptionHolder.jackalCanCreateSidekickFromImpostor);
                 if (idx < 0) idx = opts.Count - 1;
                 opts.Insert(idx + 1, Option);
 
@@ -67,12 +70,13 @@ namespace UsefulTORStuff {
         }
 
         // Runs after TOR's sidekickSetTarget (which excluded the Jackal). Re-select including the
-        // Jackal so the Sidekick can target it. Only when the option is on and the Sidekick may kill.
+        // Jackal so the Sidekick can target it. Only when the option is on and Fake-SK is possible.
         public static void Postfix() {
             try {
                 if (Option == null || !Option.getBool()) return;
                 if (Sidekick.sidekick == null || Sidekick.sidekick != PlayerControl.LocalPlayer) return;
                 if (!Sidekick.canKill) return;
+                if (Jackal.canCreateSidekickFromImpostor) return; // Fake-SK not possible → no-op
                 if (Jackal.jackal == null || Jackal.jackal.Data == null || Jackal.jackal.Data.IsDead) return;
 
                 // Mirror TOR's only other exclusion (an un-grown Mini), but NOT the Jackal.

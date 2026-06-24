@@ -129,6 +129,17 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Clear the flag at the end of each meeting, so the protection only covers the ONE meeting
+        // that follows the saved kill — not every subsequent meeting for the rest of the game. The
+        // guess (guesserShoot) happens while the MeetingHud is open, so the flag is still true during
+        // that meeting and is only cleared once it closes.
+        [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Close))]
+        static class MeetingClosePatch {
+            public static void Postfix() {
+                shieldSavedThisGame = false;
+            }
+        }
+
         // Block a successful guess of the Time Master once the shield has saved a kill.
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.guesserShoot))]
         static class GuesserShootPatch {

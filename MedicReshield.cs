@@ -3,7 +3,7 @@
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
 /*
- * MedicReshield - new Medic option "Medic Can Reshield".
+ * MedicReshield - new Medic option "Medic Can Reshield" plus a unified shield-charge system.
  *
  * TOR's Medic shield is a one-shot: once used, Medic.usedShield latches true and the shield button
  * disappears (its couldUse checks !Medic.usedShield, Buttons.cs:511). This adds an "unshield" button
@@ -15,9 +15,22 @@
  * (id 249) that clears shielded/futureShielded/usedShield everywhere, then re-shielding goes through
  * TOR's existing MedicSetShielded RPC unchanged. Clearing usedShield automatically re-enables TOR's
  * shield button (couldUse) and removes the old shield visual (derived from Medic.shielded each frame).
+ *
+ * Shield charges (OptionShieldCharges, 0 = ∞): the medic has a pool of charges, shown as "X/Y" on
+ * TOR's shield button. A charge is consumed only when a shield is PLACED; the unshield button and a
+ * shielded death cost nothing. Placement is detected as a false→true transition of Medic.usedShield
+ * (set in RPCProcedure.medicSetShielded/setFutureShielded, RPC.cs:579/824) on the medic's client.
+ *
+ * The shield blocks *murder*, so a blocked attack never sets usedShield or IsDead — only a real death
+ * of Medic.shielded (lover, guesser, shifter, exile, …) does. On such a death we re-arm the medic
+ * (broadcast SendReset) if charges remain so they can place a new shield; no charge is spent for the
+ * death itself. Once the pool is empty we leave usedShield latched, so no further shield can be placed.
+ * The remaining/max count is drawn on TOR's shield button (always visible to the medic) via a postfix
+ * on CustomButton.HudUpdate — no TOR source is modified.
  */
 
 using System;
+using System.Linq;
 using HarmonyLib;
 using Hazel;
 using UnityEngine;
@@ -31,12 +44,25 @@ namespace UsefulTORStuff {
         // Free range: TOR 100–~180, Chance 200/201/250/251, Useful 252 (bomber)/253 (handshake).
         public const byte ReshieldRpcId = 249;
 
-        public static CustomOption Option;          // Off/On toggle
-        private static CustomButton unshieldButton;  // recreated each HudManager.Start
+        public static CustomOption Option;             // Off/On toggle
+        public static CustomOption OptionShieldCharges; // total shield placements per game (0 = ∞, shown as "∞")
+        private static CustomButton unshieldButton;     // recreated each HudManager.Start
 
-        // The reshield is limited to once per meeting cycle: set when used, cleared each time a
-        // meeting ends (and on round reset).
-        private static bool reshieldedThisRound;
+        // Index 0 = "∞" (unlimited), indices 1–10 map directly to the charge count.
+        private static readonly string[] ShieldChargeSelections =
+            { "∞", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
+
+        // Shields placed this game, capped by OptionShieldCharges. A charge is spent only on placement;
+        // remaining charges = max - placementsUsed. Reset on round start.
+        private static int placementsUsed;
+
+        // Tracks Medic.usedShield to detect a false→true transition (= a new placement) on the medic's
+        // client. Reset on round start.
+        private static bool prevUsedShield;
+
+        // Guards the shielded-death detector so a single death only re-arms once (the dead reference
+        // lingers when the pool is empty and we don't re-arm). Reset on round start.
+        private static byte? lastDeadShieldedId;
 
         public static void CreateOptions() {
             try {
@@ -44,10 +70,18 @@ namespace UsefulTORStuff {
                     1230, Types.Crewmate, "Medic Can Reshield",
                     false, CustomOptionHolder.medicSpawnRate);
 
+                // Sub-option: number of shield placements per game (0 = ∞). Only visible while Reshield is on.
+                OptionShieldCharges = CustomOption.Create(
+                    1231, Types.Crewmate, "Shield Charges",
+                    ShieldChargeSelections, Option);
+
                 var opts = CustomOption.options;
                 opts.Remove(Option);
+                opts.Remove(OptionShieldCharges);
                 int idx = opts.IndexOf(CustomOptionHolder.medicShowAttemptToMedic);
                 if (idx < 0) idx = opts.Count - 1;
+                // Insert in reverse so the order is: Medic Can Reshield → Shield Charges
+                opts.Insert(idx + 1, OptionShieldCharges);
                 opts.Insert(idx + 1, Option);
 
                 UsefulTORStuffPlugin.Logger?.LogInfo("[MedicReshield] Option created under Medic.");
@@ -89,10 +123,10 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Clear the once-per-meeting limit on round reset (new game / round start).
+        // Reset the charge state on round reset (new game / round start).
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
-            public static void Postfix() { reshieldedThisRound = false; }
+            public static void Postfix() { placementsUsed = 0; prevUsedShield = false; lastDeadShieldedId = null; }
         }
 
         // Build the unshield button after the HUD is set up (recreated each HudManager.Start, like
@@ -103,28 +137,81 @@ namespace UsefulTORStuff {
             public static void Postfix(HudManager __instance) {
                 try {
                     unshieldButton = new CustomButton(
-                        () => { reshieldedThisRound = true; SendReset(); },
-                        // HasButton: medic, alive, option on, a shield is currently used (so there is
-                        // something to redistribute), and not already reshielded this meeting cycle.
+                        // Unshield is free: just remove the current shield and re-arm. The next placement
+                        // (via TOR's shield button) is what spends a charge.
+                        () => { SendReset(); },
+                        // HasButton: medic, alive, option on, a shield is currently active (something to
+                        // remove), and a charge remains to re-give (0 = unlimited).
                         // Clearing usedShield hides this button again and re-shows TOR's shield button.
                         () => Option != null && Option.getBool()
                               && Medic.medic != null && Medic.medic == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead
-                              && Medic.usedShield && !reshieldedThisRound,
+                              && Medic.usedShield
+                              && (OptionShieldCharges == null || OptionShieldCharges.getSelection() == 0
+                                  || placementsUsed < OptionShieldCharges.getSelection()),
                         () => PlayerControl.LocalPlayer.CanMove,
-                        // OnMeetingEnds: re-arm the once-per-meeting reshield for the next round.
-                        () => { reshieldedThisRound = false; },
+                        () => { },
                         Medic.getButtonSprite(),
                         CustomButton.ButtonPositions.lowerRowLeft,
                         __instance,
                         KeyCode.G,
                         false,
-                        "RESHIELD"
+                        "UNSHIELD"
                     );
                     unshieldButton.MaxTimer = 0f;
                     unshieldButton.Timer = -1f;
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[MedicReshield] Button creation failed: {e}");
+                }
+            }
+        }
+
+        // Runs every frame after all CustomButton.Update calls (CustomButton.HudUpdate is invoked from
+        // TOR's HudManager.Update postfix, UpdatePatch.cs:347). Three jobs, all medic-local:
+        //   1) spend a charge whenever a shield is placed (usedShield false→true transition);
+        //   2) re-arm (no charge) when the shielded player actually dies, while charges remain;
+        //   3) draw the remaining/max charge count on TOR's shield button.
+        [HarmonyPatch(typeof(CustomButton), nameof(CustomButton.HudUpdate))]
+        static class ChargeTickPatch {
+            public static void Postfix() {
+                try {
+                    if (Option == null || !Option.getBool()) return;
+                    var lp = PlayerControl.LocalPlayer;
+                    if (Medic.medic == null || lp == null || Medic.medic != lp
+                        || lp.Data == null || lp.Data.IsDead) return;
+
+                    int max = OptionShieldCharges == null ? 0 : OptionShieldCharges.getSelection();
+                    bool unlimited = max == 0;
+
+                    // 1) Placement → spend one charge. usedShield is set true exactly when a shield is
+                    //    placed (RPC.cs:579/824); SendReset clears it back to false on unshield / re-arm.
+                    bool used = Medic.usedShield;
+                    if (used && !prevUsedShield) placementsUsed++;
+                    prevUsedShield = used;
+
+                    // 2) Shielded death → re-arm (no charge), once per death. The shield blocks murder,
+                    //    so any real death of Medic.shielded is a non-prevented one (lover/guess/shift/…).
+                    var shielded = Medic.shielded;
+                    if (shielded != null && shielded.Data != null && shielded.Data.IsDead
+                        && lastDeadShieldedId != shielded.PlayerId) {
+                        lastDeadShieldedId = shielded.PlayerId;
+                        if (unlimited || placementsUsed < max)
+                            SendReset();   // re-arm: clears the dead shield everywhere, usedShield = false
+                        // else: out of charges — leave usedShield latched so no new shield can be placed.
+                    }
+
+                    // 3) Draw "remaining/max" (or "∞") on TOR's shield button, which is always visible to
+                    //    the medic. Excludes our own unshield button (shares the same sprite).
+                    var shieldBtn = CustomButton.buttons.FirstOrDefault(
+                        b => b != null && b != unshieldButton && b.Sprite == Medic.getButtonSprite());
+                    if (shieldBtn != null && shieldBtn.actionButton != null) {
+                        string txt = unlimited ? "∞" : $"{Math.Max(0, max - placementsUsed)}/{max}";
+                        shieldBtn.actionButton.OverrideText(txt);
+                        if (shieldBtn.actionButtonLabelText != null)
+                            shieldBtn.actionButtonLabelText.enabled = true;
+                    }
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[MedicReshield] Charge tick failed: {e}");
                 }
             }
         }

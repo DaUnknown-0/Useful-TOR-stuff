@@ -54,6 +54,12 @@ namespace UsefulTORStuff {
                     1271, Types.Crewmate, "Trapper Can Self-Limp", false, CustomOptionHolder.trapperSpawnRate);
                 StrengthOption = CustomOption.Create(
                     1272, Types.Crewmate, "Limp Speed Multiplier", 0.5f, 0.25f, 0.9f, 0.05f, CustomOptionHolder.trapperSpawnRate);
+                // CustomOption.Create builds the float selections by accumulating `+= 0.05f`, which
+                // drifts (e.g. 0.7000000001) and shows up raw in the menu and getFloat(). The 0.05
+                // step isn't binary-exact; round each entry to 2 decimals so display + value are clean.
+                if (StrengthOption.selections != null)
+                    for (int i = 0; i < StrengthOption.selections.Length; i++)
+                        StrengthOption.selections[i] = Mathf.Round((float)StrengthOption.selections[i] * 100f) / 100f;
                 DurationOption = CustomOption.Create(
                     1273, Types.Crewmate, "Limp Duration After Freeze", 5f, 1f, 20f, 1f, CustomOptionHolder.trapperSpawnRate);
 
