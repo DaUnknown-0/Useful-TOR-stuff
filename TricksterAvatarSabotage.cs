@@ -42,6 +42,10 @@ namespace UsefulTORStuff {
 
         private static CustomButton sabotageButton;
         private static FieldInfo lightsOutButtonField;
+        private static FieldInfo camouflagerButtonField;
+        // The camouflagerButton instance whose CouldUse we've already wrapped (TOR rebuilds the button
+        // every HudManager.Start, so we re-wrap each fresh instance exactly once).
+        private static CustomButton _wrappedCamoButton;
 
         // Active mixup state (synced via RPC; identical on every client).
         private static readonly Dictionary<byte, byte> mixupMap = new Dictionary<byte, byte>();
@@ -77,6 +81,10 @@ namespace UsefulTORStuff {
                 lightsOutButtonField = hmsp?.GetField("lightsOutButton", BindingFlags.NonPublic | BindingFlags.Static);
                 if (lightsOutButtonField == null)
                     UsefulTORStuffPlugin.Logger?.LogWarning("[TricksterAvatarSabotage] lightsOutButton field not found — shared cooldown disabled.");
+
+                camouflagerButtonField = hmsp?.GetField("camouflagerButton", BindingFlags.NonPublic | BindingFlags.Static);
+                if (camouflagerButtonField == null)
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[TricksterAvatarSabotage] camouflagerButton field not found — Camo block during mixup disabled.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] TryPatch failed: {e}");
             }
@@ -84,6 +92,25 @@ namespace UsefulTORStuff {
 
         private static CustomButton LightsOutButton() {
             try { return lightsOutButtonField?.GetValue(null) as CustomButton; } catch { return null; }
+        }
+        private static CustomButton CamouflagerButton() {
+            try { return camouflagerButtonField?.GetValue(null) as CustomButton; } catch { return null; }
+        }
+
+        // Make the block symmetric: the mixup's couldUse already disables it during an active
+        // camouflage; here we wrap the Camouflager's button so it can't camouflage while a mixup is
+        // running. TOR recreates camouflagerButton on every HudManager.Start, so we re-wrap the fresh
+        // instance once. No-op when the feature is unused (mixupTimer stays 0 → original couldUse).
+        private static void WrapCamouflagerBlock() {
+            try {
+                var camoBtn = CamouflagerButton();
+                if (camoBtn == null || camoBtn == _wrappedCamoButton) return;
+                var orig = camoBtn.CouldUse;
+                camoBtn.CouldUse = (Func<bool>)(() => (orig == null || orig()) && mixupTimer <= 0f);
+                _wrappedCamoButton = camoBtn;
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] Camo block wrap failed: {e}");
+            }
         }
         private static bool LightsReady() {
             var lob = LightsOutButton();
@@ -221,6 +248,10 @@ namespace UsefulTORStuff {
                     );
                     sabotageButton.MaxTimer = CooldownOption != null ? CooldownOption.getFloat() : 30f;
                     sabotageButton.Timer = sabotageButton.MaxTimer; // start on cooldown
+
+                    // Block the Camouflager's button while a mixup is active (other direction of the
+                    // existing camo↔mixup block). Runs here at Priority.Low, after TOR built its button.
+                    WrapCamouflagerBlock();
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] Button creation failed: {e}");
                 }
