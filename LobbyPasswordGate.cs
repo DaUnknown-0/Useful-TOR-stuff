@@ -3,31 +3,20 @@
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
 /*
- * LobbyPasswordGate — autor-kontrollierte Zugangssperre für den Spielstart-Button.
+ * LobbyPasswordGate — author-controlled access gate for the game start button.
  *
- * Der erwartete Passwort-Hash wird aus einer Datei im GitHub-Repo geladen (HashFileUrl).
- * So lässt er sich ohne Neu-Kompilieren ändern: einfach password_hash.txt im Repo anpassen.
- * Nur der Host sieht das Eingabe-Panel. Das Passwort wird niemals per RPC übertragen.
+ * The expected hash is fetched from password_hash.txt in the GitHub repo (HashFileUrl).
+ * Only the host sees the panel. The password is never transmitted over the network.
+ * Once unlocked, the gate stays open for the entire game session (until the process exits).
  *
- * BEDROHUNGSMODELL: Nur ein Casual-Deterrent. Der Check ist client-seitig und der Code ist
- * Open Source — er lässt sich per Harmony-Patch umgehen. Das ist bewusst so akzeptiert.
- *
- * ─── WIE DU DEN HASH ÄNDERST ─────────────────────────────────────────────────────────────
- *  1. Wähle ein Passwort, z. B. "NeuesPasswort99".
- *  2. Berechne den SHA-256-Hash (hex, lowercase, 64 Zeichen) in PowerShell:
- *
- *       $b = [System.Text.Encoding]::UTF8.GetBytes("NeuesPasswort99")
- *       $h = [System.Security.Cryptography.SHA256]::Create().ComputeHash($b)
- *       ($h | ForEach-Object { $_.ToString("x2") }) -join ""
- *
- *     Oder online: https://emn178.github.io/online-tools/sha256.html  (Input type: Text)
- *  3. Den 64-stelligen Hex-String in die Datei password_hash.txt im Repo-Root eintragen
- *     (nur der Hash, kein Zeilenumbruch nötig) und auf GitHub pushen. Fertig.
- *
- * ─── URL ANPASSEN ────────────────────────────────────────────────────────────────────────
- *  Die Konstante HashFileUrl unten zeigt auf password_hash.txt im GitHub-Repo. Falls du
- *  den Dateinamen oder Branch änderst, passe die URL einmalig an und kompiliere neu.
- * ─────────────────────────────────────────────────────────────────────────────────────────
+ * HOW TO CHANGE THE PASSWORD
+ *   1. Pick a password, e.g. "NewPassword99".
+ *   2. Compute its SHA-256 hash (hex, lowercase, 64 chars) in PowerShell:
+ *        $b = [System.Text.Encoding]::UTF8.GetBytes("NewPassword99")
+ *        $h = [System.Security.Cryptography.SHA256]::Create().ComputeHash($b)
+ *        ($h | ForEach-Object { $_.ToString("x2") }) -join ""
+ *      Or use set_password.ps1 (reads from .env, writes password_hash.txt).
+ *   3. Push password_hash.txt to GitHub — takes effect on next game launch.
  */
 
 using System;
@@ -46,13 +35,15 @@ namespace UsefulTORStuff
 {
     public class LobbyPasswordGate : MonoBehaviour
     {
-        // URL zur Roh-Textdatei im GitHub-Repo, die nur den 64-stelligen SHA-256-Hash enthält.
-        // Einmalig anpassen falls Branch/Dateiname sich ändert; der Hash selbst wird online gesetzt.
         private const string HashFileUrl =
             "https://raw.githubusercontent.com/" +
             UsefulTORStuffUpdater.RepositoryOwner + "/" +
             UsefulTORStuffUpdater.RepositoryName +
             "/main/password_hash.txt";
+
+        // AppDomain keys read by ChanceMod (no cross-assembly reference needed).
+        internal const string AppKeyActive   = "LobbyPasswordGate.Active";
+        internal const string AppKeyUnlocked = "LobbyPasswordGate.Unlocked";
 
         private enum FetchState { Loading, Ready, Failed }
 
@@ -71,17 +62,12 @@ namespace UsefulTORStuff
 
         public LobbyPasswordGate(IntPtr ptr) : base(ptr) { }
 
-        // AppDomain-Schlüssel, über die ChanceMod (ohne Compile-Zeit-Referenz) erkennt,
-        // dass dieses Gate geladen ist und ob es bereits entsperrt wurde.
-        internal const string AppKeyActive   = "LobbyPasswordGate.Active";
-        internal const string AppKeyUnlocked = "LobbyPasswordGate.Unlocked";
-
         public void Awake()
         {
             if (Instance != null) Destroy(Instance);
             Instance = this;
             DontDestroyOnLoad(gameObject);
-            AppDomain.CurrentDomain.SetData(AppKeyActive, true);
+            AppDomain.CurrentDomain.SetData(AppKeyActive,   true);
             AppDomain.CurrentDomain.SetData(AppKeyUnlocked, false);
             this.StartCoroutine(CoFetchHash());
         }
@@ -89,6 +75,14 @@ namespace UsefulTORStuff
         public void Update()
         {
             if (_panel == null || !_panel.activeSelf) return;
+
+            // Escape → leave lobby instead of entering password.
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                LeaveGame();
+                return;
+            }
+
             if (_fetchState != FetchState.Ready) return;
 
             if (_errorClearTimer > 0f)
@@ -130,32 +124,28 @@ namespace UsefulTORStuff
 
         public void ShowPanel()
         {
-            if (_panel != null)
-            {
-                _panel.SetActive(true);
-                return;
-            }
+            if (_panel != null) { _panel.SetActive(true); return; }
             BuildPanel();
         }
 
         public void HidePanel()
         {
-            if (_panel != null)
-                _panel.SetActive(false);
+            if (_panel != null) _panel.SetActive(false);
         }
 
-        public static void ResetLock()
+        private static void LeaveGame()
         {
-            Unlocked = false;
-            AppDomain.CurrentDomain.SetData(AppKeyUnlocked, false);
-            if (Instance != null)
+            try
             {
-                Instance._inputBuffer = "";
-                Instance.HidePanel();
+                AmongUsClient.Instance?.ExitGame(DisconnectReasons.ExitGame);
+            }
+            catch (Exception ex)
+            {
+                UsefulTORStuffPlugin.Logger?.LogError($"[LobbyPasswordGate] LeaveGame failed: {ex}");
             }
         }
 
-        // ── Hash aus GitHub laden ─────────────────────────────────────────────────────────────
+        // ── Fetch hash from GitHub ────────────────────────────────────────────────────────────
 
         [HideFromIl2Cpp]
         private IEnumerator CoFetchHash()
@@ -176,8 +166,7 @@ namespace UsefulTORStuff
             if (www.isNetworkError || www.isHttpError)
             {
                 UsefulTORStuffPlugin.Logger?.LogError(
-                    $"[LobbyPasswordGate] Hash-Datei nicht erreichbar ({www.error}). " +
-                    $"URL: {HashFileUrl}");
+                    $"[LobbyPasswordGate] Hash file unreachable ({www.error}). URL: {HashFileUrl}");
                 www.downloadHandler.Dispose();
                 www.Dispose();
                 _fetchState = FetchState.Failed;
@@ -193,13 +182,12 @@ namespace UsefulTORStuff
             {
                 _fetchedHash = raw.ToLowerInvariant();
                 _fetchState = FetchState.Ready;
-                UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Hash erfolgreich geladen.");
+                UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Hash loaded successfully.");
             }
             else
             {
                 UsefulTORStuffPlugin.Logger?.LogError(
-                    $"[LobbyPasswordGate] Ungültige Hash-Datei (Länge {raw.Length}, " +
-                    $"erwartet 64 Hex-Zeichen). Inhalt: '{raw}'");
+                    $"[LobbyPasswordGate] Invalid hash file (length {raw.Length}, expected 64 hex chars).");
                 _fetchState = FetchState.Failed;
             }
 
@@ -214,16 +202,15 @@ namespace UsefulTORStuff
             return true;
         }
 
-        // ── Passwort prüfen ───────────────────────────────────────────────────────────────────
+        // ── Password check ────────────────────────────────────────────────────────────────────
 
         private void TryUnlock()
         {
             if (_fetchState != FetchState.Ready || _fetchedHash == null) return;
-
             try
             {
                 byte[] inputBytes = Encoding.UTF8.GetBytes(_inputBuffer);
-                byte[] hashBytes = SHA256.Create().ComputeHash(inputBytes);
+                byte[] hashBytes  = SHA256.Create().ComputeHash(inputBytes);
                 string hex = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
 
                 _inputBuffer = "";
@@ -234,17 +221,17 @@ namespace UsefulTORStuff
                     Unlocked = true;
                     AppDomain.CurrentDomain.SetData(AppKeyUnlocked, true);
                     HidePanel();
-                    UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Entsperrt.");
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Unlocked.");
                 }
                 else
                 {
-                    ShowError("Falsches Passwort.");
-                    UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Falscher Passwort-Versuch.");
+                    ShowError("Wrong password.");
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Wrong password attempt.");
                 }
             }
             catch (Exception ex)
             {
-                UsefulTORStuffPlugin.Logger?.LogError($"[LobbyPasswordGate] Hash-Check fehlgeschlagen: {ex}");
+                UsefulTORStuffPlugin.Logger?.LogError($"[LobbyPasswordGate] Hash check failed: {ex}");
                 _inputBuffer = "";
             }
         }
@@ -259,7 +246,7 @@ namespace UsefulTORStuff
             _errorClearTimer = 2f;
         }
 
-        // ── Panel-UI ──────────────────────────────────────────────────────────────────────────
+        // ── Panel UI ──────────────────────────────────────────────────────────────────────────
 
         private void BuildPanel()
         {
@@ -277,7 +264,7 @@ namespace UsefulTORStuff
 
             _panel.AddComponent<GraphicRaycaster>();
 
-            // Halbtransparentes Overlay (kein Button → Lobby-Klicks landen trotzdem)
+            // Full-screen overlay — blocks all mouse input from reaching the lobby behind it.
             var overlay = new GameObject("Overlay");
             overlay.transform.SetParent(_panel.transform, false);
             var overlayRect = overlay.AddComponent<RectTransform>();
@@ -286,31 +273,29 @@ namespace UsefulTORStuff
             overlayRect.sizeDelta = Vector2.zero;
             overlay.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.72f);
 
-            // Zentrierte Box
+            // Centered dialog box.
             var box = new GameObject("Box");
             box.transform.SetParent(_panel.transform, false);
             var boxRect = box.AddComponent<RectTransform>();
             boxRect.anchorMin = new Vector2(0.5f, 0.5f);
             boxRect.anchorMax = new Vector2(0.5f, 0.5f);
-            boxRect.pivot = new Vector2(0.5f, 0.5f);
-            boxRect.sizeDelta = new Vector2(520, 290);
+            boxRect.pivot     = new Vector2(0.5f, 0.5f);
+            boxRect.sizeDelta = new Vector2(520, 310);
             box.AddComponent<Image>().color = new Color(0.08f, 0.08f, 0.14f, 0.98f);
 
-            // Titel
             MakeLabel(box, "Title", new Vector2(0, -22), new Vector2(-20, 52),
-                "LOBBY PASSWORT", 30, FontStyles.Bold, new Color(0.3f, 0.7f, 1f));
+                "LOBBY PASSWORD", 30, FontStyles.Bold, new Color(0.3f, 0.7f, 1f));
 
-            // Hinweiszeile (wird je nach FetchState aktualisiert)
             _hintLabel = MakeLabel(box, "Hint", new Vector2(0, -82), new Vector2(-30, 30),
                 "", 17, FontStyles.Normal, new Color(0.82f, 0.82f, 0.82f));
 
-            // Eingabe-Anzeigefeld
+            // Masked input display.
             var inputBox = new GameObject("InputBox");
             inputBox.transform.SetParent(box.transform, false);
             var inputBoxRect = inputBox.AddComponent<RectTransform>();
             inputBoxRect.anchorMin = new Vector2(0.08f, 1f);
             inputBoxRect.anchorMax = new Vector2(0.92f, 1f);
-            inputBoxRect.pivot = new Vector2(0.5f, 1f);
+            inputBoxRect.pivot     = new Vector2(0.5f, 1f);
             inputBoxRect.anchoredPosition = new Vector2(0, -122);
             inputBoxRect.sizeDelta = new Vector2(0, 48);
             inputBox.AddComponent<Image>().color = new Color(0.14f, 0.14f, 0.22f);
@@ -323,71 +308,51 @@ namespace UsefulTORStuff
             maskedRect.offsetMin = new Vector2(10, 0);
             maskedRect.offsetMax = new Vector2(-10, 0);
             _maskedLabel = maskedObj.AddComponent<TextMeshProUGUI>();
-            _maskedLabel.text = "";
-            _maskedLabel.fontSize = 28;
+            _maskedLabel.text      = "";
+            _maskedLabel.fontSize  = 28;
             _maskedLabel.alignment = TextAlignmentOptions.Center;
-            _maskedLabel.color = Color.white;
+            _maskedLabel.color     = Color.white;
 
-            // Status- / Fehlermeldung
+            // Error / status line.
             var statusObj = new GameObject("Status");
             statusObj.transform.SetParent(box.transform, false);
             var statusRect = statusObj.AddComponent<RectTransform>();
             statusRect.anchorMin = new Vector2(0, 1);
             statusRect.anchorMax = new Vector2(1, 1);
-            statusRect.pivot = new Vector2(0.5f, 1);
+            statusRect.pivot     = new Vector2(0.5f, 1);
             statusRect.anchoredPosition = new Vector2(0, -183);
             statusRect.sizeDelta = new Vector2(-20, 28);
             _statusLabel = statusObj.AddComponent<TextMeshProUGUI>();
-            _statusLabel.text = "";
-            _statusLabel.fontSize = 18;
+            _statusLabel.text      = "";
+            _statusLabel.fontSize  = 18;
             _statusLabel.alignment = TextAlignmentOptions.Center;
-            _statusLabel.color = new Color(1f, 0.3f, 0.3f);
+            _statusLabel.color     = new Color(1f, 0.3f, 0.3f);
 
-            // Fußzeile
-            MakeLabel(box, "Footer", new Vector2(0, -222), new Vector2(-20, 24),
-                "[Enter] bestätigen    [Backspace] löschen", 14, FontStyles.Normal,
+            MakeLabel(box, "Footer", new Vector2(0, -240), new Vector2(-20, 24),
+                "[Enter] confirm    [Backspace] delete    [Esc] leave lobby", 14, FontStyles.Normal,
                 new Color(0.5f, 0.5f, 0.5f));
 
             _panel.SetActive(true);
             ApplyFetchStateToPanel();
         }
 
-        // Zeigt den aktuellen Lade-/Fehler-/Bereit-Zustand im Panel an.
         private void ApplyFetchStateToPanel()
         {
             if (_panel == null) return;
             switch (_fetchState)
             {
                 case FetchState.Loading:
-                    if (_hintLabel != null)
-                    {
-                        _hintLabel.text = "Lade Konfiguration...";
-                        _hintLabel.color = new Color(0.9f, 0.9f, 0.4f);
-                    }
+                    if (_hintLabel != null) { _hintLabel.text = "Loading configuration..."; _hintLabel.color = new Color(0.9f, 0.9f, 0.4f); }
                     if (_maskedLabel != null) _maskedLabel.text = "";
                     if (_statusLabel != null) _statusLabel.text = "";
                     break;
-
                 case FetchState.Failed:
-                    if (_hintLabel != null)
-                    {
-                        _hintLabel.text = "Fehler: password_hash.txt nicht erreichbar.";
-                        _hintLabel.color = new Color(1f, 0.35f, 0.35f);
-                    }
+                    if (_hintLabel != null) { _hintLabel.text = "Error: password_hash.txt not reachable."; _hintLabel.color = new Color(1f, 0.35f, 0.35f); }
                     if (_maskedLabel != null) _maskedLabel.text = "";
-                    if (_statusLabel != null)
-                    {
-                        _statusLabel.text = "Spielstart dauerhaft blockiert.";
-                        _statusLabel.color = new Color(1f, 0.35f, 0.35f);
-                    }
+                    if (_statusLabel != null) { _statusLabel.text = "Game start permanently blocked."; _statusLabel.color = new Color(1f, 0.35f, 0.35f); }
                     break;
-
                 case FetchState.Ready:
-                    if (_hintLabel != null)
-                    {
-                        _hintLabel.text = "Passwort eingeben und mit Enter bestätigen:";
-                        _hintLabel.color = new Color(0.82f, 0.82f, 0.82f);
-                    }
+                    if (_hintLabel != null) { _hintLabel.text = "Enter password and confirm with Enter:"; _hintLabel.color = new Color(0.82f, 0.82f, 0.82f); }
                     if (_statusLabel != null) _statusLabel.text = "";
                     break;
             }
@@ -402,38 +367,21 @@ namespace UsefulTORStuff
             var rect = obj.AddComponent<RectTransform>();
             rect.anchorMin = new Vector2(0, 1);
             rect.anchorMax = new Vector2(1, 1);
-            rect.pivot = new Vector2(0.5f, 1);
+            rect.pivot     = new Vector2(0.5f, 1);
             rect.anchoredPosition = anchoredPos;
             rect.sizeDelta = sizeDelta;
             var tmp = obj.AddComponent<TextMeshProUGUI>();
-            tmp.text = text;
-            tmp.fontSize = fontSize;
+            tmp.text      = text;
+            tmp.fontSize  = fontSize;
             tmp.fontStyle = style;
             tmp.alignment = TextAlignmentOptions.Center;
-            tmp.color = color;
+            tmp.color     = color;
             return tmp;
         }
 
-        // ── Harmony-Patches (werden via harmony.PatchAll(Assembly) automatisch erfasst) ──────
+        // ── Harmony patches (picked up automatically by harmony.PatchAll(Assembly)) ──────────
 
-        // Bei jedem Lobby-Beitritt zurücksetzen.
-        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
-        static class OnGameJoinedPatch
-        {
-            public static void Postfix()
-            {
-                Unlocked = false;
-                AppDomain.CurrentDomain.SetData(AppKeyUnlocked, false);
-                if (Instance != null)
-                {
-                    Instance._inputBuffer = "";
-                    Instance.HidePanel();
-                }
-                UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Lobby beigetreten — Sperre zurückgesetzt.");
-            }
-        }
-
-        // Jeden Lobby-Frame: Panel für den Host zeigen (gesperrt) oder verstecken (entsperrt).
+        // Show panel each lobby frame for host while locked; hide once unlocked.
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
         [HarmonyPriority(Priority.Low)]
         static class GameStartManagerUpdatePatch
@@ -450,7 +398,7 @@ namespace UsefulTORStuff
             }
         }
 
-        // Spielstart blockieren, solange das Passwort nicht korrekt eingegeben wurde.
+        // Block game start while locked.
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.BeginGame))]
         static class GameStartManagerBeginGamePatch
         {
@@ -460,7 +408,7 @@ namespace UsefulTORStuff
                 if (Unlocked) return true;
 
                 Instance?.ShowPanel();
-                UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Spielstart blockiert — Passwort erforderlich.");
+                UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Game start blocked — password required.");
                 return false;
             }
         }
