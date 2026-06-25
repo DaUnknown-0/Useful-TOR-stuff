@@ -74,7 +74,19 @@ namespace UsefulTORStuff
 
         public void Update()
         {
+            // Left the lobby / returned to the menu: the GameStartManager.Update postfix that drives
+            // this panel stops firing, so close it here and unfreeze. Unlocked is kept for the session.
+            if (_panel != null && _panel.activeSelf && GameStartManager.Instance == null)
+            {
+                HidePanel();
+                return;
+            }
+
             if (_panel == null || !_panel.activeSelf) return;
+
+            // The overlay only blocks the mouse — freeze the bean so the host can't walk around or
+            // interact with the lobby while the gate is locked.
+            FreezeLocalPlayer();
 
             // Escape → leave lobby instead of entering password.
             if (Input.GetKeyDown(KeyCode.Escape))
@@ -90,6 +102,20 @@ namespace UsefulTORStuff
                 _errorClearTimer -= Time.deltaTime;
                 if (_errorClearTimer <= 0f && _statusLabel != null)
                     _statusLabel.text = "";
+            }
+
+            // Ctrl+V / Shift+Insert → paste from clipboard.
+            bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
+            if ((ctrl && Input.GetKeyDown(KeyCode.V)) ||
+                (Input.GetKey(KeyCode.LeftShift) && Input.GetKeyDown(KeyCode.Insert)))
+            {
+                string paste = GUIUtility.systemCopyBuffer ?? "";
+                bool pasted = false;
+                foreach (char c in paste)
+                    if (!char.IsControl(c)) { _inputBuffer += c; pasted = true; }
+                if (pasted && _maskedLabel != null)
+                    _maskedLabel.text = new string('●', _inputBuffer.Length);
+                return;
             }
 
             string typed = Input.inputString;
@@ -131,12 +157,29 @@ namespace UsefulTORStuff
         public void HidePanel()
         {
             if (_panel != null) _panel.SetActive(false);
+            // Restore movement whenever the gate is dismissed (unlocked, left, etc.).
+            UnfreezeLocalPlayer();
         }
 
-        private static void LeaveGame()
+        // The overlay can't block keyboard movement, so we pin moveable=false each frame while the
+        // panel is up (the same field TOR's Hacker/Trap/etc. use to freeze a player).
+        private static void FreezeLocalPlayer()
+        {
+            try { if (PlayerControl.LocalPlayer != null) PlayerControl.LocalPlayer.moveable = false; }
+            catch { }
+        }
+
+        private static void UnfreezeLocalPlayer()
+        {
+            try { if (PlayerControl.LocalPlayer != null) PlayerControl.LocalPlayer.moveable = true; }
+            catch { }
+        }
+
+        private void LeaveGame()
         {
             try
             {
+                HidePanel();
                 AmongUsClient.Instance?.ExitGame(DisconnectReasons.ExitGame);
             }
             catch (Exception ex)
