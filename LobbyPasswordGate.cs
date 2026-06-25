@@ -59,6 +59,10 @@ namespace UsefulTORStuff
         private TextMeshProUGUI _statusLabel;
         private string _inputBuffer = "";
         private float _errorClearTimer;
+        // True only while WE are holding the player frozen. Used so we restore moveable exactly once
+        // (never every frame), otherwise we fight the game's own moveable control (lobby walk-in
+        // animation) and the bean gets stuck mid-walk.
+        private bool _frozen;
 
         public LobbyPasswordGate(IntPtr ptr) : base(ptr) { }
 
@@ -163,14 +167,19 @@ namespace UsefulTORStuff
 
         // The overlay can't block keyboard movement, so we pin moveable=false each frame while the
         // panel is up (the same field TOR's Hacker/Trap/etc. use to freeze a player).
-        private static void FreezeLocalPlayer()
+        private void FreezeLocalPlayer()
         {
             try { if (PlayerControl.LocalPlayer != null) PlayerControl.LocalPlayer.moveable = false; }
             catch { }
+            _frozen = true;
         }
 
-        private static void UnfreezeLocalPlayer()
+        // Restore movement ONCE — only if we actually froze. Setting moveable=true every frame would
+        // override the game's own moveable=false during the lobby walk-in animation and freeze the bean.
+        private void UnfreezeLocalPlayer()
         {
+            if (!_frozen) return;
+            _frozen = false;
             try { if (PlayerControl.LocalPlayer != null) PlayerControl.LocalPlayer.moveable = true; }
             catch { }
         }
