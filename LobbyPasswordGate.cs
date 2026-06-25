@@ -246,6 +246,67 @@ namespace UsefulTORStuff
             ApplyFetchStateToPanel();
         }
 
+        // Re-check on each lobby join: if the published hash changed, require the password again.
+        // ANY error (network/HTTP failure or an invalid file) skips the re-check entirely — the
+        // current hash and unlock state are kept, so a transient hiccup never locks the host out.
+        [HideFromIl2Cpp]
+        private IEnumerator CoRecheckHash()
+        {
+            var www = new UnityWebRequest();
+            www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
+            www.SetUrl(HashFileUrl);
+            www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
+            www.downloadHandler = new DownloadHandlerBuffer();
+            var op = www.SendWebRequest();
+
+            while (!op.isDone)
+                yield return new WaitForEndOfFrame();
+
+            if (www.isNetworkError || www.isHttpError)
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    $"[LobbyPasswordGate] Re-check skipped — hash file unreachable ({www.error}).");
+                www.downloadHandler.Dispose();
+                www.Dispose();
+                yield break; // skip: keep current hash + unlock state
+            }
+
+            string raw = www.downloadHandler.text?.Trim() ?? "";
+            www.downloadHandler.Dispose();
+            www.Dispose();
+
+            if (raw.Length != 64 || !IsValidHex(raw))
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    $"[LobbyPasswordGate] Re-check skipped — invalid hash file (length {raw.Length}).");
+                yield break; // skip
+            }
+
+            string newHash = raw.ToLowerInvariant();
+
+            // If the initial load had failed, treat this success as the (now recovered) initial load.
+            if (_fetchState != FetchState.Ready || _fetchedHash == null)
+            {
+                _fetchedHash = newHash;
+                _fetchState = FetchState.Ready;
+                ApplyFetchStateToPanel();
+                UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Hash recovered on re-check.");
+                yield break;
+            }
+
+            if (newHash != _fetchedHash)
+            {
+                _fetchedHash = newHash;
+                Unlocked = false;
+                AppDomain.CurrentDomain.SetData(AppKeyUnlocked, false);
+                _inputBuffer = "";
+                if (_maskedLabel != null) _maskedLabel.text = "";
+                ApplyFetchStateToPanel();
+                UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Password changed — re-locked, re-entry required.");
+            }
+            // else: unchanged → keep current state (stays unlocked if it already was).
+        }
+
         private static bool IsValidHex(string s)
         {
             foreach (char c in s)
@@ -332,7 +393,7 @@ namespace UsefulTORStuff
             boxRect.anchorMin = new Vector2(0.5f, 0.5f);
             boxRect.anchorMax = new Vector2(0.5f, 0.5f);
             boxRect.pivot     = new Vector2(0.5f, 0.5f);
-            boxRect.sizeDelta = new Vector2(520, 310);
+            boxRect.sizeDelta = new Vector2(560, 310);
             box.AddComponent<Image>().color = new Color(0.08f, 0.08f, 0.14f, 0.98f);
 
             MakeLabel(box, "Title", new Vector2(0, -22), new Vector2(-20, 52),
@@ -364,6 +425,13 @@ namespace UsefulTORStuff
             _maskedLabel.fontSize  = 28;
             _maskedLabel.alignment = TextAlignmentOptions.Center;
             _maskedLabel.color     = Color.white;
+            // Keep the dots inside the box for any password length: single line, shrink to fit, and
+            // truncate with an ellipsis if even the minimum size would still overflow.
+            _maskedLabel.enableWordWrapping = false;
+            _maskedLabel.overflowMode  = TextOverflowModes.Ellipsis;
+            _maskedLabel.enableAutoSizing = true;
+            _maskedLabel.fontSizeMin   = 10;
+            _maskedLabel.fontSizeMax   = 28;
 
             // Error / status line.
             var statusObj = new GameObject("Status");
@@ -432,6 +500,22 @@ namespace UsefulTORStuff
         }
 
         // ── Harmony patches (picked up automatically by harmony.PatchAll(Assembly)) ──────────
+
+        // On each lobby join, re-check whether the published hash changed (re-lock if so). Wrapped in
+        // try/catch so any failure to even start the re-check is swallowed — the gate keeps working.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class OnGameJoinedPatch
+        {
+            public static void Postfix()
+            {
+                if (Instance == null) return;
+                try { Instance.StartCoroutine(Instance.CoRecheckHash()); }
+                catch (Exception ex)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[LobbyPasswordGate] Re-check not started: {ex.Message}");
+                }
+            }
+        }
 
         // Show panel each lobby frame for host while locked; hide once unlocked.
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
