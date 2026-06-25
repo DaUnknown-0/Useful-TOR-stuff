@@ -209,7 +209,8 @@ namespace UsefulTORStuff {
                         () => PlayerControl.LocalPlayer.CanMove
                               && Camouflager.camouflageTimer <= 0f && mixupTimer <= 0f && LightsReady(),
                         () => { },
-                        Trickster.getLightsOutButtonSprite(),
+                        // Use the Camouflager's button sprite — the mixup is a camo-style effect.
+                        Camouflager.getButtonSprite(),
                         // Trickster is an Impostor: avoid right-side kill-button slots and the
                         // upperRowLeft used by place-box / lights-out. upperRowFarLeft is free.
                         CustomButton.ButtonPositions.upperRowFarLeft,

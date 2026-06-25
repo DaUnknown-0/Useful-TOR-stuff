@@ -44,13 +44,16 @@ namespace UsefulTORStuff {
 
         public static void CreateOptions() {
             try {
+                // Child of TOR's "Spy Can Enter Vents": TOR's options menu hides a child whose parent
+                // is at selection 0, so this option disappears when the Spy can't vent at all.
                 Option = CustomOption.Create(
                     1250, Types.Crewmate, "Spy Can Fully Vent",
-                    false, CustomOptionHolder.spySpawnRate);
+                    false, CustomOptionHolder.spyCanEnterVents);
 
+                // Place it directly under "Spy Can Enter Vents" so it reads as nested beneath it.
                 var opts = CustomOption.options;
                 opts.Remove(Option);
-                int idx = opts.IndexOf(CustomOptionHolder.spyHasImpostorVision);
+                int idx = opts.IndexOf(CustomOptionHolder.spyCanEnterVents);
                 if (idx < 0) idx = opts.Count - 1;
                 opts.Insert(idx + 1, Option);
 
