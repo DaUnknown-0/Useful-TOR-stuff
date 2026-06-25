@@ -201,6 +201,9 @@ public class UsefulTORStuffPlugin : BasePlugin
         // auslöst (zählt als „in der letzten Minute bereits geprüft“).
         ModManagerRegistry.MarkUpdateCheckNow();
 
+        // Lobby-Passwortsperre: blockiert den Spielstart bis der Host das korrekte Passwort eingibt.
+        AddComponent<LobbyPasswordGate>();
+
         // Mod-Manager UI Components: Button im Hauptmenü + Popup-UI.
         AddComponent<ModManagerButton>();
         AddComponent<ModManagerUI>();

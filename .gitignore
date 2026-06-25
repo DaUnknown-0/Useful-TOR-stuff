@@ -14,3 +14,7 @@ packages/
 
 # Misc
 *.log
+
+# Lobby-Passwort (niemals committen)
+.env
+set_password.ps1
