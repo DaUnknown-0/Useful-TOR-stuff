@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.2.0";
+    public const string PluginVersion = "1.2.2";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
@@ -173,6 +173,13 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Lawyer/Lover "knows target/partner position on map" options. MapBehaviour / HudManager
         // patches are attribute-based (PatchAll); only the options need explicit creation.
         LawyerLoverTracker.CreateOptions();
+
+        // Lover "Delay Lover Death" + Revenger path. Most patches are attribute-based (PatchAll);
+        // TryPatch adds the reflection patch on TOR's internal CheckAndEndGameForLoverWin (instant
+        // Revenger win) and resolves the UncheckedMurderPlayer RPC id. CreateOptions runs after TOR's
+        // CustomOptionHolder.Load(). This feature is client-side and gated on "everyone has the mod".
+        LoverRevenger.CreateOptions();
+        LoverRevenger.TryPatch(harmony);
 
         // Tiebreaker quantity (max 3): multiple Tiebreakers, all shown as such, majority tie-break.
         // setModifier/resetVariables tracking + the RoleInfo.getRoleInfoForPlayer display postfix are

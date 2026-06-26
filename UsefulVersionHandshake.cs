@@ -316,6 +316,18 @@ namespace UsefulTORStuff {
                         "Sheriff Prevents Killer Parity Win");
                 }
 
+                // Lover "Delay Lover Death / Revenger" warning: this feature is client-side and only
+                // works when everyone has the mod (unlike the host-enforced Sheriff parity win). Warn
+                // the host when it is ON but someone is missing the mod — it will simply not apply.
+                if (AmongUsClient.Instance.AmHost
+                    && LoverRevenger.DelayOption != null && LoverRevenger.DelayOption.getBool()
+                    && !everyone) {
+                    DrawTopLeftMessage(__instance, text,
+                        "<color=#FFA500FF>'Delay Lover Death (Revenger)' is ON, but not all players have "
+                        + "TOR - Forgotten Fixes — this feature is client-side and will NOT apply.</color>",
+                        "Delay Lover Death (Revenger)");
+                }
+
                 // F1: when the Chance mod is also present we OWN the combined per-player overview —
                 // draw it here (host-only unless ShowToAllPlayers). It replaces BOTH mods' standalone
                 // version lists; Chance suppresses its own block while we are loaded.
