@@ -353,6 +353,110 @@ namespace UsefulTORStuff
 
         private GameObject _testVersionToggle;
         private TMPro.TextMeshProUGUI _testVersionToggleText;
+        private GameObject _confirmOverlay;
+
+        // Number of running mods that have a release in the requested channel (stable=true / test=false).
+        private int CountChannelMods(bool stable)
+        {
+            int n = 0;
+            try {
+                foreach (var m in ModManagerRegistry.GetAllMods())
+                    try { if (m.RuntimeEnabled && (m.HasChannelRelease?.Invoke(stable) ?? false)) n++; } catch { }
+            } catch { }
+            return n;
+        }
+
+        // Switch every eligible mod to its newest release of the given channel, sequentially (each
+        // updater is a single-busy state machine), waiting for success (2) or error (3) before the next.
+        // A deliberate, possibly DOWNgrading channel switch — not a version-gated update.
+        private IEnumerator CoSwitchChannel(bool stable)
+        {
+            if (_updateAllRunning) yield break;
+            _updateAllRunning = true;
+            RefreshUpdateAllButton();
+
+            List<ModInfo> mods;
+            try { mods = ModManagerRegistry.GetAllMods(); } catch { mods = new List<ModInfo>(); }
+            int done = 0, failed = 0;
+            foreach (var mod in mods)
+            {
+                bool has = false;
+                try { has = mod.RuntimeEnabled && (mod.HasChannelRelease?.Invoke(stable) ?? false); } catch { }
+                if (!has || mod.TriggerChannelSwitch == null || mod.GetUpdateState == null) continue;
+
+                try { mod.TriggerChannelSwitch(stable); }
+                catch (Exception ex) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"Channel switch trigger failed for {mod.Name}: {ex.Message}");
+                    failed++;
+                    continue;
+                }
+
+                float timeout = 90f;
+                int state = 0;
+                while (timeout > 0f)
+                {
+                    try { state = mod.GetUpdateState?.Invoke() ?? 0; } catch { state = 3; }
+                    if (state == 2 || state == 3) break;
+                    timeout -= Time.deltaTime;
+                    yield return null;
+                }
+                if (state == 2) done++; else failed++;
+            }
+
+            _updateAllRunning = false;
+            RefreshUpdateAllButton();
+            if (_headerSummaryText != null)
+                _headerSummaryText.text = failed == 0
+                    ? $"<color=#9EFFA0>{done} Mod(s) auf {(stable ? "Stable" : "Test")} gesetzt — bitte Spiel neu starten.</color>"
+                    : $"<color=#FFD27F>{done} ok, {failed} fehlgeschlagen — bitte Spiel neu starten.</color>";
+        }
+
+        // Simple modal confirmation overlay (dim background + box with message + Ja/Abbrechen).
+        private void ShowConfirm(string title, string message, Action onYes)
+        {
+            HideConfirm();
+            if (_popup == null) { onYes?.Invoke(); return; } // no UI root -> just proceed
+            _confirmOverlay = new GameObject("ConfirmOverlay");
+            _confirmOverlay.transform.SetParent(_popup.transform, false);
+            var ort = _confirmOverlay.AddComponent<RectTransform>();
+            ort.anchorMin = Vector2.zero; ort.anchorMax = Vector2.one; ort.sizeDelta = Vector2.zero; ort.anchoredPosition = Vector2.zero;
+            var dim = _confirmOverlay.AddComponent<UnityEngine.UI.Image>();
+            dim.sprite = GetSolidSprite(new Color(0f, 0f, 0f, 0.6f));
+            _confirmOverlay.AddComponent<UnityEngine.UI.Button>(); // swallow clicks behind the box
+
+            var box = new GameObject("Box"); box.transform.SetParent(_confirmOverlay.transform, false);
+            var brt = box.AddComponent<RectTransform>();
+            brt.anchorMin = new Vector2(0.5f, 0.5f); brt.anchorMax = new Vector2(0.5f, 0.5f); brt.pivot = new Vector2(0.5f, 0.5f);
+            brt.sizeDelta = new Vector2(540, 280); brt.anchoredPosition = Vector2.zero;
+            box.AddComponent<UnityEngine.UI.Image>().sprite = GetSolidSprite(new Color(0.12f, 0.12f, 0.18f, 0.99f));
+
+            var t = new GameObject("Title"); t.transform.SetParent(box.transform, false);
+            var trt = t.AddComponent<RectTransform>(); trt.anchorMin = new Vector2(0, 1); trt.anchorMax = new Vector2(1, 1); trt.pivot = new Vector2(0.5f, 1); trt.anchoredPosition = new Vector2(0, -14); trt.sizeDelta = new Vector2(-24, 40);
+            var tt = t.AddComponent<TMPro.TextMeshProUGUI>(); tt.text = title; tt.fontSize = 22; tt.fontStyle = TMPro.FontStyles.Bold; tt.alignment = TMPro.TextAlignmentOptions.Center; tt.color = new Color(0.3f, 0.7f, 1f);
+
+            var m = new GameObject("Msg"); m.transform.SetParent(box.transform, false);
+            var mrt = m.AddComponent<RectTransform>(); mrt.anchorMin = Vector2.zero; mrt.anchorMax = Vector2.one; mrt.offsetMin = new Vector2(18, 66); mrt.offsetMax = new Vector2(-18, -56);
+            var mt = m.AddComponent<TMPro.TextMeshProUGUI>(); mt.text = message; mt.fontSize = 15; mt.alignment = TMPro.TextAlignmentOptions.Top; mt.color = Color.white; mt.enableWordWrapping = true;
+
+            MakeConfirmButton(box, "Ja", new Vector2(-95, 16), new Color(0.2f, 0.6f, 0.25f, 0.95f), () => { HideConfirm(); onYes?.Invoke(); });
+            MakeConfirmButton(box, "Abbrechen", new Vector2(95, 16), new Color(0.5f, 0.2f, 0.2f, 0.95f), () => HideConfirm());
+        }
+
+        private void MakeConfirmButton(GameObject parent, string label, Vector2 anchoredPos, Color col, Action onClick)
+        {
+            var b = new GameObject("Btn" + label); b.transform.SetParent(parent.transform, false);
+            var rt = b.AddComponent<RectTransform>(); rt.anchorMin = new Vector2(0.5f, 0); rt.anchorMax = new Vector2(0.5f, 0); rt.pivot = new Vector2(0.5f, 0); rt.sizeDelta = new Vector2(160, 40); rt.anchoredPosition = anchoredPos;
+            b.AddComponent<UnityEngine.UI.Image>().sprite = GetSolidSprite(col);
+            var to = new GameObject("T"); to.transform.SetParent(b.transform, false);
+            var trt = to.AddComponent<RectTransform>(); trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one; trt.sizeDelta = Vector2.zero;
+            var tx = to.AddComponent<TMPro.TextMeshProUGUI>(); tx.text = label; tx.fontSize = 16; tx.fontStyle = TMPro.FontStyles.Bold; tx.alignment = TMPro.TextAlignmentOptions.Center; tx.color = Color.white;
+            b.AddComponent<UnityEngine.UI.Button>().onClick.AddListener((UnityEngine.Events.UnityAction)(() => onClick()));
+        }
+
+        private void HideConfirm()
+        {
+            if (_confirmOverlay != null) { UnityEngine.Object.Destroy(_confirmOverlay); _confirmOverlay = null; }
+        }
 
         // Top-right toggle for the shared "show test versions" flag. Display-only: it controls whether
         // the 4th version component (.W on test builds) is shown in every mod's version line. Persists
@@ -385,11 +489,21 @@ namespace UsefulTORStuff
 
             var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
             btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
+                if (_updateAllRunning) return; // ein Download/Wechsel läuft bereits
                 bool nv = !VersionDisplay.ShowTestVersions();
-                VersionDisplay.SetShowTestVersions(nv);
-                if (UsefulTORStuffPlugin.ShowTestVersionsConfig != null)
-                    UsefulTORStuffPlugin.ShowTestVersionsConfig.Value = nv;
-                UpdateTestVersionToggleText();
+                bool stableChannel = !nv;            // AUS -> Stable, AN -> Test
+                string ch = stableChannel ? "STABLE" : "TEST";
+                int affected = CountChannelMods(stableChannel);
+                string msg = affected > 0
+                    ? $"Testversionen {(nv ? "AN" : "AUS")}: {affected} Mod(s) werden auf den neusten {ch}-Release heruntergeladen und installiert (ersetzt den aktuellen Build). Danach muss das Spiel neu gestartet werden.\n\nFortfahren?"
+                    : $"Testversionen {(nv ? "AN" : "AUS")}: Kein passender {ch}-Release gefunden — es wird nur die Anzeige umgestellt.\n\nFortfahren?";
+                ShowConfirm("Testversionen umschalten", msg, () => {
+                    VersionDisplay.SetShowTestVersions(nv);
+                    if (UsefulTORStuffPlugin.ShowTestVersionsConfig != null)
+                        UsefulTORStuffPlugin.ShowTestVersionsConfig.Value = nv;
+                    UpdateTestVersionToggleText();
+                    if (affected > 0) this.StartCoroutine(CoSwitchChannel(stableChannel));
+                });
             }));
             _testVersionToggle = button;
         }

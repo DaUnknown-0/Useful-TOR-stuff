@@ -404,6 +404,36 @@ namespace UsefulTORStuff {
                 StartDownloadRelease(latestRelease, managerMode: true);
             }
         }
+
+        // ---- Test/Stable channel switching (Mod Manager "show test versions" toggle) ----
+        // Channel is derived from the TAG FORMAT: stable = vX.Y.Z (Version.Revision <= 0), test =
+        // vX.Y.Z.W (Revision > 0). Independent of the GitHub prerelease flag, so it also works for
+        // releases published before test builds were marked as prereleases.
+        [HideFromIl2Cpp]
+        public GithubRelease LatestInChannel(bool stable) {
+            if (Releases == null) return null;
+            foreach (var r in Releases) {
+                if (r == null || r.Draft) continue;
+                int rev;
+                try { rev = r.Version.Revision; } catch { continue; }
+                bool isTest = rev > 0;
+                if (stable == isTest) continue;            // wrong channel
+                if (r.Assets != null && r.Assets.Any(FilterPluginAsset)) return r;
+            }
+            return null;
+        }
+
+        // True if a release exists in the requested channel (stable=true / test=false) with our asset.
+        [HideFromIl2Cpp]
+        public bool HasChannelRelease(bool stable) => LatestInChannel(stable) != null;
+
+        // Force-install the latest release of the given channel, even if it is a DOWNGRADE relative to
+        // the running build (deliberate channel switch, not a version-gated update).
+        [HideFromIl2Cpp]
+        public void TriggerChannelSwitch(bool stable) {
+            var r = LatestInChannel(stable);
+            if (r != null) StartDownloadRelease(r, managerMode: true);
+        }
     }
 
     // Minimal DTOs matching the GitHub Releases API JSON. Kept local so this plugin needs no
