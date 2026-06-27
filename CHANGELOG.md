@@ -8,13 +8,15 @@
   (not exiled) while "Both Lovers Die" is ON — the surviving Lover's instant suicide is suppressed and
   the decision is deferred to the end of the next meeting. There a configurable %-roll
   (**Chance Surviving Lover Becomes Revenger**, like the Lawyer→Prosecutor chance) turns them into a
-  **Revenger** (otherwise they die now as a delayed Lover suicide). The Revenger is a *separate neutral
-  role*: from the awakening on it shows as "Revenger" (its own `RoleInfo`, keeping the Lovers color) in
-  name tags, the role tab and the end-game summary. It gets a Sheriff-like kill button; a host
+  **Revenger** (otherwise they die now as a delayed Lover suicide). From the awakening on it shows as
+  "Revenger" (its own `RoleInfo`, keeping the Lovers color) in name tags, the role tab and the end-game
+  summary — but the **win counts as a Lovers win for exactly the two Lovers** (the fallen one + the
+  Revenger; end screen "Lovers Win"). A **non-killer** Revenger gets a Sheriff-like kill button; a host
   **Revenger Mode** option picks the behaviour: *Targeted Justice* (may only kill the Lover's killer —
-  correct kill ends the game instantly as a **solo Revenger win**, wrong target is a fatal misfire) or
-  *Blind Rage* (may kill anyone; hitting the real killer still wins, otherwise they die at the next
-  meeting end with a random rage chat message). Flavor chat: a grief/foreboding line for the surviving
+  correct kill ends the game instantly as a Lovers win, wrong target is a fatal misfire) or *Blind
+  Rage* (may kill anyone; hitting the real killer still wins, otherwise they die at the next meeting
+  end with a random rage chat message). A **killing-role** Revenger (Impostor/Jackal/Sidekick) gets no
+  second button: their own normal kill on the Lover's killer triggers the win. Flavor chat: a grief/foreboding line for the surviving
   Lover in the first meeting, a mode-specific awakening line, and the rage-death lines. Suppression
   flips `Lovers.bothDie` off for the triggering `MurderPlayer` so TOR's own suicide+death-reason block
   is skipped cleanly; the win uses TOR's internal `CheckEndCriteriaPatch.CheckAndEndGameForLoverWin`

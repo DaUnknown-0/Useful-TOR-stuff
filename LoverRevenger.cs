@@ -13,13 +13,16 @@
  *   - A %-roll (RevengerChance, like the Lawyer->Prosecutor chance) decides whether the surviving
  *     Lover becomes a REVENGER (lives on) or dies now (delayed Lover suicide). This applies to any
  *     surviving Lover regardless of role, including Impostor/Jackal Lovers.
- *   - The Revenger becomes a SEPARATE neutral role: it shows as "Revenger" (own RoleInfo, keeping the
- *     Lovers color) in name tags from the awakening on, in the role tab and the end-game summary.
- *   - The Revenger gets a Sheriff-like kill button. A host option picks the mode:
+ *   - The Revenger shows as "Revenger" (own RoleInfo, keeping the Lovers color) in name tags from the
+ *     awakening on, in the role tab and the end-game summary. The WIN, however, counts as a Lovers win
+ *     for exactly the two Lovers (the fallen one + the Revenger) — end screen "Lovers Win".
+ *   - A NON-killer (crew) Revenger gets a Sheriff-like kill button. A host option picks the mode:
  *       * "Targeted Justice": may only correctly kill the Lover's killer. Correct kill -> game ends
- *         immediately with a SOLO Revenger win. Wrong target -> misfire, the Revenger dies.
+ *         immediately as a Lovers win. Wrong target -> misfire, the Revenger dies.
  *       * "Blind Rage": may kill anyone. If they happen to hit the real killer -> win (as above).
  *         Otherwise they die at the end of the next meeting, with a random rage chat message.
+ *   - A killing-role Revenger (Impostor/Jackal/Sidekick) gets NO second button: their own normal kill
+ *     on the Lover's killer triggers the win (modes/misfire/rage don't apply to them).
  *
  * Guess case (a Lover is shot by a Guesser): ALSO arms the Revenger, with the Guesser as the target.
  * TOR kills a guessed Lover via Exiled(), so we intercept RPCProcedure.guesserShoot (same bothDie flip).
@@ -36,8 +39,8 @@
  * MurderPlayer so TOR's own (bothDie-gated) suicide+death-reason block is skipped cleanly, then
  * restores it in a last-priority postfix. The win uses TOR's internal
  * CheckEndCriteriaPatch.CheckAndEndGameForLoverWin only as a host-only entry point (patched via
- * reflection, like SheriffParityWin), but ends the game with a SEPARATE CustomGameOverReason (17),
- * so the Revenger is its own neutral role with its own solo winner and a "Revenger Wins" end screen.
+ * reflection, like SheriffParityWin), but ends the game with a SEPARATE CustomGameOverReason (17), so
+ * we control the winners (the two Lovers) and a "Lovers Win" end screen independently of TOR.
  */
 
 using System;
@@ -83,7 +86,9 @@ namespace UsefulTORStuff {
         // OWN OnGameEnd postfix (EndGamePatch.cs) which runs BEFORE ours, so anything reset there would
         // already be gone. Instead this is cleared at game start (IntroEndPatch).
         public static bool revengerWon;
-        private static NetworkedPlayerInfo winnerData;
+        // The win counts as a Lovers win for exactly the two Lovers (the fallen one + the Revenger),
+        // so we snapshot both Lover infos at win time.
+        private static NetworkedPlayerInfo loverData1, loverData2;
 
         // Separate CustomGameOverReason for the Revenger win. TOR's internal enum uses 10..16; 17 is ours.
         private const int RevengerWinReason = 17;
@@ -311,6 +316,14 @@ namespace UsefulTORStuff {
         private static bool IsLover(PlayerControl p) =>
             p != null && (p == Lovers.lover1 || p == Lovers.lover2);
 
+        // A player who already has their own kill (Impostor, Jackal, Sidekick). Such a Revenger keeps
+        // that single kill button instead of getting a second (Revenger) button — their normal kill on
+        // the Lover's killer triggers the win.
+        private static bool IsKiller(PlayerControl p) =>
+            p != null && p.Data != null && (p.Data.Role.IsImpostor
+                || p == Jackal.jackal || p == Sidekick.sidekick
+                || (Jackal.formerJackals != null && Jackal.formerJackals.Contains(p)));
+
         private static PlayerControl PartnerOf(PlayerControl p) {
             if (p == Lovers.lover1) return Lovers.lover2;
             if (p == Lovers.lover2) return Lovers.lover1;
@@ -464,9 +477,10 @@ namespace UsefulTORStuff {
         private static void ApplyWin(byte revengerId) {
             triggerRevengerWin = true;
             revengerWon = true;
-            // Snapshot the winner now; the field survives TOR's end-of-game resetVariables (see above).
-            var rev = Helpers.playerById(revengerId);
-            if (rev != null) winnerData = rev.Data;
+            // Snapshot BOTH Lovers now (the win is a Lovers win for just the two of them); the fields
+            // survive TOR's end-of-game resetVariables (see above).
+            loverData1 = Lovers.lover1 != null ? Lovers.lover1.Data : null;
+            loverData2 = Lovers.lover2 != null ? Lovers.lover2.Data : null;
         }
 
         // ====================================================================
@@ -542,7 +556,8 @@ namespace UsefulTORStuff {
                 SetGuessable(active);
                 // Clear the win snapshot at game start (NOT in resetVariables — see field comment).
                 revengerWon = false;
-                winnerData = null;
+                loverData1 = null;
+                loverData2 = null;
             }
         }
 
@@ -723,11 +738,17 @@ namespace UsefulTORStuff {
             active && revenger != null && revenger == PlayerControl.LocalPlayer
             && PlayerControl.LocalPlayer != null && !PlayerControl.LocalPlayer.Data.IsDead;
 
+        // Killing-role Revengers keep their own single kill button (their normal kill on the Lover's
+        // killer triggers the win), so ONLY non-killer Revengers get the dedicated Revenger button +
+        // target outline. This is what guarantees "only one kill button".
+        private static bool LocalUsesRevengerButton() =>
+            LocalIsRevenger() && !IsKiller(PlayerControl.LocalPlayer);
+
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         static class HudUpdateTargetPatch {
             public static void Postfix() {
                 try {
-                    if (!LocalIsRevenger()) { currentTarget = null; return; }
+                    if (!LocalUsesRevengerButton()) { currentTarget = null; return; }
                     if (MeetingHud.Instance != null || ExileController.Instance != null) return;
                     currentTarget = PlayerControlFixedUpdatePatch.setTarget();
                     PlayerControlFixedUpdatePatch.setPlayerOutline(currentTarget, Lovers.color);
@@ -742,7 +763,7 @@ namespace UsefulTORStuff {
                     if (revengerButton != null && revengerButton.actionButton != null) return;
                     revengerButton = new CustomButton(
                         OnRevengerKill,
-                        LocalIsRevenger,
+                        LocalUsesRevengerButton,
                         () => currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
                         () => { if (revengerButton != null) revengerButton.Timer = revengerButton.MaxTimer; },
                         __instance.KillButton.graphic.sprite,
@@ -791,9 +812,29 @@ namespace UsefulTORStuff {
         }
 
         // ====================================================================
-        // End-of-game winner override: a Revenger win is a SOLO neutral win — only the Revenger wins.
-        // Uses the snapshot (winnerData) because TOR's own postfix already ran resetVariables, nulling
-        // both Lovers.* and our revenger field, before this last-priority postfix executes.
+        // Killing-role Revenger win: they use their OWN normal kill button (no second button). When such
+        // a Revenger kills the Lover's killer, that is the revenge -> Lovers win. Only the initiator's own
+        // kill fires it, exactly once (non-killers go through the Revenger button + RpcUncheckedMurder).
+        // ====================================================================
+        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.MurderPlayer))]
+        static class KillerRevengerWinPatch {
+            public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
+                try {
+                    if (!active || revengerWon || revenger == null) return;
+                    if (__instance != revenger || __instance != PlayerControl.LocalPlayer) return; // own kill only, once
+                    if (!IsKiller(revenger)) return;               // non-killers use the Revenger button
+                    if (target == null || target.PlayerId != killerId) return; // only the Lover's killer wins
+                    SendWin(revenger.PlayerId);
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] killer-revenger win failed: {e}");
+                }
+            }
+        }
+
+        // ====================================================================
+        // End-of-game winner override: a Revenger win counts as a Lovers win for exactly the two Lovers
+        // (the fallen one + the Revenger). Uses the snapshots because TOR's own postfix already ran
+        // resetVariables, nulling both Lovers.* and our revenger field, before this last-priority postfix.
         // ====================================================================
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
         [HarmonyPriority(Priority.Last)] // after TOR's OnGameEndPatch.Postfix
@@ -801,12 +842,13 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 try {
                     // Gate on the REAL end reason, not just revengerWon: a Revenger kill that ends the
-                    // round another way (e.g. a raced Crew win) must not rebuild the winners as the Revenger.
+                    // round another way (e.g. a raced Crew win) must not rebuild the winners.
                     if (!revengerWon || (int)OnGameEndPatch.gameOverReason != RevengerWinReason) return;
                     var winners = EndGameResult.CachedWinners;
                     if (winners == null) return;
                     winners.Clear();
-                    if (winnerData != null) winners.Add(new CachedPlayerData(winnerData));
+                    if (loverData1 != null) winners.Add(new CachedPlayerData(loverData1));
+                    if (loverData2 != null) winners.Add(new CachedPlayerData(loverData2));
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] OnGameEnd override failed: {e}");
                 }
@@ -851,7 +893,7 @@ namespace UsefulTORStuff {
                         __instance.WinText.transform.position.z);
                     bonusText.transform.localScale = new Vector3(0.7f, 0.7f, 1f);
                     TMPro.TMP_Text tr = bonusText.GetComponent<TMPro.TMP_Text>();
-                    tr.text = "Revenger Wins";
+                    tr.text = "Lovers Win"; // the Revenger win counts as a Lovers win (just the two of them)
                     tr.color = Lovers.color;
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] win text failed: {e}");
