@@ -11,7 +11,8 @@
  * With "Delay Lover Death" ON (and the first Lover was KILLED, not exiled) we suppress that instant
  * suicide and defer the decision to the END OF THE NEXT MEETING (ExileController.WrapUp):
  *   - A %-roll (RevengerChance, like the Lawyer->Prosecutor chance) decides whether the surviving
- *     Lover becomes a REVENGER (lives on) or dies now (delayed Lover suicide).
+ *     Lover becomes a REVENGER (lives on) or dies now (delayed Lover suicide). This applies to any
+ *     surviving Lover regardless of role, including Impostor/Jackal Lovers.
  *   - The Revenger becomes a SEPARATE neutral role: it shows as "Revenger" (own RoleInfo, keeping the
  *     Lovers color) in name tags from the awakening on, in the role tab and the end-game summary.
  *   - The Revenger gets a Sheriff-like kill button. A host option picks the mode:
