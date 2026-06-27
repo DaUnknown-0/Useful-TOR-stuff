@@ -407,8 +407,8 @@ namespace UsefulTORStuff
             RefreshUpdateAllButton();
             if (_headerSummaryText != null)
                 _headerSummaryText.text = failed == 0
-                    ? $"<color=#9EFFA0>{done} Mod(s) auf {(stable ? "Stable" : "Test")} gesetzt — bitte Spiel neu starten.</color>"
-                    : $"<color=#FFD27F>{done} ok, {failed} fehlgeschlagen — bitte Spiel neu starten.</color>";
+                    ? $"<color=#9EFFA0>{done} mod(s) set to {(stable ? "Stable" : "Test")} - please restart the game.</color>"
+                    : $"<color=#FFD27F>{done} ok, {failed} failed - please restart the game.</color>";
         }
 
         // Simple modal confirmation overlay (dim background + box with message + Ja/Abbrechen).
@@ -438,8 +438,8 @@ namespace UsefulTORStuff
             var mrt = m.AddComponent<RectTransform>(); mrt.anchorMin = Vector2.zero; mrt.anchorMax = Vector2.one; mrt.offsetMin = new Vector2(18, 66); mrt.offsetMax = new Vector2(-18, -56);
             var mt = m.AddComponent<TMPro.TextMeshProUGUI>(); mt.text = message; mt.fontSize = 15; mt.alignment = TMPro.TextAlignmentOptions.Top; mt.color = Color.white; mt.enableWordWrapping = true;
 
-            MakeConfirmButton(box, "Ja", new Vector2(-95, 16), new Color(0.2f, 0.6f, 0.25f, 0.95f), () => { HideConfirm(); onYes?.Invoke(); });
-            MakeConfirmButton(box, "Abbrechen", new Vector2(95, 16), new Color(0.5f, 0.2f, 0.2f, 0.95f), () => HideConfirm());
+            MakeConfirmButton(box, "Yes", new Vector2(-95, 16), new Color(0.2f, 0.6f, 0.25f, 0.95f), () => { HideConfirm(); onYes?.Invoke(); });
+            MakeConfirmButton(box, "Cancel", new Vector2(95, 16), new Color(0.5f, 0.2f, 0.2f, 0.95f), () => HideConfirm());
         }
 
         private void MakeConfirmButton(GameObject parent, string label, Vector2 anchoredPos, Color col, Action onClick)
@@ -495,9 +495,9 @@ namespace UsefulTORStuff
                 string ch = stableChannel ? "STABLE" : "TEST";
                 int affected = CountChannelMods(stableChannel);
                 string msg = affected > 0
-                    ? $"Testversionen {(nv ? "AN" : "AUS")}: {affected} Mod(s) werden auf den neusten {ch}-Release heruntergeladen und installiert (ersetzt den aktuellen Build). Danach muss das Spiel neu gestartet werden.\n\nFortfahren?"
-                    : $"Testversionen {(nv ? "AN" : "AUS")}: Kein passender {ch}-Release gefunden — es wird nur die Anzeige umgestellt.\n\nFortfahren?";
-                ShowConfirm("Testversionen umschalten", msg, () => {
+                    ? $"Test versions {(nv ? "ON" : "OFF")}: {affected} mod(s) will be downloaded and installed to their latest {ch} release (replacing the current build). The game must be restarted afterwards.\n\nContinue?"
+                    : $"Test versions {(nv ? "ON" : "OFF")}: No matching {ch} release found - only the display is switched.\n\nContinue?";
+                ShowConfirm("Switch Test Versions", msg, () => {
                     VersionDisplay.SetShowTestVersions(nv);
                     if (UsefulTORStuffPlugin.ShowTestVersionsConfig != null)
                         UsefulTORStuffPlugin.ShowTestVersionsConfig.Value = nv;
@@ -512,7 +512,7 @@ namespace UsefulTORStuff
         {
             if (_testVersionToggleText == null) return;
             bool on = VersionDisplay.ShowTestVersions();
-            _testVersionToggleText.text = on ? "Test-Versionen: AN" : "Test-Versionen: AUS";
+            _testVersionToggleText.text = on ? "Test Versions: ON" : "Test Versions: OFF";
             _testVersionToggleText.color = on ? new Color(0.4f, 1f, 0.5f) : new Color(0.8f, 0.8f, 0.8f);
         }
 

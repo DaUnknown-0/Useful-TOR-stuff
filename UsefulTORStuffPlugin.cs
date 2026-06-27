@@ -100,7 +100,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Shared display toggle for the 4th version component (.W on test builds). Initialise the
         // process-wide flag from the saved value so every mod's version line agrees from the first frame.
-        ShowTestVersionsConfig = Config.Bind("Version", "ShowTestVersions", true,
+        ShowTestVersionsConfig = Config.Bind("Version", "ShowTestVersions", false,
             "Show the 4th version component (the test-version number, e.g. v1.2.3.4) in mod version " +
             "lines. Stable builds (vX.Y.Z) are unaffected. Toggleable in the Mod Manager.");
         VersionDisplay.SetShowTestVersions(ShowTestVersionsConfig.Value);

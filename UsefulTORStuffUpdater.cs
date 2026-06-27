@@ -240,8 +240,8 @@ namespace UsefulTORStuff {
 
             if (_busy || Releases == null) return;
 
-            var latestRelease = Releases.FirstOrDefault();
-            if (latestRelease == null || !latestRelease.IsNewer(global::UsefulTORStuff.UsefulTORStuffPlugin.Version) || !latestRelease.Assets.Any(FilterPluginAsset))
+            var latestRelease = UpdateTarget();
+            if (latestRelease == null || SemCompare(latestRelease.Version, UsefulTORStuffPlugin.Version) <= 0 || !latestRelease.Assets.Any(FilterPluginAsset))
                 return;
 
             var template = GameObject.Find("ExitGameButton");
@@ -374,41 +374,22 @@ namespace UsefulTORStuff {
             })));
         }
 
-        // Callback-Methoden für ModManagerRegistry: Prüft ob ein Update verfügbar ist.
+        // ---- Channel awareness + semantic version comparison ----
+        // Semantic comparison where a STABLE vX.Y.Z SUPERSEDES its prereleases vX.Y.Z.W (unlike
+        // System.Version, which wrongly orders 1.0.0.4 > 1.0.0). >0 means a is newer than b: compare the
+        // X.Y.Z base first; on a tie the finalized stable beats any prerelease, and among prereleases the
+        // higher 4th part wins.
         [HideFromIl2Cpp]
-        public bool HasUpdate() {
-            if (Releases == null || Releases.Count == 0) return false;
-            var latestRelease = Releases.FirstOrDefault();
-            return latestRelease != null
-                && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)
-                && latestRelease.Assets.Any(FilterPluginAsset);
+        public static int SemCompare(Version a, Version b) {
+            int c = new Version(a.Major, a.Minor, a.Build).CompareTo(new Version(b.Major, b.Minor, b.Build));
+            if (c != 0) return c;
+            bool aPre = a.Revision > 0, bPre = b.Revision > 0;
+            if (aPre && bPre) return a.Revision.CompareTo(b.Revision);
+            if (aPre == bPre) return 0;
+            return aPre ? -1 : 1; // prerelease older than the finalized stable of the same base
         }
 
-        // F2: Roh-Release-Notes (GitHub-`body`) der neuesten Version. Aus dem bereits geladenen
-        // JSON — kein zusätzlicher API-Call. Strip/Truncate übernimmt das Mod-Manager-UI.
-        [HideFromIl2Cpp]
-        public string GetReleaseNotes() {
-            if (Releases == null || Releases.Count == 0) return "";
-            return Releases.FirstOrDefault()?.Description ?? "";
-        }
-
-        // Callback-Methode für ModManagerRegistry: Startet den Update-Download.
-        [HideFromIl2Cpp]
-        public void TriggerUpdateFromManager() {
-            if (Releases == null || Releases.Count == 0) return;
-            var latestRelease = Releases.FirstOrDefault();
-            // Asset-Check wie in HasUpdate(): ohne passende DLL liefe CoDownloadRelease in
-            // einen NullRef bei asset.DownloadUrl (release.Assets.Find liefert dann null).
-            if (latestRelease != null && latestRelease.IsNewer(UsefulTORStuffPlugin.Version)
-                && latestRelease.Assets.Any(FilterPluginAsset)) {
-                StartDownloadRelease(latestRelease, managerMode: true);
-            }
-        }
-
-        // ---- Test/Stable channel switching (Mod Manager "show test versions" toggle) ----
-        // Channel is derived from the TAG FORMAT: stable = vX.Y.Z (Version.Revision <= 0), test =
-        // vX.Y.Z.W (Revision > 0). Independent of the GitHub prerelease flag, so it also works for
-        // releases published before test builds were marked as prereleases.
+        // Channel from the TAG FORMAT: stable = vX.Y.Z (Version.Revision <= 0), test = vX.Y.Z.W (>0).
         [HideFromIl2Cpp]
         public GithubRelease LatestInChannel(bool stable) {
             if (Releases == null) return null;
@@ -423,16 +404,50 @@ namespace UsefulTORStuff {
             return null;
         }
 
-        // True if a release exists in the requested channel (stable=true / test=false) with our asset.
         [HideFromIl2Cpp]
         public bool HasChannelRelease(bool stable) => LatestInChannel(stable) != null;
 
-        // Force-install the latest release of the given channel, even if it is a DOWNGRADE relative to
-        // the running build (deliberate channel switch, not a version-gated update).
+        // The update target follows the shared "show test versions" toggle. OFF -> newest STABLE only.
+        // ON -> the newest prerelease ONLY if it is semantically AHEAD of the newest stable (prerelease
+        // of a FUTURE version); an old prerelease (base <= newest stable) is ignored -> use the stable.
+        [HideFromIl2Cpp]
+        public GithubRelease UpdateTarget() {
+            if (Releases == null) return null;
+            var stable = LatestInChannel(true);
+            if (!VersionDisplay.ShowTestVersions()) return stable;
+            var pre = LatestInChannel(false);
+            if (pre != null && (stable == null || SemCompare(pre.Version, stable.Version) > 0)) return pre;
+            return stable;
+        }
+
+        // Callback-Methoden für ModManagerRegistry: Prüft ob ein Update verfügbar ist.
+        [HideFromIl2Cpp]
+        public bool HasUpdate() {
+            var t = UpdateTarget();
+            return t != null && t.Assets.Any(FilterPluginAsset)
+                && SemCompare(t.Version, UsefulTORStuffPlugin.Version) > 0;
+        }
+
+        // Roh-Release-Notes (GitHub-`body`) der Ziel-Version (aus dem bereits geladenen JSON).
+        [HideFromIl2Cpp]
+        public string GetReleaseNotes() => UpdateTarget()?.Description ?? "";
+
+        // Callback-Methode für ModManagerRegistry: Startet den Update-Download.
+        [HideFromIl2Cpp]
+        public void TriggerUpdateFromManager() {
+            var t = UpdateTarget();
+            if (t != null && t.Assets.Any(FilterPluginAsset)
+                && SemCompare(t.Version, UsefulTORStuffPlugin.Version) > 0)
+                StartDownloadRelease(t, managerMode: true);
+        }
+
+        // Force-install the latest release of the given channel (deliberate channel switch, may be an
+        // up- OR downgrade). Only downloads if it is REALLY a different version than the running build.
         [HideFromIl2Cpp]
         public void TriggerChannelSwitch(bool stable) {
             var r = LatestInChannel(stable);
-            if (r != null) StartDownloadRelease(r, managerMode: true);
+            if (r != null && SemCompare(r.Version, UsefulTORStuffPlugin.Version) != 0)
+                StartDownloadRelease(r, managerMode: true);
         }
     }
 
