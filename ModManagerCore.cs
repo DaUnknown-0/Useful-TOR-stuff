@@ -339,6 +339,61 @@ namespace UsefulTORStuff
                     modInfo.HasChannelRelease = (s) => UsefulTORStuffUpdater.Instance?.HasChannelRelease(s) ?? false;
                     modInfo.TriggerChannelSwitch = (s) => UsefulTORStuffUpdater.Instance?.TriggerChannelSwitch(s);
                 }
+                else if (modInfo.Guid == "com.tormod.unknownscollection")
+                {
+                    var tn = "UnknownsCollection.UnknownsCollectionUpdater, UnknownsCollection";
+                    modInfo.HasUpdate = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("HasUpdate");
+                        return instance != null && m != null && (bool)m.Invoke(instance, null);
+                    };
+                    modInfo.TriggerUpdate = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        type?.GetMethod("TriggerUpdateFromManager")?.Invoke(instance, null);
+                    };
+                    modInfo.GetUpdateState = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("GetUpdateState");
+                        return instance != null && m != null ? (int)m.Invoke(instance, null) : 0;
+                    };
+                    modInfo.GetUpdateProgress = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("GetUpdateProgress");
+                        return instance != null && m != null ? (float)m.Invoke(instance, null) : 0f;
+                    };
+                    modInfo.GetCheckCompleted = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("GetCheckCompleted");
+                        return instance != null && m != null && (bool)m.Invoke(instance, null);
+                    };
+                    modInfo.TriggerCheck = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        type?.GetMethod("TriggerCheckFromManager")?.Invoke(instance, null);
+                    };
+                    modInfo.GetReleaseNotes = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("GetReleaseNotes");
+                        return instance != null && m != null ? m.Invoke(instance, null) as string : null;
+                    };
+                    modInfo.HasChannelRelease = (s) => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("HasChannelRelease");
+                        return instance != null && m != null && (bool)m.Invoke(instance, new object[] { s });
+                    };
+                    modInfo.TriggerChannelSwitch = (s) => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        type?.GetMethod("TriggerChannelSwitch")?.Invoke(instance, new object[] { s });
+                    };
+                }
             }
             catch (Exception ex)
             {
