@@ -30,8 +30,8 @@
   is denied and the Revenger dies at the next meeting end with a flavor line. The Revenger is
   **guessable**: while the feature is active its `RoleInfo` is listed in `allRoleInfos`, so the Guesser
   can pick "Revenger" and the (reference-based) correctness check matches. State syncs over a small
-  custom RPC (252); kills reuse TOR's `UncheckedMurderPlayer`. New file `LoverRevenger.cs`; options
-  1290–1293.
+  custom RPC (247); kills reuse TOR's `UncheckedMurderPlayer`. New file `LoverRevenger.cs`; options
+  1294–1297.
 - **Sabotage Tuning (TOR Settings).** Master toggle (default off) that replaces Among Us's single
   shared sabotage cooldown with an independent cooldown timer per sabotage type. While no sabotage is
   active each type's timer ticks down on its own; when any sabotage ends, all timers reset to their

@@ -30,7 +30,7 @@
  * ARCHITECTURE: unlike SheriffParityWin (host-authoritative), this is inherently CLIENT-SIDE (new
  * button, local kills, chat), so it is GATED on "everyone has the mod" (UsefulVersionHandshake),
  * exactly like the Snitch fix. The host gets a lobby warning otherwise. State is synced via a small
- * custom RPC (252); the kills themselves reuse TOR's UncheckedMurderPlayer.
+ * custom RPC (247); the kills themselves reuse TOR's UncheckedMurderPlayer.
  *
  * The instant-suicide suppression flips Lovers.bothDie OFF for the duration of the triggering
  * MurderPlayer so TOR's own (bothDie-gated) suicide+death-reason block is skipped cleanly, then
@@ -128,8 +128,11 @@ namespace UsefulTORStuff {
         private static PlayerControl gPartner;
         private static byte gKiller = byte.MaxValue;
 
-        // ---- Custom RPC (252) subtypes ----
-        private const byte RpcId = 252;
+        // ---- Custom RPC (247) subtypes ----
+        // NOTE: 247, NOT 252 — 252 is BomberCancel's CancelBombRpcId. Both live in this same plugin, so
+        // sharing the id made each HandleRpc prefix mis-read the other's payload (a stray subtype byte
+        // could fire uncheckedMurderPlayer -> a player dies for no reason). Keep these in-plugin unique.
+        private const byte RpcId = 247;
         private const byte SubDecision = 0;  // loverId, becomeRevenger, killerId, mode
         private const byte SubRageDeath = 1; // revengerId, msgIndex
         private const byte SubWin = 2;       // revengerId
@@ -178,17 +181,20 @@ namespace UsefulTORStuff {
         // ====================================================================
         public static void CreateOptions() {
             try {
+                // IDs 1294-1297 (NOT 1290-1293): 1290 is InvertVision's "Inverted Vision". A shared
+                // option id makes both options read the same stored selection, so DelayOption would
+                // silently track Inverted Vision's value (feature looks "off" -> no suppression).
                 DelayOption = CustomOption.Create(
-                    1290, Types.Modifier, "Delay Lover Death (Revenger)",
+                    1294, Types.Modifier, "Delay Lover Death (Revenger)",
                     false, CustomOptionHolder.modifierLoverBothDie);
                 RevengerChance = CustomOption.Create(
-                    1291, Types.Modifier, "Chance Surviving Lover Becomes Revenger",
+                    1295, Types.Modifier, "Chance Surviving Lover Becomes Revenger",
                     CustomOptionHolder.rates, DelayOption);
                 RevengerMode = CustomOption.Create(
-                    1292, Types.Modifier, "Revenger Mode",
+                    1296, Types.Modifier, "Revenger Mode",
                     new string[] { "Targeted Justice", "Blind Rage" }, RevengerChance);
                 RevengerCooldown = CustomOption.Create(
-                    1293, Types.Modifier, "Revenger Kill Cooldown",
+                    1297, Types.Modifier, "Revenger Kill Cooldown",
                     30f, 10f, 60f, 2.5f, RevengerChance);
 
                 // Place directly under the existing Lover modifier options (same approach as
