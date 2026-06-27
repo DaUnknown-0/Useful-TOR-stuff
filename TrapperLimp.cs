@@ -80,6 +80,11 @@ namespace UsefulTORStuff {
 
         private static float Ratio() => StrengthOption != null ? StrengthOption.getFloat() : 0.5f;
 
+        // Dead players (ghosts) still have CanMove == true, so the limp would otherwise follow them
+        // into death — permanently for the time-unbounded self-limp. Only the living limp.
+        private static bool IsAlive(PlayerControl p) =>
+            p != null && p.Data != null && !p.Data.IsDead;
+
         private static bool ShouldLimp(byte id) {
             if (TrappedOption != null && TrappedOption.getBool()
                 && limpUntil.TryGetValue(id, out float until) && Time.time < until) return true;
@@ -121,7 +126,7 @@ namespace UsefulTORStuff {
             public static void Postfix(PlayerPhysics __instance) {
                 try {
                     if (!__instance.AmOwner || __instance.myPlayer == null) return;
-                    if (GameData.Instance != null && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
+                    if (GameData.Instance != null && IsAlive(__instance.myPlayer) && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
                         __instance.body.velocity *= Ratio();
                 } catch { }
             }
@@ -131,7 +136,7 @@ namespace UsefulTORStuff {
             public static void Postfix(CustomNetworkTransform __instance) {
                 try {
                     if (__instance.AmOwner || __instance.myPlayer == null) return;
-                    if (GameData.Instance != null && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
+                    if (GameData.Instance != null && IsAlive(__instance.myPlayer) && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
                         __instance.body.velocity *= Ratio();
                 } catch { }
             }

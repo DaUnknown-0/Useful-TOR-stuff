@@ -8,16 +8,20 @@
   (not exiled) while "Both Lovers Die" is ON — the surviving Lover's instant suicide is suppressed and
   the decision is deferred to the end of the next meeting. There a configurable %-roll
   (**Chance Surviving Lover Becomes Revenger**, like the Lawyer→Prosecutor chance) turns them into a
-  **Revenger** (otherwise they die now as a delayed Lover suicide). The Revenger gets a Sheriff-like
-  kill button; a host **Revenger Mode** option picks the behaviour: *Targeted Justice* (may only kill
-  the Lover's killer — correct kill ends the game instantly as a Lovers win, wrong target is a fatal
-  misfire) or *Blind Rage* (may kill anyone; hitting the real killer still wins, otherwise they die at
-  the next meeting end with a random rage chat message). Flavor chat: a grief/foreboding line for the
-  surviving Lover in the first meeting, a mode-specific awakening line, and the rage-death lines.
-  Suppression flips `Lovers.bothDie` off for the triggering `MurderPlayer` so TOR's own suicide+death-
-  reason block is skipped cleanly; the instant win reuses TOR's internal
-  `CheckEndCriteriaPatch.CheckAndEndGameForLoverWin` (reflection). State syncs over a small custom RPC
-  (252); kills reuse TOR's `UncheckedMurderPlayer`. New file `LoverRevenger.cs`; options 1290–1293.
+  **Revenger** (otherwise they die now as a delayed Lover suicide). The Revenger is a *separate neutral
+  role*: from the awakening on it shows as "Revenger" (its own `RoleInfo`, keeping the Lovers color) in
+  name tags, the role tab and the end-game summary. It gets a Sheriff-like kill button; a host
+  **Revenger Mode** option picks the behaviour: *Targeted Justice* (may only kill the Lover's killer —
+  correct kill ends the game instantly as a **solo Revenger win**, wrong target is a fatal misfire) or
+  *Blind Rage* (may kill anyone; hitting the real killer still wins, otherwise they die at the next
+  meeting end with a random rage chat message). Flavor chat: a grief/foreboding line for the surviving
+  Lover in the first meeting, a mode-specific awakening line, and the rage-death lines. Suppression
+  flips `Lovers.bothDie` off for the triggering `MurderPlayer` so TOR's own suicide+death-reason block
+  is skipped cleanly; the win uses TOR's internal `CheckEndCriteriaPatch.CheckAndEndGameForLoverWin`
+  (reflection) only as a host entry point but ends with a **separate `CustomGameOverReason` (17)** and
+  a dedicated "Revenger Wins" end screen (winner snapshotted so it survives TOR's end-of-game
+  `resetVariables`). State syncs over a small custom RPC (252); kills reuse TOR's
+  `UncheckedMurderPlayer`. New file `LoverRevenger.cs`; options 1290–1293.
 - **Sabotage Tuning (TOR Settings).** Master toggle (default off) that replaces Among Us's single
   shared sabotage cooldown with an independent cooldown timer per sabotage type. While no sabotage is
   active each type's timer ticks down on its own; when any sabotage ends, all timers reset to their

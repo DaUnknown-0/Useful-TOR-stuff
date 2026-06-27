@@ -12,9 +12,11 @@
  * suicide and defer the decision to the END OF THE NEXT MEETING (ExileController.WrapUp):
  *   - A %-roll (RevengerChance, like the Lawyer->Prosecutor chance) decides whether the surviving
  *     Lover becomes a REVENGER (lives on) or dies now (delayed Lover suicide).
+ *   - The Revenger becomes a SEPARATE neutral role: it shows as "Revenger" (own RoleInfo, keeping the
+ *     Lovers color) in name tags from the awakening on, in the role tab and the end-game summary.
  *   - The Revenger gets a Sheriff-like kill button. A host option picks the mode:
  *       * "Targeted Justice": may only correctly kill the Lover's killer. Correct kill -> game ends
- *         immediately with a Lovers win. Wrong target -> misfire, the Revenger dies.
+ *         immediately with a SOLO Revenger win. Wrong target -> misfire, the Revenger dies.
  *       * "Blind Rage": may kill anyone. If they happen to hit the real killer -> win (as above).
  *         Otherwise they die at the end of the next meeting, with a random rage chat message.
  *
@@ -28,11 +30,14 @@
  *
  * The instant-suicide suppression flips Lovers.bothDie OFF for the duration of the triggering
  * MurderPlayer so TOR's own (bothDie-gated) suicide+death-reason block is skipped cleanly, then
- * restores it in a last-priority postfix. The immediate win reuses TOR's internal
- * CheckEndCriteriaPatch.CheckAndEndGameForLoverWin (patched via reflection, like SheriffParityWin).
+ * restores it in a last-priority postfix. The win uses TOR's internal
+ * CheckEndCriteriaPatch.CheckAndEndGameForLoverWin only as a host-only entry point (patched via
+ * reflection, like SheriffParityWin), but ends the game with a SEPARATE CustomGameOverReason (17),
+ * so the Revenger is its own neutral role with its own solo winner and a "Revenger Wins" end screen.
  */
 
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using Hazel;
@@ -68,7 +73,24 @@ namespace UsefulTORStuff {
 
         public static bool rageKillDone;             // Blind-Rage Revenger used their kill -> dies next meeting
         public static bool triggerRevengerWin;       // host: tells CheckEndCriteria to end the game now
-        public static bool revengerWinResolved;      // OnGameEnd: rebuild winners as Lovers + Revenger
+
+        // Win-display snapshot. Set when the win is triggered; read at OnGameEnd and on the end screen.
+        // Deliberately kept OUT of the per-round resetVariables reset: TOR calls resetVariables from its
+        // OWN OnGameEnd postfix (EndGamePatch.cs) which runs BEFORE ours, so anything reset there would
+        // already be gone. Instead this is cleared at game start (IntroEndPatch).
+        public static bool revengerWon;
+        private static NetworkedPlayerInfo winnerData;
+
+        // Separate CustomGameOverReason for the Revenger win. TOR's internal enum uses 10..16; 17 is ours.
+        private const int RevengerWinReason = 17;
+
+        // The Revenger's own neutral role identity (own name, keeps the Lovers color). Built lazily so
+        // Lovers.color is initialised. RoleId.Lover is reused purely as a display tag (we never look the
+        // Revenger up by RoleId; TryAdd in the RoleInfo ctor no-ops since Lover is already registered).
+        private static RoleInfo revengerInfo;
+        private static RoleInfo RevengerInfo() =>
+            revengerInfo ??= new RoleInfo("Revenger", Lovers.color,
+                "Avenge your fallen partner", "Avenge your fallen partner", RoleId.Lover, true);
 
         private static bool active;                  // feature usable this game (gating + option ON)
         private static bool griefChatShown;          // first-meeting grief message guard
@@ -204,8 +226,8 @@ namespace UsefulTORStuff {
             try {
                 if (triggerRevengerWin) {
                     triggerRevengerWin = false;
-                    revengerWinResolved = true;
-                    GameManager.Instance.RpcEndGame((GameOverReason)10 /* CustomGameOverReason.LoversWin */, false);
+                    // Separate neutral win: ends with our own reason (17), NOT LoversWin (10).
+                    GameManager.Instance.RpcEndGame((GameOverReason)RevengerWinReason, false);
                     __result = true;
                     return false;
                 }
@@ -356,7 +378,10 @@ namespace UsefulTORStuff {
 
         private static void ApplyWin(byte revengerId) {
             triggerRevengerWin = true;
-            revengerWinResolved = true;
+            revengerWon = true;
+            // Snapshot the winner now; the field survives TOR's end-of-game resetVariables (see above).
+            var rev = Helpers.playerById(revengerId);
+            if (rev != null) winnerData = rev.Data;
         }
 
         // ====================================================================
@@ -408,7 +433,6 @@ namespace UsefulTORStuff {
                 pendingKillerId = byte.MaxValue;
                 rageKillDone = false;
                 triggerRevengerWin = false;
-                revengerWinResolved = false;
                 griefChatShown = false;
                 currentTarget = null;
                 flipArmed = false; flipVictim = null; flipPartner = null; flipKiller = byte.MaxValue;
@@ -421,6 +445,9 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 active = DelayOption != null && DelayOption.getBool()
                          && Lovers.bothDie && EveryoneHasMod();
+                // Clear the win snapshot at game start (NOT in resetVariables — see field comment).
+                revengerWon = false;
+                winnerData = null;
             }
         }
 
@@ -605,25 +632,66 @@ namespace UsefulTORStuff {
         }
 
         // ====================================================================
-        // End-of-game winner override: when a Revenger won, the winners are the (dead) Lovers + Revenger.
+        // End-of-game winner override: a Revenger win is a SOLO neutral win — only the Revenger wins.
+        // Uses the snapshot (winnerData) because TOR's own postfix already ran resetVariables, nulling
+        // both Lovers.* and our revenger field, before this last-priority postfix executes.
         // ====================================================================
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
         [HarmonyPriority(Priority.Last)] // after TOR's OnGameEndPatch.Postfix
         static class OnGameEndOverridePatch {
             public static void Postfix() {
                 try {
-                    if (!revengerWinResolved) return;
+                    if (!revengerWon) return;
                     var winners = EndGameResult.CachedWinners;
                     if (winners == null) return;
                     winners.Clear();
-                    if (Lovers.lover1 != null) winners.Add(new CachedPlayerData(Lovers.lover1.Data));
-                    if (Lovers.lover2 != null) winners.Add(new CachedPlayerData(Lovers.lover2.Data));
-                    if (revenger != null
-                        && (Lovers.lover1 == null || revenger.PlayerId != Lovers.lover1.PlayerId)
-                        && (Lovers.lover2 == null || revenger.PlayerId != Lovers.lover2.PlayerId))
-                        winners.Add(new CachedPlayerData(revenger.Data));
+                    if (winnerData != null) winners.Add(new CachedPlayerData(winnerData));
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] OnGameEnd override failed: {e}");
+                }
+            }
+        }
+
+        // ====================================================================
+        // Role identity: show the awakened Revenger as its own neutral role (own name, Lovers color)
+        // instead of the "Lover" modifier — in name tags (from awakening on), the role tab and the
+        // end-game role summary. Replaces the whole info list so no stale base role/modifier leaks.
+        // ====================================================================
+        [HarmonyPatch(typeof(RoleInfo), nameof(RoleInfo.getRoleInfoForPlayer))]
+        static class RoleInfoPatch {
+            public static void Postfix(PlayerControl p, ref List<RoleInfo> __result) {
+                try {
+                    if (!active || revenger == null || p == null || p != revenger) return;
+                    __result = new List<RoleInfo> { RevengerInfo() };
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] RoleInfo postfix failed: {e}");
+                }
+            }
+        }
+
+        // ====================================================================
+        // End screen: render the separate "Revenger Wins" subtitle (Lovers color) and tint the bar.
+        // TOR's reason 17 isn't recognised by its own EndGameManagerSetUpPatch, so its bonus line stays
+        // empty and we add our own — mirroring how TOR builds its special-win bonus text.
+        // ====================================================================
+        [HarmonyPatch(typeof(EndGameManager), nameof(EndGameManager.SetEverythingUp))]
+        [HarmonyPriority(Priority.Last)] // after TOR's EndGameManagerSetUpPatch
+        static class EndGameWinTextPatch {
+            public static void Postfix(EndGameManager __instance) {
+                try {
+                    if (!revengerWon) return;
+                    __instance.BackgroundBar.material.SetColor("_Color", Lovers.color);
+                    GameObject bonusText = UnityEngine.Object.Instantiate(__instance.WinText.gameObject);
+                    bonusText.transform.position = new Vector3(
+                        __instance.WinText.transform.position.x,
+                        __instance.WinText.transform.position.y - 0.5f,
+                        __instance.WinText.transform.position.z);
+                    bonusText.transform.localScale = new Vector3(0.7f, 0.7f, 1f);
+                    TMPro.TMP_Text tr = bonusText.GetComponent<TMPro.TMP_Text>();
+                    tr.text = "Revenger Wins";
+                    tr.color = Lovers.color;
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] win text failed: {e}");
                 }
             }
         }
