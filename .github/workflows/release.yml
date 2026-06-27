@@ -31,8 +31,9 @@ jobs:
         id: version
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Tag '$GITHUB_REF_NAME' ist keine gueltige Version (erwartet vX.Y.Z)."
+          # vX.Y.Z (stable) oder vX.Y.Z.W (Testversion, W = Testversionsnummer).
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Tag '$GITHUB_REF_NAME' ist keine gueltige Version (erwartet vX.Y.Z oder vX.Y.Z.W)."
             exit 1
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -40,8 +41,9 @@ jobs:
       - name: Version in Quellen auf Tag setzen
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          sed -i -E "s/(PluginVersion = \")[0-9]+\.[0-9]+\.[0-9]+(\")/\1${VERSION}\2/" UsefulTORStuffPlugin.cs
-          sed -i -E "s|(<Version>)[0-9]+\.[0-9]+\.[0-9]+(</Version>)|\1${VERSION}\2|" UsefulTORStuff.csproj
+          # Optionale 4. Stelle der Quell-Konstante mitmatchen und durch die volle Tag-Version ersetzen.
+          sed -i -E "s/(PluginVersion = \")[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(\")/\1${VERSION}\3/" UsefulTORStuffPlugin.cs
+          sed -i -E "s|(<Version>)[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?(</Version>)|\1${VERSION}\3|" UsefulTORStuff.csproj
           echo "Gesetzt auf:"; grep PluginVersion UsefulTORStuffPlugin.cs
 
       - name: TheOtherRoles.dll laden (Build-Referenz)

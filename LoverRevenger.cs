@@ -21,8 +21,9 @@
  *         immediately as a Lovers win. Wrong target -> misfire, the Revenger dies.
  *       * "Blind Rage": may kill anyone. If they happen to hit the real killer -> win (as above).
  *         Otherwise they die at the end of the next meeting, with a random rage chat message.
- *   - A killing-role Revenger (Impostor/Jackal/Sidekick) gets NO second button: their own normal kill
- *     on the Lover's killer triggers the win (modes/misfire/rage don't apply to them).
+ *   - A Revenger with their OWN kill button (Impostor, neutral killers like Jackal/Sidekick/Thief, or
+ *     the Sheriff) gets NO second button: their normal kill on the Lover's killer triggers the win
+ *     (modes/misfire/rage don't apply to them). Detection via Helpers.isKiller + Sheriff.
  *
  * Guess case (a Lover is shot by a Guesser): ALSO arms the Revenger, with the Guesser as the target.
  * TOR kills a guessed Lover via Exiled(), so we intercept RPCProcedure.guesserShoot (same bothDie flip).
@@ -316,13 +317,13 @@ namespace UsefulTORStuff {
         private static bool IsLover(PlayerControl p) =>
             p != null && (p == Lovers.lover1 || p == Lovers.lover2);
 
-        // A player who already has their own kill (Impostor, Jackal, Sidekick). Such a Revenger keeps
-        // that single kill button instead of getting a second (Revenger) button — their normal kill on
-        // the Lover's killer triggers the win.
+        // A player who already has their OWN kill button. Such a Revenger keeps that single button
+        // instead of getting a second (Revenger) button — their normal kill on the Lover's killer
+        // triggers the win. Uses TOR's canonical Helpers.isKiller (Impostor + neutral killers like
+        // Jackal/Sidekick/Thief) plus the Sheriff (a crew killer that isKiller does NOT count).
         private static bool IsKiller(PlayerControl p) =>
-            p != null && p.Data != null && (p.Data.Role.IsImpostor
-                || p == Jackal.jackal || p == Sidekick.sidekick
-                || (Jackal.formerJackals != null && Jackal.formerJackals.Contains(p)));
+            p != null && p.Data != null && (Helpers.isKiller(p)
+                || p == Sheriff.sheriff || p == Sheriff.formerSheriff);
 
         private static PlayerControl PartnerOf(PlayerControl p) {
             if (p == Lovers.lover1) return Lovers.lover2;

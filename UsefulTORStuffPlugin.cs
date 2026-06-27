@@ -61,6 +61,9 @@ public class UsefulTORStuffPlugin : BasePlugin
     public static ManualLogSource Logger { get; private set; }
 
     internal static Assembly TORAssembly;
+    // Shared "show test versions" display toggle, surfaced in the Mod Manager (top-right). Persisted
+    // here; the live state lives in a process-wide AppDomain flag (VersionDisplay) read by every mod.
+    public static ConfigEntry<bool> ShowTestVersionsConfig;
     internal static ConfigEntry<float> MinDropDistance;
     internal static ConfigEntry<float> ModManagerButtonX;
     internal static ConfigEntry<float> ModManagerButtonY;
@@ -94,6 +97,13 @@ public class UsefulTORStuffPlugin : BasePlugin
             "X position of the Mod Manager button (anchor point 0-1)");
         ModManagerButtonY = Config.Bind("ModManager", "ButtonPositionY", 0.21f,
             "Y position of the Mod Manager button (anchor point 0-1)");
+
+        // Shared display toggle for the 4th version component (.W on test builds). Initialise the
+        // process-wide flag from the saved value so every mod's version line agrees from the first frame.
+        ShowTestVersionsConfig = Config.Bind("Version", "ShowTestVersions", true,
+            "Show the 4th version component (the test-version number, e.g. v1.2.3.4) in mod version " +
+            "lines. Stable builds (vX.Y.Z) are unaffected. Toggleable in the Mod Manager.");
+        VersionDisplay.SetShowTestVersions(ShowTestVersionsConfig.Value);
 
         MinDropDistance = Config.Bind(
             "Bloody", "MinDropDistance", 0.35f,
@@ -503,7 +513,7 @@ public class UsefulTORStuffPlugin : BasePlugin
             // jeden Frame neu aufbaut (normalerweise ist die Zeile abwesend und wird eingefügt).
             if (!text.Contains(LinkId))
             {
-                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>TOR - Forgotten Fixes</color> v{PluginVersion}</link>";
+                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>TOR - Forgotten Fixes</color> v{VersionDisplay.Format(Version)}</link>";
                 int nl = text.IndexOf('\n');
                 text = nl >= 0
                     ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)

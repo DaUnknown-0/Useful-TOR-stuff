@@ -15,7 +15,8 @@
   **Revenger Mode** option picks the behaviour: *Targeted Justice* (may only kill the Lover's killer —
   correct kill ends the game instantly as a Lovers win, wrong target is a fatal misfire) or *Blind
   Rage* (may kill anyone; hitting the real killer still wins, otherwise they die at the next meeting
-  end with a random rage chat message). A **killing-role** Revenger (Impostor/Jackal/Sidekick) gets no
+  end with a random rage chat message). A Revenger that already has its own kill button (Impostor,
+  neutral killers like Jackal/Sidekick/Thief, or the Sheriff — `Helpers.isKiller` + Sheriff) gets no
   second button: their own normal kill on the Lover's killer triggers the win. Flavor chat: a grief/foreboding line for the surviving
   Lover in the first meeting, a mode-specific awakening line, and the rage-death lines. Suppression
   flips `Lovers.bothDie` off for the triggering `MurderPlayer` so TOR's own suicide+death-reason block

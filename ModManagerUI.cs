@@ -318,6 +318,10 @@ namespace UsefulTORStuff
             // F2: "Update All" header button + summary line.
             CreateUpdateAllButton(panel);
 
+            // Shared "show test versions" toggle (top-right). Flips the process-wide flag read by every
+            // mod's vX.Y.Z(.W) version line; display-only, no effect on stable builds (no 4th component).
+            CreateTestVersionToggle(panel);
+
             // Content
             CreateContent(panel);
 
@@ -345,6 +349,57 @@ namespace UsefulTORStuff
             titleText.fontStyle = TMPro.FontStyles.Bold;
             titleText.alignment = TMPro.TextAlignmentOptions.Center;
             titleText.color = new Color(0.3f, 0.7f, 1f);
+        }
+
+        private GameObject _testVersionToggle;
+        private TMPro.TextMeshProUGUI _testVersionToggleText;
+
+        // Top-right toggle for the shared "show test versions" flag. Display-only: it controls whether
+        // the 4th version component (.W on test builds) is shown in every mod's version line. Persists
+        // via UsefulTORStuffPlugin.ShowTestVersionsConfig so the choice survives restarts.
+        private void CreateTestVersionToggle(GameObject parent)
+        {
+            var button = new GameObject("TestVersionToggle");
+            button.transform.SetParent(parent.transform, false);
+            var btnRect = button.AddComponent<RectTransform>();
+            btnRect.anchorMin = new Vector2(1, 1);
+            btnRect.anchorMax = new Vector2(1, 1);
+            btnRect.pivot = new Vector2(1, 1);
+            btnRect.anchoredPosition = new Vector2(-20, -18);
+            btnRect.sizeDelta = new Vector2(210, 34);
+
+            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
+            btnBg.sprite = GetSolidSprite(new Color(0.25f, 0.25f, 0.35f, 0.9f));
+
+            var btnTextObj = new GameObject("Text");
+            btnTextObj.transform.SetParent(button.transform, false);
+            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
+            btnTextRect.anchorMin = Vector2.zero;
+            btnTextRect.anchorMax = Vector2.one;
+            btnTextRect.sizeDelta = Vector2.zero;
+            _testVersionToggleText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
+            _testVersionToggleText.fontSize = 14;
+            _testVersionToggleText.fontStyle = TMPro.FontStyles.Bold;
+            _testVersionToggleText.alignment = TMPro.TextAlignmentOptions.Center;
+            UpdateTestVersionToggleText();
+
+            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
+            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
+                bool nv = !VersionDisplay.ShowTestVersions();
+                VersionDisplay.SetShowTestVersions(nv);
+                if (UsefulTORStuffPlugin.ShowTestVersionsConfig != null)
+                    UsefulTORStuffPlugin.ShowTestVersionsConfig.Value = nv;
+                UpdateTestVersionToggleText();
+            }));
+            _testVersionToggle = button;
+        }
+
+        private void UpdateTestVersionToggleText()
+        {
+            if (_testVersionToggleText == null) return;
+            bool on = VersionDisplay.ShowTestVersions();
+            _testVersionToggleText.text = on ? "Test-Versionen: AN" : "Test-Versionen: AUS";
+            _testVersionToggleText.color = on ? new Color(0.4f, 1f, 0.5f) : new Color(0.8f, 0.8f, 0.8f);
         }
 
         // F2: "Update All" header button (top-left) + a summary line. The button is enabled only
