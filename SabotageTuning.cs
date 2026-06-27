@@ -338,8 +338,16 @@ namespace UsefulTORStuff {
                     } else {
                         // Neutralise the shared vanilla cooldown on the host so its UpdateSystem never
                         // rejects a sabotage that our per-type gate allows (the host validates against
-                        // sab.Timer). Our per-type prefixes are the only gate.
-                        if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) sab.Timer = 0f;
+                        // sab.Timer, which only needs to be <= 0). Our per-type prefixes are the only gate.
+                        //
+                        // Use a small NEGATIVE sentinel rather than exactly 0f: vanilla lets this shared
+                        // timer run negative while idle, and TOR's Jackal/Sidekick lights-sabotage button
+                        // (Buttons.cs, jackalAndSidekickSabotageLightsButton) re-arms itself every frame via
+                        //   if (Helpers.sabotageTimer() > Timer) Timer = Helpers.sabotageTimer() + 5f;
+                        // Pinning the shared timer to exactly 0 made "0 > (slightly negative button timer)"
+                        // true forever, so that button looped 5->0 and never became usable on the host.
+                        // A negative value keeps host validation happy while never tripping that comparison.
+                        if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) sab.Timer = -1f;
 
                         if (prevActive) {
                             // A sabotage just ended -> every type's timer back to its maximum.
