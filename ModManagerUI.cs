@@ -1192,8 +1192,23 @@ namespace UsefulTORStuff
             }
             else
             {
-                r.StatusText.text = "[OK] Up to date";
-                r.StatusText.color = new Color(0.3f, 1f, 0.3f);
+                // Distinguish a real "up to date" from a FAILED release check (GitHub rate-limit /
+                // offline): only claim "up to date" once the check has completed AND the release list
+                // was actually loaded. Otherwise the green "up to date" would be misleading.
+                bool completed = true, loaded = true;
+                try { completed = r.Mod.GetCheckCompleted?.Invoke() ?? true; } catch { }
+                try { loaded = r.Mod.ReleasesLoaded?.Invoke() ?? true; } catch { }
+
+                if (completed && !loaded)
+                {
+                    r.StatusText.text = "[?] Update check unavailable (rate-limited?)";
+                    r.StatusText.color = new Color(1f, 0.8f, 0.3f);
+                }
+                else
+                {
+                    r.StatusText.text = "[OK] Up to date";
+                    r.StatusText.color = new Color(0.3f, 1f, 0.3f);
+                }
                 SetUpdateButton(r, false, null, 0, false);
             }
         }

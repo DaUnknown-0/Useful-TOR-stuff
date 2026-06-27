@@ -30,6 +30,9 @@ namespace UsefulTORStuff
         // TriggerChannelSwitch(stable) lädt den neusten Release des Kanals erzwungen (auch als Downgrade).
         public Func<bool, bool> HasChannelRelease;
         public Action<bool> TriggerChannelSwitch;
+        // True when the mod's updater successfully fetched its GitHub release list. Lets the UI show
+        // "check unavailable" instead of a misleading "up to date" when the check failed/rate-limited.
+        public Func<bool> ReleasesLoaded;
         // Download-Zustand für die Mod-Manager-Anzeige.
         // GetUpdateState: 0 = idle, 1 = downloading, 2 = success (restart), 3 = error.
         public Func<int> GetUpdateState;
@@ -269,6 +272,12 @@ namespace UsefulTORStuff
                         var m = type?.GetMethod("TriggerChannelSwitch");
                         m?.Invoke(instance, new object[] { s });
                     };
+                    modInfo.ReleasesLoaded = () => {
+                        var type = Type.GetType("TOR_ChanceModifier.ChanceModUpdater, TOR-ChanceModifier");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("ReleasesLoaded");
+                        return instance != null && m != null ? (bool)m.Invoke(instance, null) : true;
+                    };
                 }
                 else if (modInfo.Guid == "com.trackerteam.hostfix")
                 {
@@ -326,6 +335,12 @@ namespace UsefulTORStuff
                         var m = type?.GetMethod("TriggerChannelSwitch");
                         m?.Invoke(instance, new object[] { s });
                     };
+                    modInfo.ReleasesLoaded = () => {
+                        var type = Type.GetType("HostFixPlugin.HostFixUpdater, HostFixPlugin");
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("ReleasesLoaded");
+                        return instance != null && m != null ? (bool)m.Invoke(instance, null) : true;
+                    };
                 }
                 else if (modInfo.Guid == "com.tormod.usefultorstuff")
                 {
@@ -338,6 +353,7 @@ namespace UsefulTORStuff
                     modInfo.GetReleaseNotes = () => UsefulTORStuffUpdater.Instance?.GetReleaseNotes();
                     modInfo.HasChannelRelease = (s) => UsefulTORStuffUpdater.Instance?.HasChannelRelease(s) ?? false;
                     modInfo.TriggerChannelSwitch = (s) => UsefulTORStuffUpdater.Instance?.TriggerChannelSwitch(s);
+                    modInfo.ReleasesLoaded = () => UsefulTORStuffUpdater.Instance?.ReleasesLoaded() ?? true;
                 }
                 else if (modInfo.Guid == "com.tormod.unknownscollection")
                 {
@@ -392,6 +408,12 @@ namespace UsefulTORStuff
                         var type = Type.GetType(tn);
                         var instance = type?.GetProperty("Instance")?.GetValue(null);
                         type?.GetMethod("TriggerChannelSwitch")?.Invoke(instance, new object[] { s });
+                    };
+                    modInfo.ReleasesLoaded = () => {
+                        var type = Type.GetType(tn);
+                        var instance = type?.GetProperty("Instance")?.GetValue(null);
+                        var m = type?.GetMethod("ReleasesLoaded");
+                        return instance != null && m != null ? (bool)m.Invoke(instance, null) : true;
                     };
                 }
             }
