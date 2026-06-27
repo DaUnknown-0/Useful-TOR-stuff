@@ -20,7 +20,10 @@
  *       * "Blind Rage": may kill anyone. If they happen to hit the real killer -> win (as above).
  *         Otherwise they die at the end of the next meeting, with a random rage chat message.
  *
- * Exile case (the first Lover was voted out -> no single killer): NO Revenger; the surviving Lover
+ * Guess case (a Lover is shot by a Guesser): ALSO arms the Revenger, with the Guesser as the target.
+ * TOR kills a guessed Lover via Exiled(), so we intercept RPCProcedure.guesserShoot (same bothDie flip).
+ *
+ * Vote-exile case (the first Lover was voted out -> no single killer): NO Revenger; the surviving Lover
  * dies at the end of the next meeting (vanilla suicide via Exiled(), which we never intercept).
  *
  * ARCHITECTURE: unlike SheriffParityWin (host-authoritative), this is inherently CLIENT-SIDE (new
@@ -97,11 +100,17 @@ namespace UsefulTORStuff {
         private static PlayerControl currentTarget;  // Revenger's nearest target (for the button)
         private static CustomButton revengerButton;
 
-        // bothDie-flip bookkeeping for the suppression prefix/postfix
+        // bothDie-flip bookkeeping for the MurderPlayer suppression prefix/postfix
         private static bool flipArmed;
         private static PlayerControl flipVictim;
         private static PlayerControl flipPartner;
         private static byte flipKiller = byte.MaxValue;
+
+        // same, for the Guesser path (guesserShoot -> Exiled-based partner suicide)
+        private static bool gFlipArmed;
+        private static PlayerControl gVictim;
+        private static PlayerControl gPartner;
+        private static byte gKiller = byte.MaxValue;
 
         // ---- Custom RPC (252) subtypes ----
         private const byte RpcId = 252;
@@ -109,6 +118,7 @@ namespace UsefulTORStuff {
         private const byte SubRageDeath = 1; // revengerId, msgIndex
         private const byte SubWin = 2;       // revengerId
         private const byte SubRageArmed = 3; // revengerId
+        private const byte SubDeniedDeath = 4; // revengerId, msgIndex (target died first -> revenge denied)
 
         // Resolved once from TOR's internal CustomRPC enum (fallback 108 = UncheckedMurderPlayer).
         private static byte uncheckedMurderRpc = 108;
@@ -138,6 +148,13 @@ namespace UsefulTORStuff {
             "You struck out in fury and ended the wrong life. Shame swallows you whole.",
             "Vengeance demanded blood, but it was the wrong blood. Your heart simply gives out.",
             "The fog of wrath clears too late — an innocent lies dead, and you cannot bear to remain."
+        };
+        private static readonly string[] RevengeDeniedTexts = {
+            "Someone else got to your partner's killer first. With nothing left to avenge, your heart gives out.",
+            "Your target is dead — by another hand. The revenge that kept you breathing is gone, and so are you.",
+            "They died before you could make them pay. Robbed of your vengeance, you fade away.",
+            "Justice found your enemy without you. Empty and purposeless, you follow your love into the dark.",
+            "The one you swore to kill is already gone. There is nothing left to hold you here."
         };
 
         // ====================================================================
@@ -215,6 +232,15 @@ namespace UsefulTORStuff {
                 }
                 harmony.Patch(loverWin, prefix: new HarmonyMethod(typeof(LoverRevenger), nameof(LoverWinPrefix)));
                 UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForLoverWin for the Revenger win.");
+
+                // Block the Impostor/Jackal parity win while a Revenger is alive.
+                var blocker = new HarmonyMethod(typeof(LoverRevenger), nameof(ParityWinBlockPrefix));
+                var impWin = type.GetMethod("CheckAndEndGameForImpostorWin", BindingFlags.NonPublic | BindingFlags.Static);
+                var jackalWin = type.GetMethod("CheckAndEndGameForJackalWin", BindingFlags.NonPublic | BindingFlags.Static);
+                if (impWin != null) { harmony.Patch(impWin, prefix: blocker); UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForImpostorWin (parity block)."); }
+                else UsefulTORStuffPlugin.Logger?.LogWarning("[LoverRevenger] CheckAndEndGameForImpostorWin not found — parity block disabled for impostors.");
+                if (jackalWin != null) { harmony.Patch(jackalWin, prefix: blocker); UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForJackalWin (parity block)."); }
+                else UsefulTORStuffPlugin.Logger?.LogWarning("[LoverRevenger] CheckAndEndGameForJackalWin not found — parity block disabled for jackal.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] TryPatch failed: {e}");
             }
@@ -233,6 +259,21 @@ namespace UsefulTORStuff {
                 }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] LoverWinPrefix failed: {e}");
+            }
+            return true;
+        }
+
+        // While a Revenger is alive they remain a lethal independent threat, so the Impostors/Jackal
+        // cannot claim a numerical (parity) win — they must kill the Revenger first. Mirrors how TOR's
+        // own impostor/jackal win checks block on the rival killer team still being alive.
+        private static bool RevengerAlive() =>
+            active && revenger != null && revenger.Data != null && !revenger.Data.IsDead;
+
+        public static bool ParityWinBlockPrefix(ref bool __result) {
+            try {
+                if (RevengerAlive()) { __result = false; return false; }
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] ParityWinBlockPrefix failed: {e}");
             }
             return true;
         }
@@ -330,6 +371,16 @@ namespace UsefulTORStuff {
             } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] SendRageDeath failed: {e}"); }
         }
 
+        private static void SendDeniedDeath(byte revengerId, byte msgIndex) {
+            try {
+                var w = BeginRpc(SubDeniedDeath);
+                w.Write(revengerId);
+                w.Write(msgIndex);
+                AmongUsClient.Instance.FinishRpcImmediately(w);
+                ApplyDeniedDeath(revengerId, msgIndex);
+            } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] SendDeniedDeath failed: {e}"); }
+        }
+
         private static void SendWin(byte revengerId) {
             try {
                 var w = BeginRpc(SubWin);
@@ -376,6 +427,18 @@ namespace UsefulTORStuff {
             revenger = null;
         }
 
+        private static void ApplyDeniedDeath(byte revengerId, byte msgIndex) {
+            var rev = Helpers.playerById(revengerId);
+            if (rev == null) return;
+            if (!rev.Data.IsDead) {
+                RPCProcedure.uncheckedMurderPlayer(revengerId, revengerId, byte.MaxValue);
+                OverrideLoverSuicide(rev);
+            }
+            if (msgIndex < RevengeDeniedTexts.Length)
+                PostChat(rev, RevengeDeniedTexts[msgIndex]);
+            revenger = null;
+        }
+
         private static void ApplyWin(byte revengerId) {
             triggerRevengerWin = true;
             revengerWon = true;
@@ -410,6 +473,12 @@ namespace UsefulTORStuff {
                             ApplyRageDeath(revId, idx);
                             break;
                         }
+                        case SubDeniedDeath: {
+                            byte revId = reader.ReadByte();
+                            byte idx = reader.ReadByte();
+                            ApplyDeniedDeath(revId, idx);
+                            break;
+                        }
                         case SubWin: ApplyWin(reader.ReadByte()); break;
                     }
                 } catch (Exception e) {
@@ -436,6 +505,7 @@ namespace UsefulTORStuff {
                 griefChatShown = false;
                 currentTarget = null;
                 flipArmed = false; flipVictim = null; flipPartner = null; flipKiller = byte.MaxValue;
+                gFlipArmed = false; gVictim = null; gPartner = null; gKiller = byte.MaxValue;
             }
         }
 
@@ -501,6 +571,55 @@ namespace UsefulTORStuff {
         }
 
         // ====================================================================
+        // Guesser path: a Lover killed by a Guesser also arms the Revenger, with the GUESSER as the
+        // target. TOR kills a guessed Lover via dyingTarget.Exiled(), whose postfix runs the
+        // (bothDie-gated) partner suicide. We flip Lovers.bothDie OFF around guesserShoot so that partner
+        // suicide (and the meeting-UI partner-death handling, also bothDie-gated) is skipped, restore it
+        // after, and arm the pending decision for the meeting end. Runs on every client like guesserShoot.
+        // ====================================================================
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.guesserShoot))]
+        static class GuesserShootSuppressPatch {
+            public static void Prefix([HarmonyArgument(0)] byte killerId, [HarmonyArgument(1)] byte dyingTargetId) {
+                try {
+                    gFlipArmed = false;
+                    if (!active || !Lovers.bothDie) return;
+                    var victim = Helpers.playerById(dyingTargetId);
+                    if (victim == null || !IsLover(victim)) return;
+                    var partner = PartnerOf(victim);
+                    if (partner == null || partner.Data == null || partner.Data.IsDead) return; // partner must survive
+                    if (partner.PlayerId == dyingTargetId) return;
+                    if (pendingArmed || revenger != null) return; // already in a delay/revenger flow
+
+                    Lovers.bothDie = false; // skip TOR's bothDie-gated partner suicide during Exiled()
+                    gFlipArmed = true;
+                    gVictim = victim;
+                    gPartner = partner;
+                    gKiller = killerId;
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] guesserShoot prefix failed: {e}");
+                }
+            }
+
+            [HarmonyPriority(Priority.Last)]
+            public static void Postfix() {
+                try {
+                    if (!gFlipArmed) return;
+                    Lovers.bothDie = true; // restore
+                    bool victimDied = gVictim != null && gVictim.Data != null && gVictim.Data.IsDead;
+                    if (victimDied && gPartner != null && !gPartner.Data.IsDead) {
+                        pendingArmed = true;
+                        pendingLover = gPartner;
+                        pendingKillerId = gKiller;
+                        UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] Delayed Lover death armed via guess (partner {gPartner.Data?.PlayerName}, guesser id {gKiller}).");
+                    }
+                    gFlipArmed = false; gVictim = null; gPartner = null; gKiller = byte.MaxValue;
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] guesserShoot postfix failed: {e}");
+                }
+            }
+        }
+
+        // ====================================================================
         // First-meeting grief message (local, surviving Lover only).
         // ====================================================================
         [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Start))]
@@ -524,6 +643,7 @@ namespace UsefulTORStuff {
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
 
                 // 1) Resolve a pending Revenger decision.
+                bool justAwakened = false;
                 if (pendingArmed) {
                     if (pendingLover == null || pendingLover.Data == null
                         || pendingLover.Data.IsDead || pendingLover.Data.Disconnected) {
@@ -534,6 +654,7 @@ namespace UsefulTORStuff {
                         bool become = active && rnd.Next(1, 101) <= sel * 10;
                         byte mode = (byte)(RevengerMode != null ? RevengerMode.getSelection() : 0);
                         SendDecision(pendingLover.PlayerId, become, pendingKillerId, mode);
+                        justAwakened = become;
                     }
                 }
 
@@ -544,6 +665,16 @@ namespace UsefulTORStuff {
                     } else {
                         SendRageDeath(revenger.PlayerId, (byte)rnd.Next(RageDeathTexts.Length));
                     }
+                }
+
+                // 3) Revenge denied: the Lover's killer died before the Revenger could strike (voted out
+                //    or killed by someone else). With nothing left to avenge, the Revenger dies at this
+                //    meeting's end. Skipped in the very meeting they awaken, and only once they exist.
+                if (!justAwakened && !rageKillDone && killerId != byte.MaxValue
+                    && revenger != null && revenger.Data != null && !revenger.Data.IsDead) {
+                    var killer = Helpers.playerById(killerId);
+                    if (killer == null || killer.Data == null || killer.Data.IsDead || killer.Data.Disconnected)
+                        SendDeniedDeath(revenger.PlayerId, (byte)rnd.Next(RevengeDeniedTexts.Length));
                 }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] OnMeetingEnd failed: {e}");
@@ -612,9 +743,12 @@ namespace UsefulTORStuff {
                 bool correct = targetId == killerId;
 
                 if (correct) {
-                    // Right target in either mode -> kill and win instantly.
-                    RpcUncheckedMurder(revenger.PlayerId, targetId);
+                    // Right target in either mode -> flag the win BEFORE the kill, then kill. The kill
+                    // may remove the last evil player; flagging first guarantees the host sees
+                    // triggerRevengerWin when that kill's CheckEndCriteria runs, so it ends with our
+                    // reason (17) instead of racing a Crew "No Evil Killers Left" win.
                     SendWin(revenger.PlayerId);
+                    RpcUncheckedMurder(revenger.PlayerId, targetId);
                 } else if (revengerMode == ModeTargeted) {
                     // Wrong target -> misfire, the Revenger dies.
                     RpcUncheckedMurder(revenger.PlayerId, revenger.PlayerId);
@@ -641,7 +775,9 @@ namespace UsefulTORStuff {
         static class OnGameEndOverridePatch {
             public static void Postfix() {
                 try {
-                    if (!revengerWon) return;
+                    // Gate on the REAL end reason, not just revengerWon: a Revenger kill that ends the
+                    // round another way (e.g. a raced Crew win) must not rebuild the winners as the Revenger.
+                    if (!revengerWon || (int)OnGameEndPatch.gameOverReason != RevengerWinReason) return;
                     var winners = EndGameResult.CachedWinners;
                     if (winners == null) return;
                     winners.Clear();
@@ -679,7 +815,9 @@ namespace UsefulTORStuff {
         static class EndGameWinTextPatch {
             public static void Postfix(EndGameManager __instance) {
                 try {
-                    if (!revengerWon) return;
+                    // Only when the game actually ended via our reason (17) — otherwise TOR's own win
+                    // text (Crew/Impostor/...) already covers it and we must not overlay on top.
+                    if ((int)OnGameEndPatch.gameOverReason != RevengerWinReason) return;
                     __instance.BackgroundBar.material.SetColor("_Color", Lovers.color);
                     GameObject bonusText = UnityEngine.Object.Instantiate(__instance.WinText.gameObject);
                     bonusText.transform.position = new Vector3(

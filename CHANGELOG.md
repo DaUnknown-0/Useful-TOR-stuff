@@ -20,8 +20,16 @@
   is skipped cleanly; the win uses TOR's internal `CheckEndCriteriaPatch.CheckAndEndGameForLoverWin`
   (reflection) only as a host entry point but ends with a **separate `CustomGameOverReason` (17)** and
   a dedicated "Revenger Wins" end screen (winner snapshotted so it survives TOR's end-of-game
-  `resetVariables`). State syncs over a small custom RPC (252); kills reuse TOR's
-  `UncheckedMurderPlayer`. New file `LoverRevenger.cs`; options 1290–1293.
+  `resetVariables`). The win is flagged *before* the killing blow so a kill that removes the last evil
+  player can't race a Crew "No Evil Killers Left" end; both end-screen overrides gate on the real
+  `gameOverReason == 17` so the text never overlays another team's win. A Lover shot by a **Guesser**
+  also arms the Revenger (the Guesser becomes the target; intercepts `RPCProcedure.guesserShoot`, which
+  kills via `Exiled()`). While a Revenger is **alive** the Impostors/Jackal cannot claim a numerical
+  (parity) win — they must deal with the Revenger first (prefixes on TOR's `CheckAndEndGameFor
+  Impostor/JackalWin`). If the **target dies first** (voted out or killed by someone else), the revenge
+  is denied and the Revenger dies at the next meeting end with a flavor line. State syncs over a small
+  custom RPC (252); kills reuse TOR's `UncheckedMurderPlayer`. New file `LoverRevenger.cs`; options
+  1290–1293.
 - **Sabotage Tuning (TOR Settings).** Master toggle (default off) that replaces Among Us's single
   shared sabotage cooldown with an independent cooldown timer per sabotage type. While no sabotage is
   active each type's timer ticks down on its own; when any sabotage ends, all timers reset to their
