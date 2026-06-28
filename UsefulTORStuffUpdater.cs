@@ -427,16 +427,19 @@ namespace UsefulTORStuff {
         public bool HasChannelRelease(bool stable) => LatestInChannel(stable) != null;
 
         // The update target follows the shared "show test versions" toggle. OFF -> newest STABLE only.
-        // ON -> the newest prerelease ONLY if it is semantically AHEAD of the newest stable (prerelease
-        // of a FUTURE version); an old prerelease (base <= newest stable) is ignored -> use the stable.
+        // ON -> newest PRERELEASE when its base is >= latest stable base (test channel target); only use
+        // stable when stable base is strictly higher (genuine new stable beyond any prerelease).
         [HideFromIl2Cpp]
         public GithubRelease UpdateTarget() {
             if (Releases == null) return null;
             var stable = LatestInChannel(true);
             if (!VersionDisplay.ShowTestVersions()) return stable;
             var pre = LatestInChannel(false);
-            if (pre != null && (stable == null || SemCompare(pre.Version, stable.Version) > 0)) return pre;
-            return stable;
+            if (pre == null) return stable;
+            if (stable == null) return pre;
+            var stableBase = new Version(stable.Version.Major, System.Math.Max(0, stable.Version.Minor), System.Math.Max(0, stable.Version.Build));
+            var preBase = new Version(pre.Version.Major, System.Math.Max(0, pre.Version.Minor), System.Math.Max(0, pre.Version.Build));
+            return stableBase.CompareTo(preBase) > 0 ? stable : pre;
         }
 
         // Callback-Methoden für ModManagerRegistry: Prüft ob ein Update verfügbar ist.
