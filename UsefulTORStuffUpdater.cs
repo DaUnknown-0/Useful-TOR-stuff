@@ -246,7 +246,7 @@ namespace UsefulTORStuff {
             if (_busy || Releases == null) return;
 
             var latestRelease = UpdateTarget();
-            if (latestRelease == null || SemCompare(latestRelease.Version, UsefulTORStuffPlugin.Version) <= 0 || !latestRelease.Assets.Any(FilterPluginAsset))
+            if (latestRelease == null || !IsActualUpdate(latestRelease.Version, UsefulTORStuffPlugin.Version) || !latestRelease.Assets.Any(FilterPluginAsset))
                 return;
 
             var template = GameObject.Find("ExitGameButton");
@@ -394,6 +394,20 @@ namespace UsefulTORStuff {
             return aPre ? -1 : 1; // prerelease older than the finalized stable of the same base
         }
 
+        // True when `target` is a version the user should actually install (not just "semantically newer").
+        // On the test channel, stable vX.Y.Z for a user already on prerelease vX.Y.Z.W is a channel switch,
+        // not an update — the base version did not advance. Channel switches go through TriggerChannelSwitch.
+        [HideFromIl2Cpp]
+        private static bool IsActualUpdate(Version target, Version current) {
+            if (SemCompare(target, current) <= 0) return false;
+            if (VersionDisplay.ShowTestVersions() && current.Revision > 0 && target.Revision <= 0) {
+                var tBase = new Version(target.Major, System.Math.Max(0, target.Minor), System.Math.Max(0, target.Build));
+                var cBase = new Version(current.Major, System.Math.Max(0, current.Minor), System.Math.Max(0, current.Build));
+                if (tBase.CompareTo(cBase) <= 0) return false;
+            }
+            return true;
+        }
+
         // Channel from the TAG FORMAT: stable = vX.Y.Z (Version.Revision <= 0), test = vX.Y.Z.W (>0).
         [HideFromIl2Cpp]
         public GithubRelease LatestInChannel(bool stable) {
@@ -430,7 +444,7 @@ namespace UsefulTORStuff {
         public bool HasUpdate() {
             var t = UpdateTarget();
             return t != null && t.Assets.Any(FilterPluginAsset)
-                && SemCompare(t.Version, UsefulTORStuffPlugin.Version) > 0;
+                && IsActualUpdate(t.Version, UsefulTORStuffPlugin.Version);
         }
 
         // Roh-Release-Notes (GitHub-`body`) der Ziel-Version (aus dem bereits geladenen JSON).
@@ -442,7 +456,7 @@ namespace UsefulTORStuff {
         public void TriggerUpdateFromManager() {
             var t = UpdateTarget();
             if (t != null && t.Assets.Any(FilterPluginAsset)
-                && SemCompare(t.Version, UsefulTORStuffPlugin.Version) > 0)
+                && IsActualUpdate(t.Version, UsefulTORStuffPlugin.Version))
                 StartDownloadRelease(t, managerMode: true);
         }
 
