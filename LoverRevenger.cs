@@ -190,18 +190,24 @@ namespace UsefulTORStuff {
                 // IDs 1294-1297 (NOT 1290-1293): 1290 is InvertVision's "Inverted Vision". A shared
                 // option id makes both options read the same stored selection, so DelayOption would
                 // silently track Inverted Vision's value (feature looks "off" -> no suppression).
+                // Parent directly under the Lovers modifier (not "Both Lovers Die"): TOR only checks an
+                // option's parent + grandparent for visibility, so a deeper chain can't see the Lovers
+                // rate. Keeping all sub-options as direct children of DelayOption (itself a child of
+                // Lovers) means they ALL hide when Lovers = 0% or "Delay Lover Death" is Off - i.e. only
+                // shown when a Revenger can actually exist. ("Both Lovers Die" is still required and is
+                // enforced at runtime.)
                 DelayOption = CustomOption.Create(
                     1294, Types.Modifier, "Delay Lover Death (Revenger)",
-                    false, CustomOptionHolder.modifierLoverBothDie);
+                    false, CustomOptionHolder.modifierLover);
                 RevengerChance = CustomOption.Create(
                     1295, Types.Modifier, "Chance Surviving Lover Becomes Revenger",
                     CustomOptionHolder.rates, DelayOption);
                 RevengerMode = CustomOption.Create(
                     1296, Types.Modifier, "Revenger Mode",
-                    new string[] { "Targeted Justice", "Blind Rage" }, RevengerChance);
+                    new string[] { "Targeted Justice", "Blind Rage" }, DelayOption);
                 RevengerCooldown = CustomOption.Create(
                     1297, Types.Modifier, "Revenger Kill Cooldown",
-                    30f, 10f, 60f, 2.5f, RevengerChance);
+                    30f, 10f, 60f, 2.5f, DelayOption);
 
                 // Place directly under the existing Lover modifier options (same approach as
                 // LawyerLoverTracker). Insert after "Enable Lover Chat" (or the tracker options).
