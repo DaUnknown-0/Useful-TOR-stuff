@@ -130,6 +130,22 @@ namespace UsefulTORStuff {
 
         private static bool Active => Enabled != null && Enabled.getBool();
 
+        // Cross-plugin sabotage block from Unknown's Collection's Siphoner (AppDomain shared data, no hard
+        // dependency). While the Siphoner is draining a nearby impostor it publishes an absolute Time.time
+        // until which sabotage must be suppressed; we honour it here instead of letting our idle branch pin
+        // the shared timer back to ready. Mirrors how we suppress the Chance modifier above.
+        private const string SiphonerBlockKey = "TORMods.SiphonerSabotageBlockUntil";
+        private static bool SiphonerBlockActive() {
+            try { return AppDomain.CurrentDomain.GetData(SiphonerBlockKey) is float until && Time.time < until; }
+            catch { return false; }
+        }
+        private static float SiphonerBlockRemaining() {
+            try {
+                return AppDomain.CurrentDomain.GetData(SiphonerBlockKey) is float until
+                    ? Mathf.Max(0.1f, until - Time.time) : 0.1f;
+            } catch { return 0.1f; }
+        }
+
         // Cooldown maximum for a type after applying its accumulated reduction, floored at the
         // configurable minimum cooldown. The floor is clamped to the base so it can never raise a
         // cooldown above its configured value (only stop the reduction from going lower).
@@ -211,6 +227,7 @@ namespace UsefulTORStuff {
         // for the clicking impostor). Counting is done globally on activation (CountActivation) so the
         // reduction applies for all impostors, not just whoever clicked.
         private static bool TryTrigger(SabType t) {
+            if (SiphonerBlockActive()) return false; // Siphoner drain blocks every sabotage (even if our tuning is off)
             if (!Active) return true;             // feature off -> vanilla
             return timer[(int)t] <= 0f;           // on cooldown -> block (false), else allow (true)
         }
@@ -309,7 +326,7 @@ namespace UsefulTORStuff {
                 try {
                     var sab = __instance.sabSystem;
                     if (sab == null) return;
-                    __result = !sab.AnyActive && !__instance.DoorsPreventingSabotage;
+                    __result = !sab.AnyActive && !__instance.DoorsPreventingSabotage && !SiphonerBlockActive();
                 } catch { }
             }
         }
@@ -347,7 +364,10 @@ namespace UsefulTORStuff {
                         // Pinning the shared timer to exactly 0 made "0 > (slightly negative button timer)"
                         // true forever, so that button looped 5->0 and never became usable on the host.
                         // A negative value keeps host validation happy while never tripping that comparison.
-                        if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) sab.Timer = -1f;
+                        // While a Siphoner block is active keep the shared timer positive so host
+                        // validation also rejects sabotage; otherwise pin it idle as before.
+                        if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost)
+                            sab.Timer = SiphonerBlockActive() ? SiphonerBlockRemaining() : -1f;
 
                         if (prevActive) {
                             // A sabotage just ended -> every type's timer back to its maximum.
