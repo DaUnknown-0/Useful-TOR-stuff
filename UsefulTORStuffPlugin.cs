@@ -188,6 +188,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // TryPatch adds the reflection patch on TOR's internal CheckAndEndGameForLoverWin (instant
         // Revenger win) and resolves the UncheckedMurderPlayer RPC id. CreateOptions runs after TOR's
         // CustomOptionHolder.Load(). This feature is client-side and gated on "everyone has the mod".
+        // NOTE: Revenger is NOT in any Role Draft — it only activates mid-game when a Lover dies.
         LoverRevenger.CreateOptions();
         LoverRevenger.TryPatch(harmony);
 
