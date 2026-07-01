@@ -154,6 +154,8 @@ namespace UsefulTORStuff {
             mixupMap.Clear();
             foreach (var kv in map) mixupMap[kv.Key] = kv.Value;
             mixupTimer = duration;
+            // Glitchy identity-shuffle cue: the mixup is a visible global effect, so everyone hears it.
+            UTSAssets.PlayMixup();
         }
 
         private static void EndMixup() {
@@ -236,8 +238,8 @@ namespace UsefulTORStuff {
                         () => PlayerControl.LocalPlayer.CanMove
                               && Camouflager.camouflageTimer <= 0f && mixupTimer <= 0f && LightsReady(),
                         () => { },
-                        // Use the Camouflager's button sprite — the mixup is a camo-style effect.
-                        Camouflager.getButtonSprite(),
+                        // Own mixup icon; the Camouflager sprite only as fallback.
+                        UTSAssets.MixupIcon ?? Camouflager.getButtonSprite(),
                         // Trickster is an Impostor: avoid right-side kill-button slots and the
                         // upperRowLeft used by place-box / lights-out. upperRowFarLeft is free.
                         CustomButton.ButtonPositions.upperRowFarLeft,

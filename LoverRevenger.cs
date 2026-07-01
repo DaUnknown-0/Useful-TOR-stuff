@@ -443,8 +443,10 @@ namespace UsefulTORStuff {
                 revenger = lover;
                 revengerMode = mode;
                 killerId = revKillerId;
-                if (lover == PlayerControl.LocalPlayer)
+                if (lover == PlayerControl.LocalPlayer) {
                     PostChat(lover, Pick(mode == ModeBlindRage ? AwakenRage : AwakenTargeted));
+                    UTSAssets.PlayRevenger(); // dark awakening sting, Revenger-only
+                }
             } else if (!lover.Data.IsDead) {
                 // Roll failed: the delayed Lover suicide happens now (every client kills locally).
                 RPCProcedure.uncheckedMurderPlayer(loverId, loverId, byte.MaxValue);
@@ -773,7 +775,7 @@ namespace UsefulTORStuff {
                         LocalUsesRevengerButton,
                         () => currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
                         () => { if (revengerButton != null) revengerButton.Timer = revengerButton.MaxTimer; },
-                        __instance.KillButton.graphic.sprite,
+                        UTSAssets.RevengerIcon ?? __instance.KillButton.graphic.sprite,
                         CustomButton.ButtonPositions.upperRowRight,
                         __instance,
                         KeyCode.Q

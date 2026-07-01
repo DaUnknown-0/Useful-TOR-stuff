@@ -97,7 +97,7 @@ namespace UsefulTORStuff {
             public static void Postfix(HudManager __instance) {
                 try {
                     cancelButton = new CustomButton(
-                        () => SendCancel(),
+                        () => { SendCancel(); UTSAssets.PlayBombCancel(); },
                         // HasButton: only the Bomber, only while alive, only when the option is on.
                         () => Option != null && Option.getBool()
                               && Bomber.bomber != null && Bomber.bomber == PlayerControl.LocalPlayer
@@ -105,7 +105,7 @@ namespace UsefulTORStuff {
                         // CouldUse: whenever a live bomb exists, regardless of arm state / visibility.
                         () => Bomber.bomb != null && PlayerControl.LocalPlayer.CanMove,
                         () => { },
-                        Bomb.getDefuseSprite(),
+                        UTSAssets.BombCancelIcon ?? Bomb.getDefuseSprite(),
                         // Bomber is an Impostor: the right-side slots (lowerRowRight/upperRowRight/
                         // upperRowCenter) overlap the kill button. The plant button uses upperRowLeft,
                         // so place cancel on lowerRowLeft to avoid overlapping either.

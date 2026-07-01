@@ -139,7 +139,7 @@ namespace UsefulTORStuff {
                     unshieldButton = new CustomButton(
                         // Unshield is free: just remove the current shield and re-arm. The next placement
                         // (via TOR's shield button) is what spends a charge.
-                        () => { SendReset(); },
+                        () => { SendReset(); UTSAssets.PlayReshield(); },
                         // HasButton: medic, alive, option on, a shield is currently active (something to
                         // remove), and a charge remains to re-give (0 = unlimited).
                         // Clearing usedShield hides this button again and re-shows TOR's shield button.
@@ -151,7 +151,7 @@ namespace UsefulTORStuff {
                                   || placementsUsed < OptionShieldCharges.getSelection()),
                         () => PlayerControl.LocalPlayer.CanMove,
                         () => { },
-                        Medic.getButtonSprite(),
+                        UTSAssets.UnshieldIcon ?? Medic.getButtonSprite(),
                         CustomButton.ButtonPositions.lowerRowLeft,
                         __instance,
                         KeyCode.G,

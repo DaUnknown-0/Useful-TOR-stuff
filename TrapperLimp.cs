@@ -173,13 +173,13 @@ namespace UsefulTORStuff {
             public static void Postfix(HudManager __instance) {
                 try {
                     selfLimpButton = new CustomButton(
-                        () => ToggleSelfLimp(),
+                        () => { ToggleSelfLimp(); UTSAssets.PlayLimpToggle(); },
                         () => SelfOption != null && SelfOption.getBool()
                               && Trapper.trapper != null && Trapper.trapper == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
                         () => PlayerControl.LocalPlayer.CanMove,
                         () => { },
-                        Trapper.getButtonSprite(),
+                        UTSAssets.SelfLimpIcon ?? Trapper.getButtonSprite(),
                         CustomButton.ButtonPositions.lowerRowCenter,
                         __instance,
                         KeyCode.H,
