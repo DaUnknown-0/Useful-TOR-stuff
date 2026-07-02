@@ -446,6 +446,10 @@ namespace UsefulTORStuff {
                 if (lover == PlayerControl.LocalPlayer) {
                     PostChat(lover, Pick(mode == ModeBlindRage ? AwakenRage : AwakenTargeted));
                     UTSAssets.PlayRevenger(); // dark awakening sting, Revenger-only
+                    // A non-killer Revenger awakens NOW (mid-game). Guarantee the kill button exists at
+                    // this exact moment - the HudManager.Start creation can be long gone by here, which is
+                    // what left non-killers with no button. Killers use their own kill button (no second).
+                    if (!IsKiller(lover)) EnsureRevengerButton(HudManager.Instance);
                 }
             } else if (!lover.Data.IsDead) {
                 // Roll failed: the delayed Lover suicide happens now (every client kills locally).
@@ -765,27 +769,36 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Create the Revenger kill button if it does not currently exist (or its backing ActionButton was
+        // torn down, e.g. across a HUD rebuild). Idempotent - a live button is left untouched. Called from
+        // BOTH HudManager.Start AND the moment a local non-killer player actually awakens as the Revenger
+        // (ApplyDecision). The awaken happens MID-GAME, long after HudManager.Start, so relying on the Start
+        // creation alone left the button missing whenever that early instance was gone by awaken time -
+        // which is exactly the "button never appeared" bug. Recreating at awaken guarantees it exists then.
+        private static void EnsureRevengerButton(HudManager hud) {
+            try {
+                if (hud == null || hud.KillButton == null) return;
+                if (revengerButton != null && revengerButton.actionButton != null) return;
+                revengerButton = new CustomButton(
+                    OnRevengerKill,
+                    LocalUsesRevengerButton,
+                    () => currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
+                    () => { if (revengerButton != null) revengerButton.Timer = revengerButton.MaxTimer; },
+                    UTSAssets.RevengerIcon ?? hud.KillButton.graphic.sprite,
+                    CustomButton.ButtonPositions.upperRowRight,
+                    hud,
+                    KeyCode.Q
+                );
+                revengerButton.MaxTimer = RevengerCooldown != null ? RevengerCooldown.getFloat() : 30f;
+                revengerButton.Timer = revengerButton.MaxTimer;
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] button creation failed: {e}");
+            }
+        }
+
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Start))]
         static class HudStartButtonPatch {
-            public static void Postfix(HudManager __instance) {
-                try {
-                    if (revengerButton != null && revengerButton.actionButton != null) return;
-                    revengerButton = new CustomButton(
-                        OnRevengerKill,
-                        LocalUsesRevengerButton,
-                        () => currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
-                        () => { if (revengerButton != null) revengerButton.Timer = revengerButton.MaxTimer; },
-                        UTSAssets.RevengerIcon ?? __instance.KillButton.graphic.sprite,
-                        CustomButton.ButtonPositions.upperRowRight,
-                        __instance,
-                        KeyCode.Q
-                    );
-                    revengerButton.MaxTimer = RevengerCooldown != null ? RevengerCooldown.getFloat() : 30f;
-                    revengerButton.Timer = revengerButton.MaxTimer;
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] button creation failed: {e}");
-                }
-            }
+            public static void Postfix(HudManager __instance) => EnsureRevengerButton(__instance);
         }
 
         private static void OnRevengerKill() {
