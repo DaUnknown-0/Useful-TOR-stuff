@@ -9,6 +9,8 @@ host-authoritative — they apply regardless of who has the mod.
 > Formerly *Useful TOR Stuff*. The DLL is still `UsefulTORStuff.dll` and the repository is still
 > `Useful-TOR-stuff`; only the in-game name changed to **TOR - Forgotten Fixes**.
 
+📖 **Full documentation:** <https://daunknown-0.github.io/tor-mods-wiki/useful.html> (searchable, EN/DE).
+
 This mod is not affiliated with Among Us or Innersloth LLC, and the content contained therein is not
 endorsed or otherwise sponsored by Innersloth LLC. Portions of the materials contained herein are
 property of Innersloth LLC. © Innersloth LLC.
@@ -81,6 +83,15 @@ Options appear in TOR's own settings tabs, directly under the relevant role.
 | Inverted Vision | Off | Inverts the screen colors (true color negative) while the Invert modifier is active; uses Unity's built-in `Hidden/Internal-Colored` shader |
 | Rename to Drunk | Off | Renames the *Invert* modifier (and its intro/end-screen text) to **Drunk** live, no restart needed |
 | Tiebreaker Quantity (max 3) | 1 | Allows up to 3 Tiebreakers at once |
+| Delay Lover Death (Revenger) | Off | Needs **Both Lovers Die** on. A *killed* Lover no longer kills the partner instantly; at the end of the next meeting the survivor may awaken as a **Revenger** (a delayed Lover suicide happens otherwise). Sub-options only show while the Lovers modifier can actually spawn |
+| ↳ Chance Surviving Lover Becomes Revenger | 0% | Roll deciding the Revenger path vs. the delayed suicide |
+| ↳ Revenger Mode | Targeted Justice | *Targeted Justice* — a non-killer Revenger may only kill the Lover's killer (a wrong target misfires and kills the Revenger); *Blind Rage* — may kill anyone, but a wrong kill still dooms them next meeting. A correct kill ends the game as a **Lovers win** |
+| ↳ Revenger Kill Cooldown | 30 s | 10–60 s; only for a non-killer Revenger's Sheriff-style kill button (**Q**). A Revenger who already has their own kill (Impostor/Jackal/Sheriff…) uses that instead — no second button |
+
+The Revenger is client-side (a live kill button, local kills, chat), so it is **gated on every player
+having this mod** (version handshake) — the host gets a lobby warning otherwise, exactly like the
+Snitch fix. State syncs via RPC 247; the win uses a separate game-over reason so the two Lovers (the
+fallen one + the Revenger) are the winners.
 
 ### TOR Settings
 
@@ -120,6 +131,18 @@ host-authoritative (stamped onto the system's `Countdown` on the host and synced
 Mutually exclusive with the Chance modifier's sabotage-cooldown override — while Sabotage Tuning is
 on, the Chance override stands down (Sabotage Tuning takes precedence). New file `SabotageTuning.cs`;
 options 1330–1344.
+
+Cross-mod integration: while **Unknown's Collection**'s *Siphoner* is draining a nearby impostor it
+publishes a sabotage block over shared `AppDomain` state (no hard dependency). Sabotage Tuning honours
+it — every sabotage is refused, and on the host the shared timer is kept positive so host validation
+rejects it too — regardless of whether the tuning toggle itself is on.
+
+## Custom icons & audio
+
+Several buttons now carry their own icon (the borrowed TOR sprite is only a fallback) and play a short
+sound cue when used: Bomber **cancel bomb**, Medic **unshield/reshield**, Trapper **self-limp** toggle,
+Trickster **avatar mixup**, and the **Lover Revenger** awakening sting. Assets load once via
+`UTSAssets` and are cached.
 
 ## Mod Manager & lobby Mod-Check
 
