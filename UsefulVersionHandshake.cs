@@ -173,9 +173,15 @@ namespace UsefulTORStuff {
             }
         }
 
-        // True when the Chance mod is loaded (so the combined overview must include its column).
-        private static bool ChancePresent() =>
-            AppDomain.CurrentDomain.GetData("ModManager.RegisteredMod." + ChanceGuid) != null;
+        // True when ANY other mod has published a handshake snapshot besides us (Chance, Unknown's
+        // Collection, future mods). The combined Mod-Check overview is drawn whenever there is more
+        // than one column to merge - not just when Chance specifically is installed.
+        private static bool OtherModsPublished() {
+            try {
+                var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
+                return reg.Split(',').Any(g => g.Length > 0 && g != UsefulGuid);
+            } catch { return false; }
+        }
 
         // Builds the combined "Mod-Check" overview from every published handshake snapshot. Sets
         // anyWarn = true if any player is missing/mismatched for any present mod. Returns "" only on
@@ -202,6 +208,7 @@ namespace UsefulTORStuff {
                 if (client == null || client.Character == null) continue;
                 string name = client.Character.Data.PlayerName;
                 var segments = new List<string>();
+                bool playerMismatch = false;
                 foreach (var g in guids) {
                     string label = names[g];
                     if (stats[g].TryGetValue(client.Id, out string token)) {
@@ -211,26 +218,33 @@ namespace UsefulTORStuff {
                         if (code == "ok") {
                             segments.Add($"<color=#3FCF4AFF>{label} {ver} ✓</color>");
                         } else if (code == "mod") {
-                            anyWarn = true;
+                            anyWarn = true; playerMismatch = true;
                             segments.Add($"<color=#FF0000FF>{label} {ver} (modified)</color>");
                         } else {
-                            anyWarn = true;
+                            anyWarn = true; playerMismatch = true;
                             segments.Add($"<color=#FF0000FF>{label} {ver} ✗</color>");
                         }
                     } else {
-                        anyWarn = true;
+                        anyWarn = true; playerMismatch = true;
                         segments.Add($"<color=#AAAAAAFF>{label} — missing</color>");
                     }
                 }
-                sb.Append($"<color=#FFFFFFFF>{name}</color>  ");
+                // Players whose mods DON'T match the reference build (the snapshots compare against
+                // the local = host install, since the board is host-rendered) are named in Impostor
+                // red, so the odd ones out are visible at a glance. Matching players stay white.
+                string nameColor = playerMismatch
+                    ? "#" + UnityEngine.ColorUtility.ToHtmlStringRGBA(Palette.ImpostorRed)
+                    : "#FFFFFFFF";
+                sb.Append($"<color={nameColor}>{name}</color>  ");
                 sb.Append(string.Join(" <color=#888888FF>|</color> ", segments));
                 sb.Append("\n");
             }
 
+            // <size=130%> — the per-player board was hard to read at GameStartText's default size.
             if (!anyWarn)
-                return "<color=#3FCF4AFF>Mod-Check: all players match ✓</color>";
+                return "<size=130%><color=#3FCF4AFF>Mod-Check: all players match ✓</color></size>";
 
-            return "<color=#FFD700FF>Mod-Check:</color>\n" + sb.ToString();
+            return "<size=130%><color=#FFD700FF>Mod-Check:</color>\n" + sb.ToString() + "</size>";
         }
 
         // P1.5: Beim Betreten einer Lobby den Versions-Cache leeren. ClientIds sind
@@ -328,11 +342,12 @@ namespace UsefulTORStuff {
                         "Delay Lover Death (Revenger)");
                 }
 
-                // F1: when the Chance mod is also present we OWN the combined per-player overview —
-                // draw it here (host-only unless ShowToAllPlayers). It replaces BOTH mods' standalone
-                // version lists; Chance suppresses its own block while we are loaded.
-                bool chancePresent = ChancePresent();
-                if (chancePresent && (ShowToAllPlayers || AmongUsClient.Instance.AmHost)) {
+                // F1: when any other handshake-publishing mod is present (Chance, Unknown's
+                // Collection, ...) we OWN the combined per-player overview — draw it here (host-only
+                // unless ShowToAllPlayers). It replaces the mods' standalone version lists; Chance
+                // suppresses its own block while we are loaded.
+                bool combinedShown = OtherModsPublished();
+                if (combinedShown && (ShowToAllPlayers || AmongUsClient.Instance.AmHost)) {
                     string combined = BuildCombinedModCheck(out _);
                     if (combined != "")
                         DrawTopLeftMessage(__instance, text, combined, "Mod-Check:");
@@ -357,10 +372,10 @@ namespace UsefulTORStuff {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.
                     // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).
                     if (!AmongUsClient.Instance.AmHost) return;
-                    // F1: when Chance is present the combined Mod-Check block above already lists the
-                    // per-player versions, so drop the standalone mismatch prefix and show only the
-                    // fallback note. Otherwise keep the full standalone list (single-mod install).
-                    string prefix = chancePresent ? "" : mismatch;
+                    // F1: when the combined Mod-Check block above already lists the per-player
+                    // versions, drop the standalone mismatch prefix and show only the fallback note.
+                    // Otherwise keep the full standalone list (single-mod install).
+                    string prefix = combinedShown ? "" : mismatch;
                     DrawTopLeftMessage(__instance, text,
                         prefix + "<color=#FFA500FF>The game can still be started, but the snitch bug " +
                         "may still occur (fallback: Host Fix re-broadcast).</color>",

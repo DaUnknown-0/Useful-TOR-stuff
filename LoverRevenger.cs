@@ -445,6 +445,14 @@ namespace UsefulTORStuff {
                 killerId = revKillerId;
                 if (lover == PlayerControl.LocalPlayer) {
                     PostChat(lover, Pick(mode == ModeBlindRage ? AwakenRage : AwakenTargeted));
+                    // Detective-style colour hint (dark/light only), shown once at the awakening: the
+                    // Revenger never learns WHO the killer is, this narrows it to a colour half. Local
+                    // chat only - ApplyDecision runs on every client but PostChat is gated to the
+                    // Revenger themselves above.
+                    var revKiller = Helpers.playerById(revKillerId);
+                    if (revKiller != null && revKiller.Data != null)
+                        PostChat(lover, $"Revenge instinct: your partner's killer appears to be a "
+                            + $"{(Helpers.isLighterColor(revKiller) ? "lighter" : "darker")} color!");
                     UTSAssets.PlayRevenger(); // dark awakening sting, Revenger-only
                     // A non-killer Revenger awakens NOW (mid-game). Guarantee the kill button exists at
                     // this exact moment - the HudManager.Start creation can be long gone by here, which is
