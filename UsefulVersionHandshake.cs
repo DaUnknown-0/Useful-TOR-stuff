@@ -183,6 +183,48 @@ namespace UsefulTORStuff {
             } catch { return false; }
         }
 
+        // A client mismatches when, for ANY published mod, it has no handshake entry or a non-"ok"
+        // status - the same per-row rule the combined Mod-Check board uses.
+        private static bool ClientMismatched(int clientId) {
+            try {
+                var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
+                foreach (var g in reg.Split(',')) {
+                    if (g.Length == 0) continue;
+                    var stats = AppDomain.CurrentDomain.GetData(HandshakeKeyPrefix + g + ".status")
+                                as Dictionary<int, string>;
+                    if (stats == null || !stats.TryGetValue(clientId, out string token)) return true;
+                    int sep = token.IndexOf(StatusSep);
+                    string code = sep >= 0 ? token.Substring(0, sep) : token;
+                    if (code != "ok") return true;
+                }
+                return false;
+            } catch { return false; }
+        }
+
+        // Lobby name-tag tint: players whose mods don't match get their name ABOVE THEIR HEAD in
+        // Impostor red, so the odd one out is visible at a glance without reading the Mod-Check
+        // board. Only names WE tinted are ever reset back to white (tintedClients), so this never
+        // fights another mod's own lobby name colouring. Lobby-only by construction: called from
+        // GameStartManager.Update, and TOR re-manages name colours once the game starts.
+        private static readonly HashSet<int> tintedClients = new HashSet<int>();
+        private static void TintMismatchedLobbyNames() {
+            try {
+                if (AmongUsClient.Instance == null) return;
+                foreach (InnerNet.ClientData client in AmongUsClient.Instance.allClients.ToArray()) {
+                    var nameText = client?.Character?.cosmetics?.nameText;
+                    if (nameText == null) continue;
+                    if (ClientMismatched(client.Id)) {
+                        nameText.color = Palette.ImpostorRed;
+                        tintedClients.Add(client.Id);
+                    } else if (tintedClients.Remove(client.Id)) {
+                        nameText.color = Color.white;
+                    }
+                }
+            } catch (Exception ex) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"Lobby name tint failed: {ex.Message}");
+            }
+        }
+
         // Builds the combined "Mod-Check" overview from every published handshake snapshot. Sets
         // anyWarn = true if any player is missing/mismatched for any present mod. Returns "" only on
         // error/no data; the all-match case returns a single green confirmation line.
@@ -240,11 +282,12 @@ namespace UsefulTORStuff {
                 sb.Append("\n");
             }
 
-            // <size=130%> — the per-player board was hard to read at GameStartText's default size.
+            // <size=300%> — the per-player board was still hard to read at 130% (playtest feedback:
+            // "mindestens doppelt so groß"), so roughly 2.3x that again.
             if (!anyWarn)
-                return "<size=130%><color=#3FCF4AFF>Mod-Check: all players match ✓</color></size>";
+                return "<size=300%><color=#3FCF4AFF>Mod-Check: all players match ✓</color></size>";
 
-            return "<size=130%><color=#FFD700FF>Mod-Check:</color>\n" + sb.ToString() + "</size>";
+            return "<size=300%><color=#FFD700FF>Mod-Check:</color>\n" + sb.ToString() + "</size>";
         }
 
         // P1.5: Beim Betreten einer Lobby den Versions-Cache leeren. ClientIds sind
@@ -255,6 +298,7 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 playerVersions.Clear();
                 versionSent = false;
+                tintedClients.Clear(); // client ids are per-connection; never carry tints across lobbies
             }
         }
 
@@ -290,6 +334,9 @@ namespace UsefulTORStuff {
                 // F1: publish our own snapshot every lobby frame so the combined overview (which we
                 // own) and any future renderer can read it uniformly.
                 PublishSnapshot();
+
+                // Red name tag above mismatched players' heads (every client, every lobby frame).
+                TintMismatchedLobbyNames();
 
                 // Re-arm the chat post each lobby frame so it fires once per started game (the actual
                 // post happens at game start in IntroEndChatPatch, after this stops running).
