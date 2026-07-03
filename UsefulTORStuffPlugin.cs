@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.2";
+    public const string PluginVersion = "1.3.3";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
@@ -199,6 +199,13 @@ public class UsefulTORStuffPlugin : BasePlugin
         // that reuses TOR's CalculateVotes).
         TiebreakerMultiple.CreateOptions();
         TiebreakerMultiple.TryPatch(harmony);
+
+        // MultiModifiers: quantity options for the single-holder modifiers Mini + Armored. Extra
+        // holders live in own lists and get scale/kill-protection/armor-block re-supplied by
+        // attribute patches (PatchAll); TryPatch adds the reflection patches (getSelectionForRoleId
+        // multiply, assignModifiers top-up, miniUpdate age suffix). Gated on "everyone has the mod".
+        MultiModifiers.CreateOptions();
+        MultiModifiers.TryPatch(harmony);
 
         // Sabotage Tuning: per-sabotage cooldowns (+ per-use reduction) for all menu sabotages and
         // per-sabotage durations for the deadly ones (TOR Settings tab). All MapRoom / InfectedOverlay /
