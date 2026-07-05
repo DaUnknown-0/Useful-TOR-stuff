@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Fixes
+- **Positional sounds no longer break the end-game/lobby UI.** TOR's
+  `playAtPosition` (bomb fuse + explosion, event sounds) destroyed the AudioSource
+  that the vanilla SoundManager owns; every later SoundManager sweep then threw
+  (`ShipStatus.OnDestroy → StopAllSound` at round end) and the "Play Again"/"Leave"
+  buttons went dead because their click sounds run through the corrupted manager.
+  The teardown now uses the managed `StopSound(clip)` instead.
 - **Armored Bomber can plant again.** Planting a bomb "attacks" the bomber himself under
   the hood (to consume Pursuer blanks) — with the Armored modifier that probe broke the
   armor, the bomb never spawned, and the plant button locked up (`isPlanted` was set
