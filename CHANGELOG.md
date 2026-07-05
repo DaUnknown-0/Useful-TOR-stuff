@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixes
+- **Armored Bomber can plant again.** Planting a bomb "attacks" the bomber himself under
+  the hood (to consume Pursuer blanks) — with the Armored modifier that probe broke the
+  armor, the bomb never spawned, and the plant button locked up (`isPlanted` was set
+  anyway). Self-probes now skip the armor check entirely (vanilla Armored AND the
+  multi-Armored extras): the bomb plants normally and the armor stays intact.
+- **Mini/Armored quantities follow TOR's assignment rules.** Extra Mini/Armored holders
+  are now assigned exclusively through TOR's own quantity mechanism (chance tickets):
+  every additional copy still rolls the spawn chance, and all modifiers draw from one
+  shared player pool — max ONE modifier per person. The old host-side top-up (which
+  force-filled the quantity once a single holder spawned, ignoring the chance and
+  stacking Mini+Armored on the same player) is gone.
+
 ### Features
 - **Meeting Map Ping.** Open the map during a meeting and click anywhere: every player
   (with the mod) sees the vanilla HerePoint crewmate icon in YOUR player color at that

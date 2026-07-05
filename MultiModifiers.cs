@@ -16,8 +16,13 @@
  * the "extra" holders (list minus TOR's single) get the modifier behaviour re-supplied by patches:
  *
  * Mini extras (shared growth clock - TOR's Mini growth statics are global, not per-player):
- *   - Assignment: getSelectionForRoleId x quantity (ensured path) + host top-up after assignModifiers
- *     (chance path under-assigns, exactly like the Tiebreaker).
+ *   - Assignment: getSelectionForRoleId x quantity ONLY - that plugs straight into TOR's own
+ *     quantity mechanism (Bloody & co.): 100% puts `quantity` copies into the ensured list,
+ *     otherwise `selection x quantity` chance TICKETS go into the pool, so every extra copy
+ *     still rolls the spawn chance, and assignModifiersToPlayers draws all modifiers from one
+ *     shared player pool = max ONE modifier per person. (An earlier host-side "top-up" that
+ *     force-filled the quantity after the first spawn is deliberately GONE - it bypassed the
+ *     chance and could stack Mini+Armored on the same player; user decision 2026-07-05.)
  *   - Body scale + collider: postfix on PlayerControlFixedUpdatePatch.playerSizeUpdate.
  *   - Age suffix on the name tag: postfix on HudManagerUpdatePatch.miniUpdate (internal, reflection).
  *   - Kill protection while not grown up: postfix on Helpers.checkMuderAttempt (SuppressKill).
@@ -27,9 +32,10 @@
  *   - Impostor extra mini: kill cooldown x2 young / x0.66 grown, re-applied after kills and meetings.
  *
  * Armored extras:
- *   - Assignment: like the Mini (quantity + top-up).
+ *   - Assignment: like the Mini (quantity via TOR's own ticket mechanism).
  *   - Armor block: postfix on Helpers.checkArmored - first kill attempt on an unbroken extra armor
- *     is blocked, the break is synced via our own RPC (246 sub 0) so every client greys the armor.
+ *     is blocked, the break is synced via our own RPC (245 sub 0) so every client greys the armor.
+ *     Ability SELF-probes (bomb plant) are exempt - see BomberArmoredFix.
  *
  * GATING: assignment of extras only happens when EVERY client runs this mod (handshake) - the kill
  * protection/armor block runs on the KILLER's client, so a mixed lobby would let unmodded players
@@ -54,8 +60,6 @@ namespace UsefulTORStuff {
         public static CustomOption MiniQuantity;     // 1350 - child of modifierMini
         public static CustomOption ArmoredQuantity;  // 1351 - child of modifierArmored
 
-        // TOR's SetModifier RPC (enum internal; value stable - see RPC.cs) + our own sync RPC.
-        private const byte TorSetModifierRpcId = 105;
         private const byte RpcId = 245;              // keep globally unique (see ID-Registry.md)
         private const byte SubBreakExtraArmor = 0;   // playerId
 
@@ -63,7 +67,6 @@ namespace UsefulTORStuff {
         private static readonly List<byte> minis = new List<byte>();
         private static readonly List<byte> armoreds = new List<byte>();
         private static readonly HashSet<byte> brokenExtraArmor = new HashSet<byte>();
-        private static readonly System.Random rng = new System.Random();
 
         private static bool EveryoneHasMod() {
             try { return UsefulVersionHandshake.BuildMismatchMessage() == ""; }
@@ -126,12 +129,6 @@ namespace UsefulTORStuff {
                 else
                     UsefulTORStuffPlugin.Logger?.LogWarning("[MultiModifiers] getSelectionForRoleId not found - multi-assignment disabled.");
 
-                var assignModifiers = rmsr?.GetMethod("assignModifiers", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                if (assignModifiers != null)
-                    harmony.Patch(assignModifiers, postfix: new HarmonyMethod(typeof(MultiModifiers), nameof(TopUp)));
-                else
-                    UsefulTORStuffPlugin.Logger?.LogWarning("[MultiModifiers] assignModifiers not found - top-up disabled.");
-
                 // Age suffix: miniUpdate lives in the internal HudManagerUpdatePatch class.
                 var hmu = torAsm.GetType("TheOtherRoles.Patches.HudManagerUpdatePatch");
                 var miniUpdate = hmu?.GetMethod("miniUpdate", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
@@ -141,7 +138,7 @@ namespace UsefulTORStuff {
                     UsefulTORStuffPlugin.Logger?.LogWarning("[MultiModifiers] miniUpdate not found - extra-mini age suffix disabled.");
 
                 UsefulTORStuffPlugin.Logger?.LogInfo(
-                    $"[MultiModifiers][DIAG] getSelectionForRoleId={(gsfr != null)}, assignModifiers={(assignModifiers != null)}, miniUpdate={(miniUpdate != null)}.");
+                    $"[MultiModifiers][DIAG] getSelectionForRoleId={(gsfr != null)}, miniUpdate={(miniUpdate != null)}.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] TryPatch failed: {e}");
             }
@@ -156,46 +153,6 @@ namespace UsefulTORStuff {
                 if (roleId == RoleId.Mini) __result *= MiniQty();
                 else if (roleId == RoleId.Armored) __result *= ArmoredQty();
             } catch { }
-        }
-
-        public static void TopUp() {
-            try {
-                if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
-                if (!EveryoneHasMod()) return;
-                TopUpModifier(RoleId.Mini, CustomOptionHolder.modifierMini, MiniQty(), minis);
-                TopUpModifier(RoleId.Armored, CustomOptionHolder.modifierArmored, ArmoredQty(), armoreds);
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] top-up failed: {e}");
-            }
-        }
-
-        // Ensure up to `want` holders exist - but only if at least one already spawned, preserving
-        // the chance gate (same rule as TiebreakerMultiple.TopUp).
-        private static void TopUpModifier(RoleId modifier, CustomOption spawnOpt, int want, List<byte> holders) {
-            if (spawnOpt == null || spawnOpt.getSelection() <= 0) return;
-            if (holders.Count == 0 || holders.Count >= want) return;
-
-            var eligible = PlayerControl.AllPlayerControls.ToArray()
-                .Where(p => p != null && p.Data != null && !p.Data.Disconnected && !p.Data.IsDead)
-                .Where(p => !holders.Contains(p.PlayerId))
-                .ToList();
-
-            int toAdd = Math.Min(want - holders.Count, eligible.Count);
-            for (int i = 0; i < toAdd; i++) {
-                int idx = rng.Next(eligible.Count);
-                byte playerId = eligible[idx].PlayerId;
-                eligible.RemoveAt(idx);
-
-                MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
-                    PlayerControl.LocalPlayer.NetId, TorSetModifierRpcId, SendOption.Reliable, -1);
-                writer.Write((byte)modifier);
-                writer.Write(playerId);
-                writer.Write((byte)0); // flag
-                AmongUsClient.Instance.FinishRpcImmediately(writer);
-                RPCProcedure.setModifier((byte)modifier, playerId, 0); // tracked by SetModifierPatch
-            }
-            UsefulTORStuffPlugin.Logger?.LogInfo(
-                $"[MultiModifiers] {modifier} holders after top-up: {holders.Count} (target {want}).");
         }
 
         // Track every holder (TOR's statics only keep the LAST-assigned one).
@@ -418,6 +375,8 @@ namespace UsefulTORStuff {
             public static void Postfix(ref bool __result, PlayerControl target, bool breakShield,
                                        bool showShield, bool additionalCondition) {
                 try {
+                    // Ability self-probes (bomb plant etc.) never hit armor - see BomberArmoredFix.
+                    if (BomberArmoredFix.InSelfCheck) return;
                     if (__result || target == null || !additionalCondition) return;
                     if (!IsExtraArmored(target.PlayerId) || brokenExtraArmor.Contains(target.PlayerId)) return;
 
