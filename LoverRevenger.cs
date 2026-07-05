@@ -99,8 +99,19 @@ namespace UsefulTORStuff {
         // Revenger up by RoleId; TryAdd in the RoleInfo ctor no-ops since Lover is already registered).
         private static RoleInfo revengerInfo;
         private static RoleInfo RevengerInfo() =>
-            revengerInfo ??= new RoleInfo("Revenger", Lovers.color,
-                "Avenge your fallen partner", "Avenge your fallen partner", RoleId.Lover, true);
+            revengerInfo ??= new RoleInfo(UTSLocalization.Tr("uts.loverrevenger.role_name"), Lovers.color,
+                UTSLocalization.Tr("uts.loverrevenger.role_desc"), UTSLocalization.Tr("uts.loverrevenger.role_desc"),
+                RoleId.Lover, true);
+
+        // The RoleInfo above is built lazily once and then cached, so a later language switch would
+        // otherwise leave its name/description stale (same pitfall as DrunkRename) - re-push the
+        // translated texts into the already-created instance on every language (re)apply.
+        private static void ReapplyRevengerInfoLanguage() {
+            if (revengerInfo == null) return;
+            revengerInfo.name = UTSLocalization.Tr("uts.loverrevenger.role_name");
+            revengerInfo.introDescription = UTSLocalization.Tr("uts.loverrevenger.role_desc");
+            revengerInfo.shortDescription = UTSLocalization.Tr("uts.loverrevenger.role_desc");
+        }
 
         // Make the Revenger guessable by listing its (singleton) RoleInfo in allRoleInfos while the
         // feature is active. The Guesser UI builds its options from allRoleInfos, and correctness is a
@@ -151,35 +162,35 @@ namespace UsefulTORStuff {
         // GameHistory is internal in TOR, so its death-reason override is called via reflection.
         private static MethodInfo overrideDeathMethod;
 
-        // ---- Flavor texts ----
+        // ---- Flavor texts (localization keys; resolved via UTSLocalization.Tr at use time) ----
         private static readonly string[] GriefTexts = {
-            "A part of your soul was just ripped away. The silence where their heartbeat was is deafening.",
-            "Your other half is gone. Grief claws at you — will it break you, or forge you into something darker?",
-            "You can still feel their hand in yours, though it's growing cold. Something inside you is changing.",
-            "The world tilts. Half of you is dead, and the other half is starting to burn.",
-            "Their love kept you whole. Now only the wreckage remains... and a terrible, rising urge."
+            "uts.loverrevenger.grief_1",
+            "uts.loverrevenger.grief_2",
+            "uts.loverrevenger.grief_3",
+            "uts.loverrevenger.grief_4",
+            "uts.loverrevenger.grief_5"
         };
         private static readonly string[] AwakenTargeted = {
-            "You know exactly who did this. Hunt them down — and only them.",
-            "Grief sharpens into purpose. Their killer will answer to you, and no one else."
+            "uts.loverrevenger.awaken_targeted_1",
+            "uts.loverrevenger.awaken_targeted_2"
         };
         private static readonly string[] AwakenRage = {
-            "Rage takes hold. Someone is going to bleed for this.",
-            "You can't think straight — only the killing will quiet the screaming inside."
+            "uts.loverrevenger.awaken_rage_1",
+            "uts.loverrevenger.awaken_rage_2"
         };
         private static readonly string[] RageDeathTexts = {
-            "Your rage blinded you, and once you cooled down you saw an innocent's blood on your hands. The guilt finishes what grief started.",
-            "When the red haze lifted, you understood what you'd done. You could not live with it.",
-            "You struck out in fury and ended the wrong life. Shame swallows you whole.",
-            "Vengeance demanded blood, but it was the wrong blood. Your heart simply gives out.",
-            "The fog of wrath clears too late — an innocent lies dead, and you cannot bear to remain."
+            "uts.loverrevenger.rage_death_1",
+            "uts.loverrevenger.rage_death_2",
+            "uts.loverrevenger.rage_death_3",
+            "uts.loverrevenger.rage_death_4",
+            "uts.loverrevenger.rage_death_5"
         };
         private static readonly string[] RevengeDeniedTexts = {
-            "Someone else got to your partner's killer first. With nothing left to avenge, your heart gives out.",
-            "Your target is dead — by another hand. The revenge that kept you breathing is gone, and so are you.",
-            "They died before you could make them pay. Robbed of your vengeance, you fade away.",
-            "Justice found your enemy without you. Empty and purposeless, you follow your love into the dark.",
-            "The one you swore to kill is already gone. There is nothing left to hold you here."
+            "uts.loverrevenger.denied_1",
+            "uts.loverrevenger.denied_2",
+            "uts.loverrevenger.denied_3",
+            "uts.loverrevenger.denied_4",
+            "uts.loverrevenger.denied_5"
         };
 
         // ====================================================================
@@ -199,15 +210,25 @@ namespace UsefulTORStuff {
                 DelayOption = CustomOption.Create(
                     1294, Types.Modifier, "Delay Lover Death (Revenger)",
                     false, CustomOptionHolder.modifierLover);
+                UTSLocalization.BindOptionTitle(DelayOption, "uts.loverrevenger.option_delay");
                 RevengerChance = CustomOption.Create(
                     1295, Types.Modifier, "Chance Surviving Lover Becomes Revenger",
                     CustomOptionHolder.rates, DelayOption);
+                UTSLocalization.BindOptionTitle(RevengerChance, "uts.loverrevenger.option_chance");
                 RevengerMode = CustomOption.Create(
                     1296, Types.Modifier, "Revenger Mode",
                     new string[] { "Targeted Justice", "Blind Rage" }, DelayOption);
+                UTSLocalization.BindOptionTitle(RevengerMode, "uts.loverrevenger.option_mode");
+                UTSLocalization.BindOptionSelections(RevengerMode,
+                    "uts.loverrevenger.mode_targeted", "uts.loverrevenger.mode_blindrage");
                 RevengerCooldown = CustomOption.Create(
                     1297, Types.Modifier, "Revenger Kill Cooldown",
                     30f, 10f, 60f, 2.5f, DelayOption);
+                UTSLocalization.BindOptionTitle(RevengerCooldown, "uts.loverrevenger.option_cooldown");
+
+                // Reapply the Revenger's cached RoleInfo texts on every language switch (see
+                // ReapplyRevengerInfoLanguage above); subscribed once here alongside option creation.
+                UTSLocalization.LanguageApplied += ReapplyRevengerInfoLanguage;
 
                 // Place directly under the existing Lover modifier options (same approach as
                 // LawyerLoverTracker). Insert after "Enable Lover Chat" (or the tracker options).
@@ -444,15 +465,15 @@ namespace UsefulTORStuff {
                 revengerMode = mode;
                 killerId = revKillerId;
                 if (lover == PlayerControl.LocalPlayer) {
-                    PostChat(lover, Pick(mode == ModeBlindRage ? AwakenRage : AwakenTargeted));
+                    PostChat(lover, UTSLocalization.Tr(Pick(mode == ModeBlindRage ? AwakenRage : AwakenTargeted)));
                     // Detective-style colour hint (dark/light only), shown once at the awakening: the
                     // Revenger never learns WHO the killer is, this narrows it to a colour half. Local
                     // chat only - ApplyDecision runs on every client but PostChat is gated to the
                     // Revenger themselves above.
                     var revKiller = Helpers.playerById(revKillerId);
                     if (revKiller != null && revKiller.Data != null)
-                        PostChat(lover, $"Revenge instinct: your partner's killer appears to be a "
-                            + $"{(Helpers.isLighterColor(revKiller) ? "lighter" : "darker")} color!");
+                        PostChat(lover, UTSLocalization.Tr("uts.loverrevenger.color_hint",
+                            Helpers.isLighterColor(revKiller) ? "lighter" : "darker"));
                     UTSAssets.PlayRevenger(); // dark awakening sting, Revenger-only
                     // A non-killer Revenger awakens NOW (mid-game). Guarantee the kill button exists at
                     // this exact moment - the HudManager.Start creation can be long gone by here, which is
@@ -479,7 +500,7 @@ namespace UsefulTORStuff {
                 OverrideLoverSuicide(rev);
             }
             if (msgIndex < RageDeathTexts.Length)
-                PostChat(rev, RageDeathTexts[msgIndex]);
+                PostChat(rev, UTSLocalization.Tr(RageDeathTexts[msgIndex]));
             revenger = null;
         }
 
@@ -491,7 +512,7 @@ namespace UsefulTORStuff {
                 OverrideLoverSuicide(rev);
             }
             if (msgIndex < RevengeDeniedTexts.Length)
-                PostChat(rev, RevengeDeniedTexts[msgIndex]);
+                PostChat(rev, UTSLocalization.Tr(RevengeDeniedTexts[msgIndex]));
             revenger = null;
         }
 
@@ -690,7 +711,7 @@ namespace UsefulTORStuff {
                     if (!pendingArmed || griefChatShown) return;
                     if (pendingLover != null && pendingLover == PlayerControl.LocalPlayer) {
                         griefChatShown = true;
-                        PostChat(pendingLover, Pick(GriefTexts));
+                        PostChat(pendingLover, UTSLocalization.Tr(Pick(GriefTexts)));
                     }
                 } catch { }
             }
@@ -923,7 +944,8 @@ namespace UsefulTORStuff {
                         __instance.WinText.transform.position.z);
                     bonusText.transform.localScale = new Vector3(0.7f, 0.7f, 1f);
                     TMPro.TMP_Text tr = bonusText.GetComponent<TMPro.TMP_Text>();
-                    tr.text = "Lovers Win"; // the Revenger win counts as a Lovers win (just the two of them)
+                    // the Revenger win counts as a Lovers win (just the two of them)
+                    tr.text = UTSLocalization.Tr("uts.loverrevenger.endscreen_lovers_win");
                     tr.color = Lovers.color;
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] win text failed: {e}");

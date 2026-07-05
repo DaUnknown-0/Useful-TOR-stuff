@@ -153,7 +153,7 @@ namespace UsefulTORStuff {
 
                 button = popup.transform.GetChild(2).gameObject;
                 button.SetActive(false);
-                popup.TextAreaTMP.text = "Updating TOR - Forgotten Fixes\nPlease wait...";
+                popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.updating_wait");
             }
 
             var asset = release.Assets.Find(FilterPluginAsset);
@@ -167,8 +167,8 @@ namespace UsefulTORStuff {
                 _updateProgress = www.downloadProgress;
                 if (!managerMode) {
                     int stars = Mathf.CeilToInt(www.downloadProgress * 10);
-                    string progress = $"Updating TOR - Forgotten Fixes\nPlease wait...\nDownloading...\n{new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars)}";
-                    popup.TextAreaTMP.text = progress;
+                    string bar = new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars);
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.downloading_progress", bar);
                 }
                 yield return new WaitForEndOfFrame();
             }
@@ -176,14 +176,14 @@ namespace UsefulTORStuff {
             if (www.isNetworkError || www.isHttpError) {
                 _updateState = 3;
                 if (!managerMode) {
-                    popup.TextAreaTMP.text = "Update wasn't successful\nTry again later,\nor update manually.";
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_failed");
                     button.SetActive(true);
                 }
                 _busy = false;
                 yield break;
             }
             if (!managerMode) {
-                popup.TextAreaTMP.text = "Updating TOR - Forgotten Fixes\nPlease wait...\n\nDownload complete\ncopying file...";
+                popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.download_complete");
             }
 
             var filePath = Path.Combine(Paths.PluginPath, asset.Name);
@@ -208,7 +208,7 @@ namespace UsefulTORStuff {
             if (!hasError) {
                 _updateState = 2;
                 if (!managerMode) {
-                    popup.TextAreaTMP.text = "TOR - Forgotten Fixes\nupdated successfully\nPlease restart the game.";
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_success");
                 }
             } else {
                 _updateState = 3;
@@ -265,17 +265,17 @@ namespace UsefulTORStuff {
             }));
 
             var text = button.transform.GetComponentInChildren<TMPro.TMP_Text>();
-            string t = "Update TOR - Forgotten Fixes";
+            string t = UTSLocalization.Tr("uts.updater.button_label");
             StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(t))));
             passiveButton.OnMouseOut.AddListener((Action)(() => text.color = Color.green));
             passiveButton.OnMouseOver.AddListener((Action)(() => text.color = Color.white));
             text.color = Color.green;
 
             if (_showPopUp) {
-                var announcement = $"<size=150%>A new TOR - FORGOTTEN FIXES update to {latestRelease.Tag} is available</size>\n{latestRelease.Description}";
+                var announcement = UTSLocalization.Tr("uts.updater.announcement_new_update", latestRelease.Tag, latestRelease.Description);
                 var mgr = FindObjectOfType<MainMenuManager>(true);
                 if (mgr != null)
-                    mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: "TOR - Forgotten Fixes Update", date: latestRelease.PublishedAt));
+                    mgr.StartCoroutine(CoShowAnnouncement(announcement, shortTitle: UTSLocalization.Tr("uts.updater.announcement_short_title"), date: latestRelease.PublishedAt));
             }
             _showPopUp = false;
         }
@@ -307,23 +307,24 @@ namespace UsefulTORStuff {
             foreach (var m in mods) {
                 bool has = false;
                 try { has = m.RuntimeEnabled && (m.HasUpdate?.Invoke() ?? false); } catch { }
-                if (has) names.Add($"• <b>{m.Name}</b> <size=80%>(v{m.Version})</size>");
+                if (has) names.Add(UTSLocalization.Tr("uts.updater.mod_list_line", m.Name, m.Version));
             }
 
             if (names.Count == 0) yield break;
 
-            string announcement =
-                "<size=130%>Mod Updates Available</size>\n\n" +
-                $"The following mod{(names.Count == 1 ? "" : "s")} can be updated:\n\n" +
-                string.Join("\n", names) +
-                "\n\nOpen the <b>Mod Manager</b> from the main menu to update.";
+            string announcement = UTSLocalization.Tr("uts.updater.consolidated_announcement",
+                names.Count == 1 ? "" : "s", string.Join("\n", names));
 
             yield return this.StartCoroutine(CoShowAnnouncement(
-                announcement, shortTitle: "Mod Updates", title: "Mod Updates Available"));
+                announcement, shortTitle: UTSLocalization.Tr("uts.updater.consolidated_short_title"),
+                title: UTSLocalization.Tr("uts.updater.consolidated_title")));
         }
 
         [HideFromIl2Cpp]
-        public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = "TOR - Forgotten Fixes Update", string title = "", string date = "") {
+        public IEnumerator CoShowAnnouncement(string announcement, bool show = true, string shortTitle = null, string title = "", string date = "") {
+            // Default kept as null (not a Tr() call — default parameter values must be compile-time
+            // constants) and resolved here so it still picks up the current language.
+            if (shortTitle == null) shortTitle = UTSLocalization.Tr("uts.updater.announcement_short_title");
             // Stagger behind other mods so the other update popups appear first.
             yield return new WaitForSeconds(2f);
             // Show last of all mods. The other updaters wait for a clear popup field and then
@@ -358,7 +359,7 @@ namespace UsefulTORStuff {
                 Id = "usefulTORStuffAnnouncement",
                 Language = 0,
                 Number = 6972,
-                Title = title == "" ? "TOR - Forgotten Fixes Announcement" : title,
+                Title = title == "" ? UTSLocalization.Tr("uts.updater.announcement_default_title") : title,
                 ShortTitle = shortTitle,
                 SubTitle = "",
                 PinState = false,

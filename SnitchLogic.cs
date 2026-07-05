@@ -585,8 +585,8 @@ public static class SnitchLogic
                 }
                 else
                 {
-                    text.text = $"Snitch is alive: {playerCompleted}/{playerTotal}";
-                    if (snitchIsDead) text.text = "Snitch is dead!";
+                    text.text = UTSLocalization.Tr("uts.snitchlogic.snitch_alive_hud", playerCompleted, playerTotal);
+                    if (snitchIsDead) text.text = UTSLocalization.Tr("uts.snitchlogic.snitch_dead_hud");
                 }
             }
             else if (text != null)
@@ -657,7 +657,7 @@ public static class SnitchLogic
         int numberOfTasks = playerTotal - playerCompleted;
         if (numberOfTasks != 0) return;
 
-        string output = "Bad alive roles in game: \n \n";
+        string output = UTSLocalization.Tr("uts.snitchlogic.reveal_header");
         var hud = DestroyableSingleton<HudManager>.Instance;
         if (hud == null) return;
 
@@ -681,7 +681,7 @@ public static class SnitchLogic
                 if (room != byte.MinValue)
                     roomName = DestroyableSingleton<TranslationController>.Instance.GetString((SystemTypes)room);
 
-                output += "- " + CallGetRolesString(player, false, false, true) + ", was last seen " + roomName + "\n";
+                output += UTSLocalization.Tr("uts.snitchlogic.reveal_line", CallGetRolesString(player, false, false, true), roomName);
             }
 
             AddChatMessage(snitch, output);

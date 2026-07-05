@@ -39,6 +39,7 @@ namespace UsefulTORStuff {
             try {
                 Option = CustomOption.Create(
                     1290, Types.Modifier, "Inverted Vision", false, CustomOptionHolder.modifierInvert);
+                UTSLocalization.BindOptionTitle(Option, "uts.invertvision.option_name");
 
                 var opts = CustomOption.options;
                 opts.Remove(Option);

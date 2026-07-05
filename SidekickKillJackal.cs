@@ -40,6 +40,7 @@ namespace UsefulTORStuff {
                     1240, Types.Neutral, "Sidekick Can Kill Jackal",
                     false, CustomOptionHolder.jackalCanCreateSidekickFromImpostor,
                     invertedParent: true);
+                UTSLocalization.BindOptionTitle(Option, "uts.sidekickkilljackal.option_name");
 
                 var opts = CustomOption.options;
                 opts.Remove(Option);

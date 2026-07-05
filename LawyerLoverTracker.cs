@@ -40,9 +40,13 @@ namespace UsefulTORStuff {
         public static void CreateOptions() {
             try {
                 LawyerRound = CustomOption.Create(1280, Types.Neutral, "Lawyer Knows Target Position", false, CustomOptionHolder.lawyerSpawnRate);
+                UTSLocalization.BindOptionTitle(LawyerRound, "uts.lawyerlovertracker.lawyer_round");
                 LawyerMeeting = CustomOption.Create(1281, Types.Neutral, "...Last Position Visible In Meeting", false, LawyerRound);
+                UTSLocalization.BindOptionTitle(LawyerMeeting, "uts.lawyerlovertracker.meeting_suffix");
                 LoverRound = CustomOption.Create(1282, Types.Modifier, "Lover Knows Partner Position", false, CustomOptionHolder.modifierLover);
+                UTSLocalization.BindOptionTitle(LoverRound, "uts.lawyerlovertracker.lover_round");
                 LoverMeeting = CustomOption.Create(1283, Types.Modifier, "...Last Position Visible In Meeting", false, LoverRound);
+                UTSLocalization.BindOptionTitle(LoverMeeting, "uts.lawyerlovertracker.meeting_suffix");
 
                 var opts = CustomOption.options;
                 foreach (var o in new[] { LawyerRound, LawyerMeeting }) opts.Remove(o);

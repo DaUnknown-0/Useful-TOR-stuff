@@ -89,9 +89,11 @@ namespace UsefulTORStuff {
                 MiniQuantity = CustomOption.Create(
                     1350, Types.Modifier, "Mini Quantity (max 3)",
                     new string[] { "1", "2", "3" }, CustomOptionHolder.modifierMini);
+                UTSLocalization.BindOptionTitle(MiniQuantity, "uts.multimodifiers.mini_quantity");
                 ArmoredQuantity = CustomOption.Create(
                     1351, Types.Modifier, "Armored Quantity (max 3)",
                     new string[] { "1", "2", "3" }, CustomOptionHolder.modifierArmored);
+                UTSLocalization.BindOptionTitle(ArmoredQuantity, "uts.multimodifiers.armored_quantity");
 
                 var opts = CustomOption.options;
                 opts.Remove(MiniQuantity);
@@ -302,10 +304,10 @@ namespace UsefulTORStuff {
                 float progress = Mini.growingProgress();
                 string suffix = "";
                 if (progress != 1f)
-                    suffix = " <color=#FAD934FF>(" + Mathf.FloorToInt(progress * 18) + ")</color>";
+                    suffix = "<color=#FAD934FF>" + UTSLocalization.Tr("uts.multimodifiers.age_suffix", Mathf.FloorToInt(progress * 18)) + "</color>";
                 if (!Mini.isGrowingUpInMeeting && MeetingHud.Instance != null
                     && Mini.ageOnMeetingStart != 0 && !(Mini.ageOnMeetingStart >= 18))
-                    suffix = " <color=#FAD934FF>(" + Mini.ageOnMeetingStart + ")</color>";
+                    suffix = "<color=#FAD934FF>" + UTSLocalization.Tr("uts.multimodifiers.age_suffix", Mini.ageOnMeetingStart) + "</color>";
                 if (suffix == "") return;
 
                 foreach (byte id in minis) {

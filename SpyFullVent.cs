@@ -49,6 +49,7 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1250, Types.Crewmate, "Spy Can Fully Vent",
                     false, CustomOptionHolder.spyCanEnterVents);
+                UTSLocalization.BindOptionTitle(Option, "uts.spyfullvent.option_name");
 
                 // Place it directly under "Spy Can Enter Vents" so it reads as nested beneath it.
                 var opts = CustomOption.options;

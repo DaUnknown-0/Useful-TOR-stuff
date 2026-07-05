@@ -24,11 +24,6 @@ namespace UsefulTORStuff {
     public static class DrunkRename {
         public static CustomOption Option;
 
-        private const string OriginalName       = "Invert";
-        private const string OriginalIntroDesc  = "Your movement is inverted";
-        private const string DrunkName          = "Drunk";
-        private const string DrunkIntroDesc     = "ArEeee you D-D-druuunk?";
-
         public static void CreateOptions() {
             try {
                 // ID 1311: must be unique. 1310 collided with TiebreakerMultiple's "Tiebreaker
@@ -37,6 +32,7 @@ namespace UsefulTORStuff {
                     1311, Types.Modifier, "Rename to Drunk",
                     false, CustomOptionHolder.modifierInvert,
                     onChange: () => ApplyRename(Option.getBool()));
+                UTSLocalization.BindOptionTitle(Option, "uts.drunkrename.option_name");
 
                 var opts = CustomOption.options;
                 opts.Remove(Option);
@@ -47,6 +43,11 @@ namespace UsefulTORStuff {
                 // Apply immediately if already saved as ON in the config
                 if (Option.getBool()) ApplyRename(true);
 
+                // LocalizationTOR re-applies TOR's own RoleInfo/CustomOption strings on every
+                // language switch, which would overwrite the Drunk rename with "Invert" again.
+                // Re-apply ours afterwards (LanguageApplied fires after LocalizationTOR.Apply()).
+                UTSLocalization.LanguageApplied += () => ApplyRename(Option.getBool());
+
                 UsefulTORStuffPlugin.Logger?.LogInfo("[DrunkRename] Option created.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[DrunkRename] CreateOptions failed: {e}");
@@ -55,13 +56,17 @@ namespace UsefulTORStuff {
 
         private static void ApplyRename(bool enable) {
             try {
-                string n    = enable ? DrunkName      : OriginalName;
-                string desc = enable ? DrunkIntroDesc : OriginalIntroDesc;
+                string n    = enable ? UTSLocalization.Tr("uts.drunkrename.name_drunk")
+                                     : UTSLocalization.Tr("uts.drunkrename.name_invert_original");
+                string desc = enable ? UTSLocalization.Tr("uts.drunkrename.intro_desc_drunk")
+                                     : UTSLocalization.Tr("uts.drunkrename.intro_desc_invert");
 
                 CustomOptionHolder.modifierInvert.name         = Helpers.cs(Color.yellow, n);
-                CustomOptionHolder.modifierInvertQuantity.name = $"- {n} Quantity";
-                CustomOptionHolder.modifierInvertDuration.name =
-                    enable ? "- Number Of Meetings Drunk" : "- Number Of Meetings Inverted";
+                CustomOptionHolder.modifierInvertQuantity.name =
+                    UTSLocalization.Tr("uts.drunkrename.quantity_label", n);
+                CustomOptionHolder.modifierInvertDuration.name = enable
+                    ? UTSLocalization.Tr("uts.drunkrename.duration_label_drunk")
+                    : UTSLocalization.Tr("uts.drunkrename.duration_label_invert");
 
                 RoleInfo.invert.name             = n;
                 RoleInfo.invert.introDescription = desc;

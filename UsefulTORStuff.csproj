@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
-        <Version>1.3.3</Version>
+        <Version>1.3.3.1</Version>
         <Description>TOR - Forgotten Fixes - Bloody-modifier lag throttle and gated client-side Snitch reveal/map/HUD reimplementation</Description>
         <Authors>DaUnknown-0</Authors>
         <LangVersion>latest</LangVersion>
@@ -26,6 +26,10 @@
         <EmbeddedResource Include="Resources\uts_mixup.raw" LogicalName="UsefulTORStuff.Resources.uts_mixup.raw" />
         <EmbeddedResource Include="Resources\uts_bombcancel.raw" LogicalName="UsefulTORStuff.Resources.uts_bombcancel.raw" />
         <EmbeddedResource Include="Resources\uts_revenger.raw" LogicalName="UsefulTORStuff.Resources.uts_revenger.raw" />
+        <EmbeddedResource Include="Resources\webconfig.html" LogicalName="UsefulTORStuff.Resources.webconfig.html" />
+        <!-- Localization tables (UTSLocalization): one flat JSON map per language, plus
+             vanilla.<code>.json overrides for the non-vanilla (tier B) languages. -->
+        <EmbeddedResource Include="Resources\Localization\*.json" LogicalName="UsefulTORStuff.Resources.Localization.%(Filename)%(Extension)" />
     </ItemGroup>
 
     <ItemGroup>

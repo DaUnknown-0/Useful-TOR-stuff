@@ -50,10 +50,13 @@ namespace UsefulTORStuff {
             try {
                 TrappedOption = CustomOption.Create(
                     1270, Types.Crewmate, "Trapped Players Limp", false, CustomOptionHolder.trapperSpawnRate);
+                UTSLocalization.BindOptionTitle(TrappedOption, "uts.trapperlimp.trapped_option");
                 SelfOption = CustomOption.Create(
                     1271, Types.Crewmate, "Trapper Can Self-Limp", false, CustomOptionHolder.trapperSpawnRate);
+                UTSLocalization.BindOptionTitle(SelfOption, "uts.trapperlimp.self_option");
                 StrengthOption = CustomOption.Create(
                     1272, Types.Crewmate, "Limp Speed Multiplier", 0.5f, 0.25f, 0.9f, 0.05f, CustomOptionHolder.trapperSpawnRate);
+                UTSLocalization.BindOptionTitle(StrengthOption, "uts.trapperlimp.strength_option");
                 // CustomOption.Create builds the float selections by accumulating `+= 0.05f`, which
                 // drifts (e.g. 0.7000000001) and shows up raw in the menu and getFloat(). The 0.05
                 // step isn't binary-exact; round each entry to 2 decimals so display + value are clean.
@@ -62,6 +65,7 @@ namespace UsefulTORStuff {
                         StrengthOption.selections[i] = Mathf.Round((float)StrengthOption.selections[i] * 100f) / 100f;
                 DurationOption = CustomOption.Create(
                     1273, Types.Crewmate, "Limp Duration After Freeze", 5f, 1f, 20f, 1f, CustomOptionHolder.trapperSpawnRate);
+                UTSLocalization.BindOptionTitle(DurationOption, "uts.trapperlimp.duration_option");
 
                 var opts = CustomOption.options;
                 foreach (var o in new[] { TrappedOption, SelfOption, StrengthOption, DurationOption }) opts.Remove(o);
@@ -184,7 +188,7 @@ namespace UsefulTORStuff {
                         __instance,
                         KeyCode.H,
                         false,
-                        "LIMP"
+                        UTSLocalization.Tr("uts.trapperlimp.button_label")
                     );
                     selfLimpButton.MaxTimer = 0f;
                     selfLimpButton.Timer = -1f;

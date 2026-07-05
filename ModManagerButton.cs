@@ -56,7 +56,7 @@ namespace UsefulTORStuff
 
                 // Text setzen
                 var text = _button.transform.GetComponentInChildren<TMPro.TMP_Text>();
-                string buttonText = "Mod Manager";
+                string buttonText = UTSLocalization.Tr("uts.modmanagerbutton.label");
                 this.StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => {
                     if (text != null) text.SetText(buttonText);
                 })));

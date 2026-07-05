@@ -3,6 +3,49 @@
 ## Unreleased
 
 ### Features
+- **Meeting Map Ping.** Open the map during a meeting and click anywhere: every player
+  (with the mod) sees the vanilla HerePoint crewmate icon in YOUR player color at that
+  spot — one marker per player, a new click moves yours, with a red shader outline
+  (the vanilla kill-target highlight mechanism) so pings are distinguishable from the
+  map's own icons. Markers expire after 10 seconds; placing has a 2-second per-player
+  cooldown (enforced on send AND receive). Only alive players can ping (no
+  ghost-knowledge leaks); markers also clear when the meeting ends. Synced via RPC 254
+  (map-local coordinates, so it is map-agnostic); host toggle "Meeting Map Ping
+  (Click On Map)" (option 1360, General tab).
+- **On-the-fly language dropdown on the meeting map.** A "[ Language: … v ]" button in
+  the bottom-right corner of the MEETING minimap opens a 3-column grid (auto + all 26
+  languages, current one highlighted); clicking an entry applies instantly (same live
+  re-apply path as the config entry). For languages Among Us itself offers it also
+  switches the WHOLE game (CurrentLanguage setter + TranslationController.SetLanguage
+  via the Languages TranslatedImageSet — vanilla TextTranslatorTMP labels refresh live);
+  extra (tier-B) languages leave the vanilla language untouched. Renders above the map
+  background (explicit sorting copied from HerePoint — a plain TMP is drawn behind the
+  map and invisible) and hit-tests through the UI Camera, not Camera.main.
+- **Ping placement effect.** New/moved map pings pop in oversized and emit a short
+  growing pulse ring, fired the moment a viewer first sees the ping (also when opening
+  the map only afterwards).
+- **UC + HostFix adopted the localization system.** Unknown's Collection (own uc.* tables,
+  roles/options translated by pristine-English text match, 86 dynamic call sites on Tr())
+  and TOR - Hostfix (hostfix.* tables, updater + credit lines) now follow the shared
+  language (AppDomain contract UTS.Loc.ActiveCode/Epoch) — including the previously
+  German-only Saboteur scan/Tesla indicator HUD texts, which are now properly localized.
+- **Localization engine (UTSLocalization).** All mod texts — TOR's roles, descriptions and the
+  complete settings tree (option names, headings, dropdown values) plus every Forgotten-Fixes
+  string — are now translated into the 15 vanilla Among Us languages **and 10 extra languages**
+  the game itself does not offer (Turkish, Polish, Czech, Hungarian, Romanian, Swedish, Finnish,
+  Ukrainian, Indonesian, Vietnamese). Language follows the vanilla game setting automatically;
+  the extra languages are selected via the `Localization.ModLanguage` config entry (per client —
+  deliberately not a host-synced option). Role NAMES stay English in all languages so mixed
+  lobbies keep a common vocabulary. Community fixes/additions: drop a `<code>.json` into
+  `BepInEx/config/UTSLocalization/` to override any key without rebuilding. For the extra
+  languages the engine can also replace **vanilla** strings (`TranslationController.GetString`
+  postfix); the translated vanilla tables are generated from a one-time dump
+  (`vanilla_dump_<lang>.json`, written automatically in the main menu) and will ship in a later
+  build. TOR's original source stays untouched: roles/options are re-titled by mutating the
+  public string fields at runtime and restored on language switch. UC/HostFix pick the language
+  up via the shared `UTS.Loc.ActiveCode`/`UTS.Loc.Epoch` AppDomain contract (adoption pending).
+  Not yet localized: the WebConfig browser page and a handful of TOR-internal composed UI texts
+  (endgame/exile lines built inline in TOR patches).
 - **Delay Lover Death + Revenger (Lovers modifier).** New Lover option chain (client-side, gated on
   "everyone has the mod"). With **Delay Lover Death** ON — and only when the first Lover was *killed*
   (not exiled) while "Both Lovers Die" is ON — the surviving Lover's instant suicide is suppressed and

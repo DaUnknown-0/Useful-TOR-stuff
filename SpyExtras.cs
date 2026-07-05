@@ -58,19 +58,26 @@ namespace UsefulTORStuff {
                 OptionDeathFlash = CustomOption.Create(
                     1320, Types.Crewmate, "Evil Flash on Death",
                     false, CustomOptionHolder.spySpawnRate);
+                UTSLocalization.BindOptionTitle(OptionDeathFlash, "uts.spyextras.death_flash_option");
 
                 OptionSeerTrueFlash = CustomOption.Create(
                     1321, Types.Crewmate, "Seer Sees True Flash",
                     false, OptionDeathFlash);
+                UTSLocalization.BindOptionTitle(OptionSeerTrueFlash, "uts.spyextras.seer_true_flash_option");
 
                 OptionShifterInteraction = CustomOption.Create(
                     1322, Types.Crewmate, "Shifter Interaction",
                     ShifterModes, CustomOptionHolder.spySpawnRate);
+                UTSLocalization.BindOptionTitle(OptionShifterInteraction, "uts.spyextras.shifter_interaction_option");
+                UTSLocalization.BindOptionSelections(OptionShifterInteraction,
+                    "uts.spyextras.shifter_mode_succeeds", "uts.spyextras.shifter_mode_dies",
+                    "uts.spyextras.shifter_mode_cancelled");
 
                 // Shown when OptionShifterInteraction > 0 (any non-vanilla mode)
                 OptionShifterGetsShiftBack = CustomOption.Create(
                     1323, Types.Crewmate, "Shifter Gets Shift Back",
                     false, OptionShifterInteraction);
+                UTSLocalization.BindOptionTitle(OptionShifterGetsShiftBack, "uts.spyextras.shifter_giveback_option");
 
                 var opts = CustomOption.options;
                 opts.Remove(OptionDeathFlash);

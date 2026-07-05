@@ -101,26 +101,41 @@ namespace UsefulTORStuff {
             try {
                 Enabled = CustomOption.Create(
                     1330, Types.General, "Sabotage Tuning", false, null, true);
+                UTSLocalization.BindOptionTitle(Enabled, "uts.sabotagetuning.enabled");
 
                 minCooldownOpt = CustomOption.Create(1344, Types.General, "Minimum Cooldown (Reduction Floor)", 10f, 0f, 30f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(minCooldownOpt, "uts.sabotagetuning.min_cooldown");
 
                 cdOpt[(int)SabType.Reactor] = CustomOption.Create(1331, Types.General, "Reactor/Meltdown Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Reactor], "uts.sabotagetuning.reactor_cooldown");
                 redOpt[(int)SabType.Reactor] = CustomOption.Create(1332, Types.General, "Reactor/Meltdown Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
+                UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Reactor], "uts.sabotagetuning.reactor_cooldown_reduction");
                 reactorDur = CustomOption.Create(1333, Types.General, "Reactor/Meltdown Duration", 30f, 10f, 90f, 5f, Enabled);
+                UTSLocalization.BindOptionTitle(reactorDur, "uts.sabotagetuning.reactor_duration");
 
                 cdOpt[(int)SabType.Oxygen] = CustomOption.Create(1334, Types.General, "Oxygen Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Oxygen], "uts.sabotagetuning.oxygen_cooldown");
                 redOpt[(int)SabType.Oxygen] = CustomOption.Create(1335, Types.General, "Oxygen Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
+                UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Oxygen], "uts.sabotagetuning.oxygen_cooldown_reduction");
                 oxygenDur = CustomOption.Create(1336, Types.General, "Oxygen Duration", 30f, 10f, 90f, 5f, Enabled);
+                UTSLocalization.BindOptionTitle(oxygenDur, "uts.sabotagetuning.oxygen_duration");
 
                 cdOpt[(int)SabType.Comms] = CustomOption.Create(1337, Types.General, "Communications Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Comms], "uts.sabotagetuning.comms_cooldown");
                 redOpt[(int)SabType.Comms] = CustomOption.Create(1338, Types.General, "Communications Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
+                UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Comms], "uts.sabotagetuning.comms_cooldown_reduction");
 
                 cdOpt[(int)SabType.Lights] = CustomOption.Create(1339, Types.General, "Lights Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Lights], "uts.sabotagetuning.lights_cooldown");
                 redOpt[(int)SabType.Lights] = CustomOption.Create(1340, Types.General, "Lights Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
+                UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Lights], "uts.sabotagetuning.lights_cooldown_reduction");
 
                 cdOpt[(int)SabType.Heli] = CustomOption.Create(1341, Types.General, "Airship Crash Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Heli], "uts.sabotagetuning.heli_cooldown");
                 redOpt[(int)SabType.Heli] = CustomOption.Create(1342, Types.General, "Airship Crash Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
+                UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Heli], "uts.sabotagetuning.heli_cooldown_reduction");
                 heliDur = CustomOption.Create(1343, Types.General, "Airship Crash Duration", 30f, 10f, 120f, 5f, Enabled);
+                UTSLocalization.BindOptionTitle(heliDur, "uts.sabotagetuning.heli_duration");
 
                 UsefulTORStuffPlugin.Logger?.LogInfo("[SabotageTuning] Options created under TOR Settings.");
             } catch (Exception e) {

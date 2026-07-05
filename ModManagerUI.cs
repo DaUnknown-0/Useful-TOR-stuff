@@ -344,7 +344,7 @@ namespace UsefulTORStuff
             titleRect.sizeDelta = new Vector2(-40, 60);
 
             var titleText = title.AddComponent<TMPro.TextMeshProUGUI>();
-            titleText.text = "MOD MANAGER";
+            titleText.text = UTSLocalization.Tr("uts.modmanagerui.title");
             titleText.fontSize = 36;
             titleText.fontStyle = TMPro.FontStyles.Bold;
             titleText.alignment = TMPro.TextAlignmentOptions.Center;
@@ -407,8 +407,8 @@ namespace UsefulTORStuff
             RefreshUpdateAllButton();
             if (_headerSummaryText != null)
                 _headerSummaryText.text = failed == 0
-                    ? $"<color=#9EFFA0>{done} mod(s) set to {(stable ? "Stable" : "Test")} - please restart the game.</color>"
-                    : $"<color=#FFD27F>{done} ok, {failed} failed - please restart the game.</color>";
+                    ? $"<color=#9EFFA0>{UTSLocalization.Tr("uts.modmanagerui.channel_switch_summary_ok", done, stable ? "Stable" : "Test")}</color>"
+                    : $"<color=#FFD27F>{UTSLocalization.Tr("uts.modmanagerui.channel_switch_summary_partial", done, failed)}</color>";
         }
 
         // Simple modal confirmation overlay (dim background + box with message + Ja/Abbrechen).
@@ -438,8 +438,8 @@ namespace UsefulTORStuff
             var mrt = m.AddComponent<RectTransform>(); mrt.anchorMin = Vector2.zero; mrt.anchorMax = Vector2.one; mrt.offsetMin = new Vector2(18, 66); mrt.offsetMax = new Vector2(-18, -56);
             var mt = m.AddComponent<TMPro.TextMeshProUGUI>(); mt.text = message; mt.fontSize = 15; mt.alignment = TMPro.TextAlignmentOptions.Top; mt.color = Color.white; mt.enableWordWrapping = true;
 
-            MakeConfirmButton(box, "Yes", new Vector2(-95, 16), new Color(0.2f, 0.6f, 0.25f, 0.95f), () => { HideConfirm(); onYes?.Invoke(); });
-            MakeConfirmButton(box, "Cancel", new Vector2(95, 16), new Color(0.5f, 0.2f, 0.2f, 0.95f), () => HideConfirm());
+            MakeConfirmButton(box, UTSLocalization.Tr("uts.modmanagerui.confirm_yes"), new Vector2(-95, 16), new Color(0.2f, 0.6f, 0.25f, 0.95f), () => { HideConfirm(); onYes?.Invoke(); });
+            MakeConfirmButton(box, UTSLocalization.Tr("uts.modmanagerui.confirm_cancel"), new Vector2(95, 16), new Color(0.5f, 0.2f, 0.2f, 0.95f), () => HideConfirm());
         }
 
         private void MakeConfirmButton(GameObject parent, string label, Vector2 anchoredPos, Color col, Action onClick)
@@ -494,10 +494,11 @@ namespace UsefulTORStuff
                 bool stableChannel = !nv;            // AUS -> Stable, AN -> Test
                 string ch = stableChannel ? "STABLE" : "TEST";
                 int affected = CountChannelMods(stableChannel);
+                string onOffLabel = nv ? "ON" : "OFF";
                 string msg = affected > 0
-                    ? $"Test versions {(nv ? "ON" : "OFF")}: {affected} mod(s) will be downloaded and installed to their latest {ch} release (replacing the current build). The game must be restarted afterwards.\n\nContinue?"
-                    : $"Test versions {(nv ? "ON" : "OFF")}: No matching {ch} release found - only the display is switched.\n\nContinue?";
-                ShowConfirm("Switch Test Versions", msg, () => {
+                    ? UTSLocalization.Tr("uts.modmanagerui.confirm_switch_msg_affected", onOffLabel, affected, ch)
+                    : UTSLocalization.Tr("uts.modmanagerui.confirm_switch_msg_none", onOffLabel, ch);
+                ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.confirm_switch_title"), msg, () => {
                     VersionDisplay.SetShowTestVersions(nv);
                     if (UsefulTORStuffPlugin.ShowTestVersionsConfig != null)
                         UsefulTORStuffPlugin.ShowTestVersionsConfig.Value = nv;
@@ -512,7 +513,7 @@ namespace UsefulTORStuff
         {
             if (_testVersionToggleText == null) return;
             bool on = VersionDisplay.ShowTestVersions();
-            _testVersionToggleText.text = on ? "Test Versions: ON" : "Test Versions: OFF";
+            _testVersionToggleText.text = on ? UTSLocalization.Tr("uts.modmanagerui.test_versions_on") : UTSLocalization.Tr("uts.modmanagerui.test_versions_off");
             _testVersionToggleText.color = on ? new Color(0.4f, 1f, 0.5f) : new Color(0.8f, 0.8f, 0.8f);
         }
 
@@ -540,7 +541,7 @@ namespace UsefulTORStuff
             btnTextRect.anchorMax = Vector2.one;
             btnTextRect.sizeDelta = Vector2.zero;
             _updateAllButtonText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            _updateAllButtonText.text = "UPDATE ALL";
+            _updateAllButtonText.text = UTSLocalization.Tr("uts.modmanagerui.update_all_button");
             _updateAllButtonText.fontSize = 15;
             _updateAllButtonText.fontStyle = TMPro.FontStyles.Bold;
             _updateAllButtonText.alignment = TMPro.TextAlignmentOptions.Center;
@@ -592,7 +593,7 @@ namespace UsefulTORStuff
             if (_updateAllRunning) yield break;
             _updateAllRunning = true;
             RefreshUpdateAllButton();
-            if (_updateAllButtonText != null) _updateAllButtonText.text = "UPDATING…";
+            if (_updateAllButtonText != null) _updateAllButtonText.text = UTSLocalization.Tr("uts.modmanagerui.updating_label");
 
             int updated = 0, failed = 0;
             List<ModInfo> mods;
@@ -635,13 +636,13 @@ namespace UsefulTORStuff
             if (_headerSummaryText != null)
             {
                 if (updated == 0 && failed == 0)
-                    _headerSummaryText.text = "Nothing to update";
+                    _headerSummaryText.text = UTSLocalization.Tr("uts.modmanagerui.update_all_none");
                 else
                     _headerSummaryText.text = failed == 0
-                        ? $"{updated} updated — restart required"
-                        : $"{updated} updated, {failed} failed — restart required";
+                        ? UTSLocalization.Tr("uts.modmanagerui.update_all_ok", updated)
+                        : UTSLocalization.Tr("uts.modmanagerui.update_all_partial", updated, failed);
             }
-            if (_updateAllButtonText != null) _updateAllButtonText.text = "UPDATE ALL";
+            if (_updateAllButtonText != null) _updateAllButtonText.text = UTSLocalization.Tr("uts.modmanagerui.update_all_button");
             RefreshUpdateAllButton();
         }
 
@@ -790,7 +791,7 @@ namespace UsefulTORStuff
             nameRect.sizeDelta = new Vector2(0, 30);
 
             var nameText = nameObj.AddComponent<TMPro.TextMeshProUGUI>();
-            string statusIcon = runtimeEnabled ? "[ON]" : "[OFF]";
+            string statusIcon = runtimeEnabled ? UTSLocalization.Tr("uts.modmanagerui.status_on") : UTSLocalization.Tr("uts.modmanagerui.status_off");
             nameText.text = $"{statusIcon} <b>{mod.Name}</b> <size=70%>v{mod.Version}</size>";
             nameText.fontSize = 24;
             nameText.alignment = TMPro.TextAlignmentOptions.Left;
@@ -854,7 +855,7 @@ namespace UsefulTORStuff
                     notesRect.sizeDelta = new Vector2(-30, notesHeight);
 
                     var notesText = notesObj.AddComponent<TMPro.TextMeshProUGUI>();
-                    notesText.text = "<b>What's new:</b>\n" + notes;
+                    notesText.text = UTSLocalization.Tr("uts.modmanagerui.whats_new", notes);
                     notesText.fontSize = 13;
                     notesText.color = new Color(0.82f, 0.82f, 0.86f);
                     notesText.alignment = TMPro.TextAlignmentOptions.TopLeft;
@@ -883,8 +884,8 @@ namespace UsefulTORStuff
 
             var repoText = repoObj.AddComponent<TMPro.TextMeshProUGUI>();
             repoText.text = HasRepository(mod)
-                ? $"Repository: {mod.RepositoryOwner}/{mod.RepositoryName}"
-                : "Lokale Mod (kein GitHub)";
+                ? UTSLocalization.Tr("uts.modmanagerui.repository_line", mod.RepositoryOwner, mod.RepositoryName)
+                : UTSLocalization.Tr("uts.modmanagerui.local_mod_line");
             repoText.fontSize = 14;
             repoText.color = new Color(0.7f, 0.7f, 0.7f);
 
@@ -900,7 +901,7 @@ namespace UsefulTORStuff
 
             var guidText = guidObj.AddComponent<TMPro.TextMeshProUGUI>();
             string displayGuid = mod.Guid.Length > 50 ? mod.Guid.Substring(0, 47) + "..." : mod.Guid;
-            guidText.text = $"<size=80%>ID: {displayGuid}</size>";
+            guidText.text = UTSLocalization.Tr("uts.modmanagerui.id_line", displayGuid);
             guidText.fontSize = 12;
             guidText.color = new Color(0.5f, 0.5f, 0.5f);
 
@@ -938,7 +939,7 @@ namespace UsefulTORStuff
             btnTextRect.sizeDelta = Vector2.zero;
 
             var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = pendingChange ? "RESTART REQUIRED" : (configEnabled ? "DISABLE" : "ENABLE");
+            btnText.text = pendingChange ? UTSLocalization.Tr("uts.modmanagerui.restart_required") : (configEnabled ? UTSLocalization.Tr("uts.modmanagerui.disable_button") : UTSLocalization.Tr("uts.modmanagerui.enable_button"));
             btnText.fontSize = pendingChange ? 12 : 14;
             btnText.fontStyle = TMPro.FontStyles.Bold;
             btnText.alignment = TMPro.TextAlignmentOptions.Center;
@@ -967,7 +968,7 @@ namespace UsefulTORStuff
                         if (wasChanged)
                         {
                             // Show restart required
-                            btnText.text = "RESTART REQUIRED";
+                            btnText.text = UTSLocalization.Tr("uts.modmanagerui.restart_required");
                             btnText.fontSize = 12;
                             btnText.color = new Color(1f, 1f, 0.5f);
 
@@ -976,7 +977,7 @@ namespace UsefulTORStuff
                         else
                         {
                             // Back to original state
-                            btnText.text = newValue ? "DISABLE" : "ENABLE";
+                            btnText.text = newValue ? UTSLocalization.Tr("uts.modmanagerui.disable_button") : UTSLocalization.Tr("uts.modmanagerui.enable_button");
                             btnText.fontSize = 14;
                             btnText.color = Color.white;
 
@@ -994,7 +995,7 @@ namespace UsefulTORStuff
                 catch (Exception ex)
                 {
                     UsefulTORStuffPlugin.Logger?.LogError($"Failed to toggle mod: {ex}");
-                    btnText.text = "ERROR";
+                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.error_label");
                     btnText.color = Color.red;
                 }
             }));
@@ -1005,7 +1006,7 @@ namespace UsefulTORStuff
         // daher kein "Restart required". Position: unter dem Enable/Disable-Button (links neben GitHub).
         private void CreateExtraToggleButton(GameObject parent, ModInfo mod)
         {
-            string label = string.IsNullOrEmpty(mod.ExtraToggleLabel) ? "Option" : mod.ExtraToggleLabel;
+            string label = string.IsNullOrEmpty(mod.ExtraToggleLabel) ? UTSLocalization.Tr("uts.modmanagerui.extra_toggle_default_label") : mod.ExtraToggleLabel;
 
             var button = new GameObject("ExtraToggleButton");
             button.transform.SetParent(parent.transform, false);
@@ -1035,7 +1036,7 @@ namespace UsefulTORStuff
             // Lokale Funktion: Beschriftung + Hintergrund am aktuellen Zustand ausrichten.
             void Apply(bool on)
             {
-                btnText.text = $"{label}: {(on ? "ON" : "OFF")}";
+                btnText.text = UTSLocalization.Tr("uts.modmanagerui.extra_toggle_label", label, on ? "ON" : "OFF");
                 btnBg.sprite = GetSolidSprite(on ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f));
             }
 
@@ -1054,7 +1055,7 @@ namespace UsefulTORStuff
                 catch (Exception ex)
                 {
                     UsefulTORStuffPlugin.Logger?.LogError($"Failed to toggle {label} for {mod.Name}: {ex}");
-                    btnText.text = "ERROR";
+                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.error_label");
                     btnText.color = Color.red;
                 }
             }));
@@ -1085,7 +1086,7 @@ namespace UsefulTORStuff
             btnTextRect.sizeDelta = Vector2.zero;
 
             var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = "UPDATE NOW";
+            btnText.text = UTSLocalization.Tr("uts.modmanagerui.update_now_button");
             btnText.fontSize = 14;
             btnText.fontStyle = TMPro.FontStyles.Bold;
             btnText.alignment = TMPro.TextAlignmentOptions.Center;
@@ -1104,7 +1105,7 @@ namespace UsefulTORStuff
                     UsefulTORStuffPlugin.Logger?.LogInfo($"Triggering update for {mod.Name}...");
                     mod.TriggerUpdate?.Invoke();
                     // Sofortiges Feedback; das Polling verfeinert die Anzeige danach.
-                    btnText.text = "DOWNLOADING";
+                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.downloading_button");
                     btnText.fontSize = 12;
                     btnText.color = new Color(1f, 1f, 0.5f);
                     btnComponent.interactable = false;
@@ -1112,7 +1113,7 @@ namespace UsefulTORStuff
                 catch (Exception ex)
                 {
                     UsefulTORStuffPlugin.Logger?.LogError($"Failed to trigger update: {ex}");
-                    btnText.text = "ERROR";
+                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.error_label");
                     btnText.color = Color.red;
                 }
             }));
@@ -1144,28 +1145,28 @@ namespace UsefulTORStuff
                     int pct = Mathf.RoundToInt(Mathf.Clamp01(progress) * 100f);
                     int stars = Mathf.CeilToInt(Mathf.Clamp01(progress) * 10);
                     string bar = new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars);
-                    r.StatusText.text = $"[>] Downloading... {pct}%  {bar}";
+                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_downloading_progress", pct, bar);
                     r.StatusText.color = new Color(0.3f, 0.7f, 1f);
-                    SetUpdateButton(r, true, "DOWNLOADING", 12, false);
+                    SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.downloading_button"), 12, false);
                     return;
 
                 case 2: // success - restart required
-                    r.StatusText.text = "[OK] Updated - Restart required";
+                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_updated_restart");
                     r.StatusText.color = new Color(1f, 1f, 0.5f);
                     SetUpdateButton(r, false, null, 0, false);
                     return;
 
                 case 3: // error
-                    r.StatusText.text = "[X] Update failed - try again";
+                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_update_failed");
                     r.StatusText.color = new Color(1f, 0.4f, 0.4f);
-                    SetUpdateButton(r, true, "RETRY", 14, true);
+                    SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.retry_button"), 14, true);
                     return;
             }
 
             // Kein Download: ausstehende Aktivierungs-Änderung anzeigen (läuft noch bis Neustart).
             if (config != runtime)
             {
-                r.StatusText.text = config ? "[!] Restart required to enable" : "[!] Will be disabled after restart";
+                r.StatusText.text = config ? UTSLocalization.Tr("uts.modmanagerui.status_restart_enable") : UTSLocalization.Tr("uts.modmanagerui.status_restart_disable");
                 r.StatusText.color = new Color(1f, 1f, 0.5f);
                 SetUpdateButton(r, false, null, 0, false);
                 return;
@@ -1174,7 +1175,7 @@ namespace UsefulTORStuff
             // Deaktiviert (kommt für angezeigte Mods normalerweise nicht vor).
             if (!runtime)
             {
-                r.StatusText.text = "[-] Disabled";
+                r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_disabled");
                 r.StatusText.color = Color.gray;
                 SetUpdateButton(r, false, null, 0, false);
                 return;
@@ -1186,9 +1187,9 @@ namespace UsefulTORStuff
 
             if (hasUpdate)
             {
-                r.StatusText.text = "[!] Update available";
+                r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_update_available");
                 r.StatusText.color = new Color(1f, 0.8f, 0.2f);
-                SetUpdateButton(r, true, "UPDATE NOW", 14, true);
+                SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.update_now_button"), 14, true);
             }
             else
             {
@@ -1201,12 +1202,12 @@ namespace UsefulTORStuff
 
                 if (completed && !loaded)
                 {
-                    r.StatusText.text = "[?] Update check unavailable (rate-limited?)";
+                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_check_unavailable");
                     r.StatusText.color = new Color(1f, 0.8f, 0.3f);
                 }
                 else
                 {
-                    r.StatusText.text = "[OK] Up to date";
+                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_up_to_date");
                     r.StatusText.color = new Color(0.3f, 1f, 0.3f);
                 }
                 SetUpdateButton(r, false, null, 0, false);
@@ -1275,7 +1276,7 @@ namespace UsefulTORStuff
             btnTextRect.sizeDelta = Vector2.zero;
 
             var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = "OPEN GITHUB";
+            btnText.text = UTSLocalization.Tr("uts.modmanagerui.github_button");
             btnText.fontSize = 14;
             btnText.fontStyle = TMPro.FontStyles.Bold;
             btnText.alignment = TMPro.TextAlignmentOptions.Center;
@@ -1322,7 +1323,7 @@ namespace UsefulTORStuff
             btnTextRect.sizeDelta = Vector2.zero;
 
             var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = "[X] CLOSE";
+            btnText.text = UTSLocalization.Tr("uts.modmanagerui.close_button");
             btnText.fontSize = 20;
             btnText.fontStyle = TMPro.FontStyles.Bold;
             btnText.alignment = TMPro.TextAlignmentOptions.Center;

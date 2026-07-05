@@ -54,9 +54,11 @@ namespace UsefulTORStuff
         private string _fetchedHash;
 
         private GameObject _panel;
+        private TextMeshProUGUI _titleLabel;
         private TextMeshProUGUI _hintLabel;
         private TextMeshProUGUI _maskedLabel;
         private TextMeshProUGUI _statusLabel;
+        private TextMeshProUGUI _footerLabel;
         private string _inputBuffer = "";
         private float _errorClearTimer;
         // True only while WE are holding the player frozen. Used so we restore moveable exactly once
@@ -73,7 +75,22 @@ namespace UsefulTORStuff
             DontDestroyOnLoad(gameObject);
             AppDomain.CurrentDomain.SetData(AppKeyActive,   true);
             AppDomain.CurrentDomain.SetData(AppKeyUnlocked, false);
+            UTSLocalization.LanguageApplied += OnLanguageApplied;
             this.StartCoroutine(CoFetchHash());
+        }
+
+        public void OnDestroy()
+        {
+            UTSLocalization.LanguageApplied -= OnLanguageApplied;
+        }
+
+        // Title/footer are set once in BuildPanel and the hint/status lines are only
+        // recomputed on fetch-state changes, so re-apply all of them on a language switch.
+        private void OnLanguageApplied()
+        {
+            if (_titleLabel != null) _titleLabel.text = UTSLocalization.Tr("uts.lobbypasswordgate.title");
+            if (_footerLabel != null) _footerLabel.text = UTSLocalization.Tr("uts.lobbypasswordgate.footer");
+            ApplyFetchStateToPanel();
         }
 
         public void Update()
@@ -338,7 +355,7 @@ namespace UsefulTORStuff
                 }
                 else
                 {
-                    ShowError("Wrong password.");
+                    ShowError(UTSLocalization.Tr("uts.lobbypasswordgate.wrong_password"));
                     UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Wrong password attempt.");
                 }
             }
@@ -396,8 +413,8 @@ namespace UsefulTORStuff
             boxRect.sizeDelta = new Vector2(560, 310);
             box.AddComponent<Image>().color = new Color(0.08f, 0.08f, 0.14f, 0.98f);
 
-            MakeLabel(box, "Title", new Vector2(0, -22), new Vector2(-20, 52),
-                "LOBBY PASSWORD", 30, FontStyles.Bold, new Color(0.3f, 0.7f, 1f));
+            _titleLabel = MakeLabel(box, "Title", new Vector2(0, -22), new Vector2(-20, 52),
+                UTSLocalization.Tr("uts.lobbypasswordgate.title"), 30, FontStyles.Bold, new Color(0.3f, 0.7f, 1f));
 
             _hintLabel = MakeLabel(box, "Hint", new Vector2(0, -82), new Vector2(-30, 30),
                 "", 17, FontStyles.Normal, new Color(0.82f, 0.82f, 0.82f));
@@ -448,8 +465,8 @@ namespace UsefulTORStuff
             _statusLabel.alignment = TextAlignmentOptions.Center;
             _statusLabel.color     = new Color(1f, 0.3f, 0.3f);
 
-            MakeLabel(box, "Footer", new Vector2(0, -240), new Vector2(-20, 24),
-                "[Enter] confirm    [Backspace] delete    [Esc] leave lobby", 14, FontStyles.Normal,
+            _footerLabel = MakeLabel(box, "Footer", new Vector2(0, -240), new Vector2(-20, 24),
+                UTSLocalization.Tr("uts.lobbypasswordgate.footer"), 14, FontStyles.Normal,
                 new Color(0.5f, 0.5f, 0.5f));
 
             _panel.SetActive(true);
@@ -462,17 +479,17 @@ namespace UsefulTORStuff
             switch (_fetchState)
             {
                 case FetchState.Loading:
-                    if (_hintLabel != null) { _hintLabel.text = "Loading configuration..."; _hintLabel.color = new Color(0.9f, 0.9f, 0.4f); }
+                    if (_hintLabel != null) { _hintLabel.text = UTSLocalization.Tr("uts.lobbypasswordgate.hint_loading"); _hintLabel.color = new Color(0.9f, 0.9f, 0.4f); }
                     if (_maskedLabel != null) _maskedLabel.text = "";
                     if (_statusLabel != null) _statusLabel.text = "";
                     break;
                 case FetchState.Failed:
-                    if (_hintLabel != null) { _hintLabel.text = "Error: password_hash.txt not reachable."; _hintLabel.color = new Color(1f, 0.35f, 0.35f); }
+                    if (_hintLabel != null) { _hintLabel.text = UTSLocalization.Tr("uts.lobbypasswordgate.hint_failed"); _hintLabel.color = new Color(1f, 0.35f, 0.35f); }
                     if (_maskedLabel != null) _maskedLabel.text = "";
-                    if (_statusLabel != null) { _statusLabel.text = "Game start permanently blocked."; _statusLabel.color = new Color(1f, 0.35f, 0.35f); }
+                    if (_statusLabel != null) { _statusLabel.text = UTSLocalization.Tr("uts.lobbypasswordgate.status_blocked"); _statusLabel.color = new Color(1f, 0.35f, 0.35f); }
                     break;
                 case FetchState.Ready:
-                    if (_hintLabel != null) { _hintLabel.text = "Enter password and confirm with Enter:"; _hintLabel.color = new Color(0.82f, 0.82f, 0.82f); }
+                    if (_hintLabel != null) { _hintLabel.text = UTSLocalization.Tr("uts.lobbypasswordgate.hint_ready"); _hintLabel.color = new Color(0.82f, 0.82f, 0.82f); }
                     if (_statusLabel != null) _statusLabel.text = "";
                     break;
             }

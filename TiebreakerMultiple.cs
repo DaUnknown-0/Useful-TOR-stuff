@@ -70,6 +70,7 @@ namespace UsefulTORStuff {
                 Quantity = CustomOption.Create(
                     1310, Types.Modifier, "Tiebreaker Quantity (max 3)",
                     new string[] { "1", "2", "3" }, CustomOptionHolder.modifierTieBreaker);
+                UTSLocalization.BindOptionTitle(Quantity, "uts.tiebreakermultiple.quantity_option");
 
                 var opts = CustomOption.options;
                 opts.Remove(Quantity);

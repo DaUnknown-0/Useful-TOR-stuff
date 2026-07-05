@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3";
+    public const string PluginVersion = "1.3.3.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
@@ -65,6 +65,8 @@ public class UsefulTORStuffPlugin : BasePlugin
     // here; the live state lives in a process-wide AppDomain flag (VersionDisplay) read by every mod.
     public static ConfigEntry<bool> ShowTestVersionsConfig;
     internal static ConfigEntry<float> MinDropDistance;
+    internal static ConfigEntry<bool> WebConfigEnabled;
+    internal static ConfigEntry<int> WebConfigPort;
     internal static ConfigEntry<float> ModManagerButtonX;
     internal static ConfigEntry<float> ModManagerButtonY;
 
@@ -109,6 +111,15 @@ public class UsefulTORStuffPlugin : BasePlugin
             "Bloody", "MinDropDistance", 0.35f,
             "Minimum distance (in world units) a bloody player must travel before a new blood " +
             "trail drop is spawned. Higher = fewer blood objects = less lag. 0 disables throttling.");
+
+        // Local host-only web settings editor (WebConfig): serves a browser page on 127.0.0.1
+        // that edits every mod option + the vanilla Among Us options. Loopback-only; writes are
+        // gated on AmHost. Disabled or re-ported here.
+        WebConfigEnabled = Config.Bind("WebConfig", "Enabled", true,
+            "Serve a local browser page (http://127.0.0.1:<port>/) for editing all lobby settings. "
+            + "Loopback-only (never exposed to the network); only the host can change values.");
+        WebConfigPort = Config.Bind("WebConfig", "Port", 32200,
+            "TCP port for the local settings web page. If busy, the next few ports are tried.");
 
         var harmony = new Harmony(PluginGuid);
 
@@ -213,10 +224,29 @@ public class UsefulTORStuffPlugin : BasePlugin
         // options need explicit creation here, after TOR's CustomOptionHolder.Load().
         SabotageTuning.CreateOptions();
 
+        // Meeting map ping: click the minimap during a meeting -> everyone sees a HerePoint
+        // marker in the clicker's color (RPC 254). MapBehaviour/HandleRpc patches are
+        // attribute-based (PatchAll); only the host option (1360) needs creation here.
+        // The map language toggle (MapLanguageToggle) is patch-only - nothing to create.
+        MeetingMapPing.CreateOptions();
+
+        // Localization engine: loads the string tables and mutates TOR's role/option strings
+        // in place (LocalizationTOR). Must run AFTER every CreateOptions above so first-pass
+        // originals are complete; the SetLanguage/GetString patches are attribute-based
+        // (PatchAll below) and re-apply on every language switch.
+        UTSLocalization.Initialize(Config);
+
         // All attribute-based [HarmonyPatch] classes in this assembly: VersionDisplayPatch,
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.
         harmony.PatchAll(typeof(UsefulTORStuffPlugin).Assembly);
+
+        // Local host-only web settings editor. Started after PatchAll so its HudManager.Update
+        // pump patch is already installed. Loopback-only listener; host-gated writes.
+        if (WebConfigEnabled.Value) {
+            try { WebConfig.Start(WebConfigPort.Value); }
+            catch (Exception ex) { Logger.LogError($"WebConfig start failed: {ex}"); }
+        }
 
         // Self-updater: checks GitHub releases and offers an in-game update button.
         AddComponent<UsefulTORStuffUpdater>();
@@ -521,7 +551,7 @@ public class UsefulTORStuffPlugin : BasePlugin
             // jeden Frame neu aufbaut (normalerweise ist die Zeile abwesend und wird eingefügt).
             if (!text.Contains(LinkId))
             {
-                string line = $"<link=\"{LinkId}\"><color=#3FCF4A>TOR - Forgotten Fixes</color> v{VersionDisplay.Format(Version)}</link>";
+                string line = UTSLocalization.Tr("uts.plugin.version_line", VersionDisplay.Format(Version));
                 int nl = text.IndexOf('\n');
                 text = nl >= 0
                     ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)
@@ -532,7 +562,7 @@ public class UsefulTORStuffPlugin : BasePlugin
             // mod already added it this frame, so "Modded by DaUnknown" appears at most once.
             if (CreditVisible() && !text.Contains("DaUnknown"))
             {
-                string credit = "\n<size=70%>Modded by <color=#FCCE03FF>DaUnknown</color></size>";
+                string credit = UTSLocalization.Tr("uts.plugin.credit_line");
                 int anchor = text.IndexOf("Bavari");
                 if (anchor >= 0)
                 {

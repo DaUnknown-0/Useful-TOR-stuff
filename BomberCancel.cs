@@ -46,6 +46,7 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1217, Types.Impostor, "Bomber Can Cancel Bomb",
                     false, CustomOptionHolder.bomberSpawnRate);
+                UTSLocalization.BindOptionTitle(Option, "uts.bombercancel.option_name");
 
                 // Move directly under the Bomber core options (late-created options otherwise land
                 // at the bottom of the Impostor tab). Same approach as SheriffParityWin.

@@ -44,9 +44,11 @@ namespace UsefulTORStuff {
                 LightsOption = CustomOption.Create(
                     1220, Types.Crewmate, "Swapper Can Fix Lights",
                     false, CustomOptionHolder.swapperSpawnRate);
+                UTSLocalization.BindOptionTitle(LightsOption, "uts.swapperlightsfix.lights_option");
                 CommsOption = CustomOption.Create(
                     1221, Types.Crewmate, "Swapper Can Fix Comms",
                     false, CustomOptionHolder.swapperSpawnRate);
+                UTSLocalization.BindOptionTitle(CommsOption, "uts.swapperlightsfix.comms_option");
 
                 var opts = CustomOption.options;
                 opts.Remove(LightsOption);

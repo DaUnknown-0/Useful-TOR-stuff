@@ -50,6 +50,7 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1202, Types.Neutral, "Vulture Counts Guessed Players As Eaten",
                     false, CustomOptionHolder.vultureSpawnRate);
+                UTSLocalization.BindOptionTitle(Option, "uts.vultureguesseat.option_name");
 
                 // Options render in CustomOption.options list order (filtered by type), so a
                 // late-created option lands at the BOTTOM of the Neutral tab. Move ours directly
@@ -65,6 +66,7 @@ namespace UsefulTORStuff {
                 SoundOption = CustomOption.Create(
                     1203, Types.Neutral, "Play Eat Sound On Counted Guess",
                     false, Option);
+                UTSLocalization.BindOptionTitle(SoundOption, "uts.vultureguesseat.sound_option");
 
                 opts.Remove(SoundOption);
                 int sIdx = opts.IndexOf(Option);

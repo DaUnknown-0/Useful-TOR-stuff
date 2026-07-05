@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Among Us - Settings</title>
+<style>
+  :root {
+    --bg:#0b0e17; --panel:#141a29; --panel2:#1b2438; --line:#26304a;
+    --txt:#e8ecf6; --dim:#93a0bd; --accent:#3fa9ff; --accent2:#ff5b5b;
+    --good:#4fd07a; --warn:#ffcf5b;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; }
+  body {
+    background:var(--bg); color:var(--txt); font-family:"Segoe UI",system-ui,sans-serif;
+    font-size:15px; -webkit-font-smoothing:antialiased;
+  }
+  header {
+    position:sticky; top:0; z-index:10; background:linear-gradient(180deg,#0e1320,#0b0e17);
+    border-bottom:1px solid var(--line); padding:14px 20px 10px;
+  }
+  .title { font-size:19px; font-weight:700; letter-spacing:.3px; display:flex; align-items:center; gap:10px; }
+  .title .dot { width:11px; height:11px; border-radius:50%; background:var(--good); box-shadow:0 0 8px var(--good); }
+  .title .dot.off { background:var(--accent2); box-shadow:0 0 8px var(--accent2); }
+  .sub { color:var(--dim); font-size:12.5px; margin-top:3px; }
+  .banner {
+    margin:10px 20px 0; padding:9px 13px; border-radius:8px; font-size:13.5px;
+    background:rgba(255,91,91,.12); border:1px solid rgba(255,91,91,.4); color:#ffb9b9; display:none;
+  }
+  .banner.show { display:block; }
+  .toolbar { display:flex; gap:10px; align-items:center; padding:12px 20px 0; flex-wrap:wrap; }
+  .search {
+    flex:1; min-width:180px; background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+    padding:8px 12px; border-radius:8px; font-size:14px; outline:none;
+  }
+  .search:focus { border-color:var(--accent); }
+  .tabs { display:flex; gap:6px; padding:12px 20px 0; flex-wrap:wrap; }
+  .tab {
+    padding:7px 14px; border-radius:8px 8px 0 0; background:var(--panel); border:1px solid var(--line);
+    border-bottom:none; color:var(--dim); cursor:pointer; font-size:13.5px; user-select:none;
+  }
+  .tab.active { background:var(--panel2); color:var(--txt); font-weight:600; }
+  .tab .cnt { color:var(--dim); font-size:11px; margin-left:5px; }
+  main { padding:0 20px 60px; }
+  .list { background:var(--panel2); border:1px solid var(--line); border-radius:0 10px 10px 10px; overflow:hidden; }
+  .heading {
+    padding:11px 16px 7px; font-size:12px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+    color:var(--accent); background:rgba(63,169,255,.06); border-top:1px solid var(--line);
+  }
+  .heading:first-child { border-top:none; }
+  .row {
+    display:flex; align-items:center; gap:14px; padding:9px 16px; border-top:1px solid rgba(38,48,74,.5);
+  }
+  .row.child .name { padding-left:20px; color:var(--dim); }
+  .row.hidden-opt { opacity:.38; }
+  .row .name { flex:1; font-size:14px; }
+  .row .ctl { flex:0 0 auto; display:flex; align-items:center; gap:8px; }
+  select {
+    background:var(--panel); border:1px solid var(--line); color:var(--txt); padding:6px 10px;
+    border-radius:7px; font-size:13.5px; outline:none; min-width:92px; cursor:pointer;
+  }
+  select:focus { border-color:var(--accent); }
+  .stepper { display:flex; align-items:center; gap:6px; }
+  .stepper button {
+    width:28px; height:28px; border-radius:7px; border:1px solid var(--line); background:var(--panel);
+    color:var(--txt); font-size:16px; cursor:pointer; line-height:1;
+  }
+  .stepper button:hover { border-color:var(--accent); }
+  .stepper .val { min-width:58px; text-align:center; font-variant-numeric:tabular-nums; font-size:14px; }
+  .toggle { width:46px; height:26px; border-radius:14px; background:var(--panel); border:1px solid var(--line);
+    position:relative; cursor:pointer; transition:background .15s; }
+  .toggle .knob { position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+    background:var(--dim); transition:left .15s,background .15s; }
+  .toggle.on { background:rgba(79,208,122,.25); border-color:var(--good); }
+  .toggle.on .knob { left:22px; background:var(--good); }
+  main[disabled] .row .ctl { pointer-events:none; opacity:.55; }
+  .empty { padding:30px; text-align:center; color:var(--dim); }
+  .foot { padding:14px 20px; color:var(--dim); font-size:11.5px; text-align:center; }
+  .flash { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--panel);
+    border:1px solid var(--line); padding:9px 16px; border-radius:9px; font-size:13px; opacity:0;
+    transition:opacity .2s; pointer-events:none; }
+  .flash.show { opacity:1; }
+  .flash.err { border-color:var(--accent2); color:#ffb9b9; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title"><span class="dot" id="dot"></span> Among Us &mdash; Lobby Settings</div>
+  <div class="sub" id="sub">Connecting&hellip;</div>
+</header>
+<div class="banner" id="banner"></div>
+<div class="toolbar">
+  <input class="search" id="search" placeholder="Search all settings&hellip;" autocomplete="off">
+</div>
+<div class="tabs" id="tabs"></div>
+<main id="main"><div class="list"><div class="empty">Loading&hellip;</div></div></main>
+<div class="foot">Host-only editor &middot; served locally by TOR - Forgotten Fixes &middot; changes apply live to the lobby</div>
+<div class="flash" id="flash"></div>
+
+<script>
+let STATE = null;
+let activeTab = null;
+let filter = "";
+
+const $ = id => document.getElementById(id);
+
+function flash(msg, err) {
+  const f = $("flash");
+  f.textContent = msg; f.className = "flash show" + (err ? " err" : "");
+  clearTimeout(f._t); f._t = setTimeout(() => f.className = "flash", 1600);
+}
+
+async function fetchState() {
+  try {
+    const r = await fetch("/api/state", { cache:"no-store" });
+    if (!r.ok) throw new Error(r.status);
+    STATE = await r.json();
+    render();
+  } catch (e) {
+    $("sub").textContent = "Waiting for the game (open a lobby)…";
+    $("dot").className = "dot off";
+  }
+}
+
+async function setOption(params) {
+  try {
+    const body = Object.entries(params).map(([k,v]) => k+"="+encodeURIComponent(v)).join("&");
+    const r = await fetch("/api/set", { method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body });
+    if (r.status === 403) { flash("Not host — read-only", true); }
+    else if (!r.ok) { flash("Change failed ("+r.status+")", true); }
+    else { flash("Applied"); }
+  } catch (e) { flash("Change failed", true); }
+  fetchState();
+}
+
+function optHidden(o, byId) {
+  if (o.parent == null || o.parent < 0) return false;
+  const p = byId[o.parent];
+  if (!p) return false;
+  const parentOn = p.sel > 0;
+  const hiddenHere = o.inverted ? parentOn : !parentOn;
+  return hiddenHere || optHidden(p, byId);
+}
+
+function render() {
+  if (!STATE) return;
+  $("dot").className = "dot" + (STATE.host ? "" : " off");
+  $("sub").textContent = STATE.host
+    ? "You are host — changes apply to everyone in the lobby"
+    : (STATE.ready ? "Connected (not host)" : "Connected");
+  const banner = $("banner");
+  if (!STATE.host) { banner.className = "banner show"; banner.textContent = "Read-only: you are not the host. Only the host can change settings."; }
+  else banner.className = "banner";
+
+  // Build tab list: mod option types + vanilla
+  const tabs = STATE.tabs.filter(t => t.options.length > 0);
+  const tabDefs = tabs.map(t => ({ key:"mod:"+t.type, label:t.name, count:t.options.length }));
+  tabDefs.push({ key:"vanilla", label:"Vanilla (Among Us)", count:STATE.vanilla.length });
+  if (!activeTab || !tabDefs.some(t => t.key === activeTab)) activeTab = tabDefs[0] && tabDefs[0].key;
+
+  const tabsEl = $("tabs"); tabsEl.innerHTML = "";
+  tabDefs.forEach(t => {
+    const el = document.createElement("div");
+    el.className = "tab" + (t.key === activeTab ? " active" : "");
+    el.innerHTML = t.label + '<span class="cnt">'+t.count+'</span>';
+    el.onclick = () => { activeTab = t.key; render(); };
+    tabsEl.appendChild(el);
+  });
+
+  const main = $("main");
+  if (STATE.host) main.removeAttribute("disabled"); else main.setAttribute("disabled","");
+  const list = document.createElement("div"); list.className = "list";
+
+  const f = filter.trim().toLowerCase();
+  let shown = 0;
+
+  if (activeTab === "vanilla") {
+    let curSection = null;
+    STATE.vanilla.forEach(o => {
+      if (f && !o.label.toLowerCase().includes(f)) return;
+      if (!f && o.section && o.section !== curSection) {
+        curSection = o.section;
+        const h = document.createElement("div"); h.className = "heading"; h.textContent = curSection; list.appendChild(h);
+      }
+      list.appendChild(vanillaRow(o)); shown++;
+    });
+  } else {
+    const tab = tabs.find(t => "mod:"+t.type === activeTab);
+    if (tab) {
+      const byId = {}; tab.options.forEach(o => byId[o.id] = o);
+      tab.options.forEach(o => {
+        if (f && !o.name.toLowerCase().includes(f)) return;
+        if (!f && o.heading) {
+          const h = document.createElement("div"); h.className = "heading"; h.textContent = o.heading; list.appendChild(h);
+        }
+        list.appendChild(modRow(o, byId)); shown++;
+      });
+    }
+  }
+
+  if (shown === 0) { const e = document.createElement("div"); e.className="empty"; e.textContent = f ? "No settings match your search." : "No settings here."; list.appendChild(e); }
+  main.innerHTML = ""; main.appendChild(list);
+}
+
+function modRow(o, byId) {
+  const row = document.createElement("div");
+  const hidden = optHidden(o, byId);
+  row.className = "row" + (o.parent != null && o.parent >= 0 ? " child" : "") + (hidden ? " hidden-opt" : "");
+  const name = document.createElement("div"); name.className = "name";
+  name.textContent = o.name.replace(/^-\s*/, "");
+  // Match the in-game menu colour (TOR embeds it in the option name; stripped + passed as o.color).
+  if (o.color && !hidden) name.style.color = o.color;
+  row.appendChild(name);
+  const ctl = document.createElement("div"); ctl.className = "ctl";
+
+  const isToggle = o.selections.length === 2 &&
+    o.selections[0].toLowerCase() === "off" && o.selections[1].toLowerCase() === "on";
+  if (isToggle) {
+    ctl.appendChild(toggle(o.sel > 0, on => setOption({ scope:"mod", id:o.id, sel: on ? 1 : 0 })));
+  } else {
+    ctl.appendChild(dropdown(o.selections, o.sel, v => setOption({ scope:"mod", id:o.id, sel:v })));
+  }
+  row.appendChild(ctl);
+  return row;
+}
+
+function vanillaRow(o) {
+  const row = document.createElement("div"); row.className = "row";
+  const name = document.createElement("div"); name.className = "name"; name.textContent = o.label;
+  row.appendChild(name);
+  const ctl = document.createElement("div"); ctl.className = "ctl";
+  if (o.kind === "bool") {
+    ctl.appendChild(toggle(o.value > 0, on => setOption({ scope:"vanilla", key:o.key, value: on ? 1 : 0 })));
+  } else if (o.kind === "enum") {
+    ctl.appendChild(dropdown(o.labels, o.value, v => setOption({ scope:"vanilla", key:o.key, value:v })));
+  } else {
+    ctl.appendChild(numStepper(o, v => setOption({ scope:"vanilla", key:o.key, value:v })));
+  }
+  row.appendChild(ctl);
+  return row;
+}
+
+function toggle(on, cb) {
+  const t = document.createElement("div"); t.className = "toggle" + (on ? " on" : "");
+  t.innerHTML = '<div class="knob"></div>';
+  t.onclick = () => cb(!on);
+  return t;
+}
+
+function dropdown(labels, sel, cb) {
+  const s = document.createElement("select");
+  labels.forEach((lb, i) => { const o = document.createElement("option"); o.value = i; o.textContent = lb; if (i === sel) o.selected = true; s.appendChild(o); });
+  s.onchange = () => cb(parseInt(s.value, 10));
+  return s;
+}
+
+function numStepper(o, cb) {
+  const wrap = document.createElement("div"); wrap.className = "stepper";
+  const dec = document.createElement("button"); dec.textContent = "−";
+  const val = document.createElement("div"); val.className = "val";
+  const inc = document.createElement("button"); inc.textContent = "+";
+  const suffix = o.suffix || "";
+  const fmt = v => (o.kind === "float" ? (Math.round(v*100)/100) : v) + suffix +
+    (o.zeroInf && v <= o.min ? " (∞)" : "");
+  val.textContent = fmt(o.value);
+  const step = o.step || 1;
+  const clamp = v => Math.min(o.max, Math.max(o.min, Math.round(v/step)*step));
+  dec.onclick = () => cb(clamp(o.value - step));
+  inc.onclick = () => cb(clamp(o.value + step));
+  wrap.appendChild(dec); wrap.appendChild(val); wrap.appendChild(inc);
+  return wrap;
+}
+
+$("search").addEventListener("input", e => { filter = e.target.value; render(); });
+
+fetchState();
+setInterval(() => { if (!document.querySelector("select:focus")) fetchState(); }, 3000);
+</script>
+</body>
+</html>

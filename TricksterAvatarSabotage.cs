@@ -56,10 +56,13 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1300, Types.Impostor, "Trickster Avatar Mixup Sabotage",
                     false, CustomOptionHolder.tricksterSpawnRate);
+                UTSLocalization.BindOptionTitle(Option, "uts.tricksteravatarsabotage.option_name");
                 CooldownOption = CustomOption.Create(
                     1301, Types.Impostor, "Avatar Mixup Sabotage Cooldown", 30f, 10f, 60f, 5f, CustomOptionHolder.tricksterSpawnRate);
+                UTSLocalization.BindOptionTitle(CooldownOption, "uts.tricksteravatarsabotage.cooldown_option");
                 DurationOption = CustomOption.Create(
                     1302, Types.Impostor, "Avatar Mixup Sabotage Duration", 10f, 3f, 30f, 1f, CustomOptionHolder.tricksterSpawnRate);
+                UTSLocalization.BindOptionTitle(DurationOption, "uts.tricksteravatarsabotage.duration_option");
 
                 var opts = CustomOption.options;
                 foreach (var o in new[] { Option, CooldownOption, DurationOption }) opts.Remove(o);

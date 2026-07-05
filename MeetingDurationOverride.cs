@@ -51,13 +51,20 @@ namespace UsefulTORStuff {
             try {
                 Enabled = CustomOption.Create(
                     1210, Types.General, "Override Meeting Duration", false, null, true);
+                UTSLocalization.BindOptionTitle(Enabled, "uts.meetingdurationoverride.enabled");
 
                 DiscussionBase     = CustomOption.Create(1211, Types.General, "Discussion Base Time", 15f, 0f, 120f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(DiscussionBase, "uts.meetingdurationoverride.discussion_base");
                 DiscussionPerAlive = CustomOption.Create(1212, Types.General, "Discussion Per Alive Player", 0f, 0f, 30f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(DiscussionPerAlive, "uts.meetingdurationoverride.discussion_per_alive");
                 DiscussionPerDead  = CustomOption.Create(1213, Types.General, "Discussion Reduction Per Dead Player", 0f, 0f, 30f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(DiscussionPerDead, "uts.meetingdurationoverride.discussion_per_dead");
                 VotingBase         = CustomOption.Create(1214, Types.General, "Voting Base Time", 30f, 0f, 120f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(VotingBase, "uts.meetingdurationoverride.voting_base");
                 VotingPerAlive     = CustomOption.Create(1215, Types.General, "Voting Per Alive Player", 0f, 0f, 30f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(VotingPerAlive, "uts.meetingdurationoverride.voting_per_alive");
                 VotingPerDead      = CustomOption.Create(1216, Types.General, "Voting Reduction Per Dead Player", 0f, 0f, 30f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(VotingPerDead, "uts.meetingdurationoverride.voting_per_dead");
 
                 UsefulTORStuffPlugin.Logger?.LogInfo("[MeetingDurationOverride] Options created under TOR Settings.");
             } catch (Exception e) {

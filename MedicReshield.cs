@@ -69,11 +69,13 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1230, Types.Crewmate, "Medic Can Reshield",
                     false, CustomOptionHolder.medicSpawnRate);
+                UTSLocalization.BindOptionTitle(Option, "uts.medicreshield.option_name");
 
                 // Sub-option: number of shield placements per game (0 = ∞). Only visible while Reshield is on.
                 OptionShieldCharges = CustomOption.Create(
                     1231, Types.Crewmate, "Shield Charges",
                     ShieldChargeSelections, Option);
+                UTSLocalization.BindOptionTitle(OptionShieldCharges, "uts.medicreshield.charges_option");
 
                 var opts = CustomOption.options;
                 opts.Remove(Option);
@@ -156,7 +158,7 @@ namespace UsefulTORStuff {
                         __instance,
                         KeyCode.G,
                         false,
-                        "UNSHIELD"
+                        UTSLocalization.Tr("uts.medicreshield.button_label")
                     );
                     unshieldButton.MaxTimer = 0f;
                     unshieldButton.Timer = -1f;
@@ -205,7 +207,9 @@ namespace UsefulTORStuff {
                     var shieldBtn = CustomButton.buttons.FirstOrDefault(
                         b => b != null && b != unshieldButton && b.Sprite == Medic.getButtonSprite());
                     if (shieldBtn != null && shieldBtn.actionButton != null) {
-                        string txt = unlimited ? "∞" : $"{Math.Max(0, max - placementsUsed)}/{max}";
+                        string txt = unlimited
+                            ? UTSLocalization.Tr("uts.medicreshield.charges_infinite")
+                            : UTSLocalization.Tr("uts.medicreshield.charge_counter", Math.Max(0, max - placementsUsed), max);
                         shieldBtn.actionButton.OverrideText(txt);
                         if (shieldBtn.actionButtonLabelText != null)
                             shieldBtn.actionButtonLabelText.enabled = true;

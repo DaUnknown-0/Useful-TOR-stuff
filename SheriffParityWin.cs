@@ -41,11 +41,15 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1200, Types.Crewmate, "Sheriff Prevents Killer Parity Win",
                     false, CustomOptionHolder.sheriffSpawnRate);
+                UTSLocalization.BindOptionTitle(Option, "uts.sheriffparitywin.option_name");
 
                 ScopeOption = CustomOption.Create(
                     1201, Types.Crewmate, "Parity Win Block Mode",
                     new string[] { "At Exact Parity Only", "Always While Sheriff Alive" },
                     Option);
+                UTSLocalization.BindOptionTitle(ScopeOption, "uts.sheriffparitywin.scope_option");
+                UTSLocalization.BindOptionSelections(ScopeOption,
+                    "uts.sheriffparitywin.scope_sel_exact", "uts.sheriffparitywin.scope_sel_always");
 
                 // Options render in CustomOption.options list order (filtered by type), so a
                 // late-created option lands at the BOTTOM of the Crewmate tab. Move ours directly

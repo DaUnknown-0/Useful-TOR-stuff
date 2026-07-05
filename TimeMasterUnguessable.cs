@@ -43,6 +43,7 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1260, Types.Crewmate, "Time Master Unguessable After Shield Saved A Kill",
                     false, CustomOptionHolder.timeMasterSpawnRate);
+                UTSLocalization.BindOptionTitle(Option, "uts.timemasterunguessable.option_name");
 
                 var opts = CustomOption.options;
                 opts.Remove(Option);

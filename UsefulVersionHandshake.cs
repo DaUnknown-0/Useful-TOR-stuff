@@ -34,14 +34,20 @@ namespace UsefulTORStuff {
             snitchFixChatShown = true;
 
             hud.Chat.AddChat(PlayerControl.LocalPlayer,
-                "Snitch client-side fix active — all players have TOR - Forgotten Fixes.");
+                UTSLocalization.Tr("uts.versionhandshake.snitch_fix_active_chat"));
         }
 
         // Draw a message anchored to the top-left corner on TOR's shared GameStartText. Guards
         // against per-frame stacking on clients where TOR doesn't rebuild the element (non-host
-        // clients: TOR only clears/rewrites GameStartText for the host).
+        // clients: TOR only clears/rewrites GameStartText for the host). The guard remembers the
+        // last text rendered per marker ID and probes for THAT, not for an English substring -
+        // display texts are localized (UTSLocalization), so a fixed-literal probe would miss and
+        // stack the message every frame in any non-English language.
+        private static readonly Dictionary<string, string> lastRenderedByMarker = new();
         private static void DrawTopLeftMessage(GameStartManager gsm, TMPro.TMP_Text text, string msg, string marker) {
-            if (text.text != null && text.text.Contains(marker)) return;
+            if (text.text != null && lastRenderedByMarker.TryGetValue(marker, out var prev)
+                && text.text.Contains(prev)) return;
+            lastRenderedByMarker[marker] = msg;
             text.text = string.IsNullOrEmpty(text.text) ? msg : text.text + "\n" + msg;
             var cam = Camera.main;
             if (cam != null) {
@@ -117,17 +123,17 @@ namespace UsefulTORStuff {
                 string name = client.Character.Data.PlayerName;
 
                 if (!playerVersions.TryGetValue(client.Id, out PlayerVersion pv)) {
-                    message += $"<color=#FF0000FF>{name} is missing TOR - Forgotten Fixes (or has a different version)\n</color>";
+                    message += UTSLocalization.Tr("uts.versionhandshake.missing_mod", name);
                     continue;
                 }
 
                 int diff = UsefulTORStuffPlugin.Version.CompareTo(pv.version);
                 if (diff > 0)
-                    message += $"<color=#FF0000FF>{name} has an older TOR - Forgotten Fixes (v{pv.version})\n</color>";
+                    message += UTSLocalization.Tr("uts.versionhandshake.older_mod", name, pv.version);
                 else if (diff < 0)
-                    message += $"<color=#FF0000FF>{name} has a newer TOR - Forgotten Fixes (v{pv.version})\n</color>";
+                    message += UTSLocalization.Tr("uts.versionhandshake.newer_mod", name, pv.version);
                 else if (!pv.GuidMatches())
-                    message += $"<color=#FF0000FF>{name} has a modified TOR - Forgotten Fixes v{pv.version} <size=30%>({pv.guid})</size>\n</color>";
+                    message += UTSLocalization.Tr("uts.versionhandshake.modified_mod", name, pv.version, pv.guid);
             }
             return message;
         }
@@ -258,17 +264,17 @@ namespace UsefulTORStuff {
                         string code = sep >= 0 ? token.Substring(0, sep) : token;
                         string ver = sep >= 0 ? token.Substring(sep + 1) : "?";
                         if (code == "ok") {
-                            segments.Add($"<color=#3FCF4AFF>{label} {ver} ✓</color>");
+                            segments.Add(UTSLocalization.Tr("uts.versionhandshake.modcheck_row_ok", label, ver));
                         } else if (code == "mod") {
                             anyWarn = true; playerMismatch = true;
-                            segments.Add($"<color=#FF0000FF>{label} {ver} (modified)</color>");
+                            segments.Add(UTSLocalization.Tr("uts.versionhandshake.modcheck_row_modified", label, ver));
                         } else {
                             anyWarn = true; playerMismatch = true;
-                            segments.Add($"<color=#FF0000FF>{label} {ver} ✗</color>");
+                            segments.Add(UTSLocalization.Tr("uts.versionhandshake.modcheck_row_bad", label, ver));
                         }
                     } else {
                         anyWarn = true; playerMismatch = true;
-                        segments.Add($"<color=#AAAAAAFF>{label} — missing</color>");
+                        segments.Add(UTSLocalization.Tr("uts.versionhandshake.modcheck_row_missing", label));
                     }
                 }
                 // Players whose mods DON'T match the reference build (the snapshots compare against
@@ -285,9 +291,9 @@ namespace UsefulTORStuff {
             // <size=300%> — the per-player board was still hard to read at 130% (playtest feedback:
             // "mindestens doppelt so groß"), so roughly 2.3x that again.
             if (!anyWarn)
-                return "<size=300%><color=#3FCF4AFF>Mod-Check: all players match ✓</color></size>";
+                return UTSLocalization.Tr("uts.versionhandshake.modcheck_all_ok");
 
-            return "<size=300%><color=#FFD700FF>Mod-Check:</color>\n" + sb.ToString() + "</size>";
+            return UTSLocalization.Tr("uts.versionhandshake.modcheck_header") + sb.ToString() + "</size>";
         }
 
         // P1.5: Beim Betreten einer Lobby den Versions-Cache leeren. ClientIds sind
@@ -372,8 +378,7 @@ namespace UsefulTORStuff {
                     && SheriffParityWin.Option != null && SheriffParityWin.Option.getBool()
                     && !everyone) {
                     DrawTopLeftMessage(__instance, text,
-                        "<color=#FFA500FF>'Sheriff Prevents Killer Parity Win' is ON, but not all players have "
-                        + "TOR - Forgotten Fixes — they won't see this rule. It still applies (host-enforced).</color>",
+                        UTSLocalization.Tr("uts.versionhandshake.sheriff_parity_warning"),
                         "Sheriff Prevents Killer Parity Win");
                 }
 
@@ -384,8 +389,7 @@ namespace UsefulTORStuff {
                     && LoverRevenger.DelayOption != null && LoverRevenger.DelayOption.getBool()
                     && !everyone) {
                     DrawTopLeftMessage(__instance, text,
-                        "<color=#FFA500FF>'Delay Lover Death (Revenger)' is ON, but not all players have "
-                        + "TOR - Forgotten Fixes — this feature is client-side and will NOT apply.</color>",
+                        UTSLocalization.Tr("uts.versionhandshake.revenger_warning"),
                         "Delay Lover Death (Revenger)");
                 }
 
@@ -412,8 +416,7 @@ namespace UsefulTORStuff {
                     // active. Only the host needs this heads-up.
                     if (!AmongUsClient.Instance.AmHost) return;
                     DrawTopLeftMessage(__instance, text,
-                        "<color=#FFA500FF>All players have TOR - Forgotten Fixes, but the client-side Snitch fix " +
-                        "is NOT active (TOR mismatch). Falling back to TOR - Hostfix re-broadcast.</color>",
+                        UTSLocalization.Tr("uts.versionhandshake.snitch_fix_not_active"),
                         "Snitch fix is NOT active");
                 } else {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.
@@ -424,8 +427,7 @@ namespace UsefulTORStuff {
                     // Otherwise keep the full standalone list (single-mod install).
                     string prefix = combinedShown ? "" : mismatch;
                     DrawTopLeftMessage(__instance, text,
-                        prefix + "<color=#FFA500FF>The game can still be started, but the snitch bug " +
-                        "may still occur (fallback: Host Fix re-broadcast).</color>",
+                        UTSLocalization.Tr("uts.versionhandshake.snitch_fallback_warning", prefix),
                         "fallback: Host Fix");
                 }
             }
