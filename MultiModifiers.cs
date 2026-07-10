@@ -189,6 +189,20 @@ namespace UsefulTORStuff {
             }
         }
 
+        // resetVariables alone is NOT enough: it is an RPC only a (same-version) TOR host sends.
+        // The lists hold bare PlayerIds, and ids are reused per lobby - carrying entries into a
+        // lobby whose host never sends resetVariables (vanilla host / host without the mod) turns
+        // whoever now owns those ids into fake extra Minis/Armored on this client. OnGameJoined
+        // fires on every lobby (re-)entry, so the lists always start empty there.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class OnGameJoinedPatch {
+            public static void Postfix() {
+                minis.Clear();
+                armoreds.Clear();
+                brokenExtraArmor.Clear();
+            }
+        }
+
         // ====================================================================
         // Display: show the modifier for EVERY holder (TOR's RoleInfo only matches its single static).
         // Mini/Armored sit OUTSIDE the modifiersAreHidden block in TOR, so `showModifier` is the

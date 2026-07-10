@@ -170,6 +170,15 @@ namespace UsefulTORStuff {
             public static void Postfix() { tiebreakers.Clear(); }
         }
 
+        // resetVariables alone is NOT enough: it is an RPC only a (same-version) TOR host sends.
+        // Entries carried into a lobby whose host never sends it (vanilla host / host without the
+        // mod) would keep matching by PlayerId - ids are reused per lobby - and show whoever now
+        // owns those ids as a fake Tiebreaker. OnGameJoined fires on every lobby (re-)entry.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class OnGameJoinedPatch {
+            public static void Postfix() { tiebreakers.Clear(); }
+        }
+
         // DISPLAY: show the Tiebreaker modifier for EVERY player in our list (TOR's RoleInfo.cs:180
         // only matches its single field). De-dupe against the one TOR already added. We mirror TOR's
         // gating: the Tiebreaker is shown whenever modifiers are shown at all (it sits OUTSIDE the

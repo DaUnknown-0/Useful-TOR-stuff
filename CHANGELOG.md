@@ -3,6 +3,13 @@
 ## Unreleased
 
 ### Fixes
+- **No more phantom Minis/Armored/Tiebreakers in foreign lobbies.** The Mini/Armored/
+  Tiebreaker holder lists were only cleared by TOR's `resetVariables` RPC — which only a
+  (same-version) TOR host ever sends. Joining a lobby whose host doesn't run the mod kept
+  the previous game's entries alive, and since the lists hold bare PlayerIds (reused per
+  lobby), whoever now owned those ids was shown and treated as a fake extra Mini
+  (shrunk, kill-protected), Armored, or Tiebreaker on this client. The lists are now also
+  cleared on every lobby (re-)join (`OnGameJoined`).
 - **Positional sounds no longer break the end-game/lobby UI.** TOR's
   `playAtPosition` (bomb fuse + explosion, event sounds) destroyed the AudioSource
   that the vanilla SoundManager owns; every later SoundManager sweep then threw
