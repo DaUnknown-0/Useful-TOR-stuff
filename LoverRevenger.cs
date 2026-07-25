@@ -394,6 +394,15 @@ namespace UsefulTORStuff {
         }
 
         // ---- Custom RPC senders (each also applies locally; the sender never receives its own RPC) ----
+        //
+        // NOT migrated to the consolidated channel (UTSRpc.CallId = 240) - deliberately. Classified
+        // NOT IDEMPOTENT: the appliers kill players (ApplyDecision's failed-roll suicide,
+        // ApplyRageDeath, ApplyDeniedDeath all call RPCProcedure.uncheckedMurderPlayer), post chat
+        // lines, play the Revenger sting and latch the win flags. A dual-send would run all of that
+        // twice on every new-build client - duplicated chat and a second murder call on an already
+        // dead player. De-duplicating is impossible: a receiver cannot tell a dual-sending new build
+        // from an old build that will never follow up on channel 240. Stays on the standalone callId
+        // 247 until the legacy paths are dropped wholesale in a breaking release.
         private static MessageWriter BeginRpc(byte subtype) {
             MessageWriter w = AmongUsClient.Instance.StartRpcImmediately(
                 PlayerControl.LocalPlayer.NetId, RpcId, SendOption.Reliable, -1);

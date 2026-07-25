@@ -146,9 +146,15 @@ namespace UsefulTORStuff {
 
         private static int Qty() => Quantity != null ? Quantity.getQuantity() : 1;
 
+        // The Tiebreaker quantity as actually applied - TrueModifierChances rolls each copy itself.
+        public static int EffectiveQuantity() => Qty();
+
         // Spawn-count multiply for the Tiebreaker (mirrors Invert/Sunglasses/... in TOR).
         public static void GetSelectionForRoleIdPostfix(ref int __result, RoleId roleId, bool multiplyQuantity) {
             try {
+                // TrueModifierChances already rolled every copy and writes the final ensured count
+                // itself - multiplying on top of that would square the quantity.
+                if (TrueModifierChances.IsActive) return;
                 if (roleId == RoleId.Tiebreaker && multiplyQuantity) __result *= Qty();
             } catch { }
         }
@@ -205,6 +211,9 @@ namespace UsefulTORStuff {
         // and only after every Tiebreaker SetModifier RPC has been tracked, so the top-up is timing-safe.
         public static void TopUp() {
             try {
+                // With TrueModifierChances active the number of Tiebreakers IS the roll result -
+                // topping up would fill right past it.
+                if (TrueModifierChances.IsActive) return;
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
                 if (CustomOptionHolder.modifierTieBreaker == null
                     || CustomOptionHolder.modifierTieBreaker.getSelection() <= 0) return; // not in play

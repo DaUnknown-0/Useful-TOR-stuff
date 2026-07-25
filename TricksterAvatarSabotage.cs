@@ -136,6 +136,14 @@ namespace UsefulTORStuff {
 
                 float dur = DurationOption != null ? DurationOption.getFloat() : 10f;
 
+                // NOT migrated to the consolidated channel (UTSRpc.CallId = 240) - deliberately.
+                // Classified NOT IDEMPOTENT: ApplyMixup() does not only assign mixupMap/mixupTimer,
+                // it also fires UTSAssets.PlayMixup(), a global audible cue. Dual-sending would make
+                // every new-build client play that cue TWICE within the same frame (and restart the
+                // duration timer), which is directly noticeable. De-duplicating is impossible here:
+                // a receiver cannot tell a dual-sending new build from an old build that will never
+                // follow up on channel 240. Stays on the standalone callId 246 until the legacy
+                // paths are dropped wholesale in a breaking release.
                 MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
                     PlayerControl.LocalPlayer.NetId, MixupRpcId, SendOption.Reliable, -1);
                 writer.Write((byte)map.Count);

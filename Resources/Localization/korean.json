@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>TOR - HOSTFIX의 새 업데이트 {0}을(를) 사용할 수 있습니다</size>\n{1}",
  "hostfix.updater.announcement_title": "TOR - Hostfix 공지",
  "hostfix.updater.announcement_shorttitle": "TOR - Hostfix 업데이트",
+ "uts.impcount.enable_option": "랜덤 임포스터 수",
+ "uts.impcount.min_option": "최소 임포스터 수",
+ "uts.impcount.max_option": "최대 임포스터 수",
+ "uts.impcount.refill_option": "Sidekick는 부족한 임포스터만 채울 수 있음",
+ "uts.impcount.sidekick_chance_option": "Jackal가 Sidekick을 생성할 수 있는 확률",
  "uts.mapping.option_name": "회의 중 지도 핑 (지도 클릭)",
  "uts.maplang.label": "Language: {0}"
 }

@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>TOR - HOSTFIX 新版本 {0} 現已可用</size>\n{1}",
  "hostfix.updater.announcement_title": "TOR - Hostfix 公告",
  "hostfix.updater.announcement_shorttitle": "TOR - Hostfix 更新",
+ "uts.impcount.enable_option": "隨機冒名者數量",
+ "uts.impcount.min_option": "最小冒名者數",
+ "uts.impcount.max_option": "最大冒名者數",
+ "uts.impcount.refill_option": "Sidekick 僅補充缺少的冒名者",
+ "uts.impcount.sidekick_chance_option": "Jackal能創建Sidekick的機率",
  "uts.mapping.option_name": "會議地圖標記（點擊地圖）",
  "uts.maplang.label": "Language: {0}"
 }

@@ -64,6 +64,10 @@ namespace UsefulTORStuff {
         private static float nextSendAllowed;
 
         public static void CreateOptions() {
+            // Receiver registration for the consolidated RPC channel (UTSRpc.CallId = 240).
+            // CreateOptions is this feature's only load-time entry point, so it doubles as init.
+            UTSRpc.Register(PingRpcId, HandleModuleRpc);
+
             try {
                 Option = CustomOption.Create(1360, Types.General,
                     "Meeting Map Ping (Click On Map)", true);
@@ -77,23 +81,33 @@ namespace UsefulTORStuff {
 
         // ---- receive ------------------------------------------------------------------------
 
+        // Shared receive logic. `sender` is the PlayerControl the message arrived on - the legacy
+        // patch takes it from __instance, the consolidated channel from UTSRpc.Sender.
+        private static void Receive(PlayerControl sender, MessageReader reader) {
+            try {
+                float x = reader.ReadSingle();
+                float y = reader.ReadSingle();
+                if (Enabled && sender != null) {
+                    byte id = sender.PlayerId;
+                    if (!placedAt.TryGetValue(id, out var last)
+                        || Time.unscaledTime - last >= ReceiveCooldownSeconds) {
+                        pings[id] = new Vector2(x, y);
+                        placedAt[id] = Time.unscaledTime;
+                    }
+                }
+            } catch { }
+        }
+
+        // Receiver on the consolidated channel (module byte 254). Registered from CreateOptions.
+        private static void HandleModuleRpc(MessageReader reader) => Receive(UTSRpc.Sender, reader);
+
+        // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 254 from pre-240 builds.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         private static class HandleRpcPatch {
             public static bool Prefix(PlayerControl __instance, byte callId, MessageReader reader) {
                 if (callId != PingRpcId) return true;
-                try {
-                    float x = reader.ReadSingle();
-                    float y = reader.ReadSingle();
-                    if (Enabled && __instance != null) {
-                        byte id = __instance.PlayerId;
-                        if (!placedAt.TryGetValue(id, out var last)
-                            || Time.unscaledTime - last >= ReceiveCooldownSeconds) {
-                            pings[id] = new Vector2(x, y);
-                            placedAt[id] = Time.unscaledTime;
-                        }
-                    }
-                } catch { }
+                Receive(__instance, reader);
                 return false;
             }
         }
@@ -140,15 +154,13 @@ namespace UsefulTORStuff {
             nextSendAllowed = Time.unscaledTime + SendCooldownSeconds;
             pings[local.PlayerId] = new Vector2(mapLocal.x, mapLocal.y); // local echo
             placedAt[local.PlayerId] = Time.unscaledTime;
-            try {
-                MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
-                    local.NetId, PingRpcId, SendOption.Reliable, -1);
-                writer.Write(mapLocal.x);
-                writer.Write(mapLocal.y);
-                AmongUsClient.Instance.FinishRpcImmediately(writer);
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[MapPing] send failed: {e}");
-            }
+            // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 254 + consolidated channel 240.
+            // Classified IDEMPOTENT: Receive() only assigns pings[id]/placedAt[id] to the transmitted
+            // position - the second copy writes the identical Vector2 (and is usually swallowed
+            // outright by the 1.8 s receive cooldown, which the first copy just armed). The legacy
+            // half exists for pre-240 builds and can be deleted in a future breaking release.
+            float px = mapLocal.x, py = mapLocal.y;
+            UTSRpc.SendDual(PingRpcId, PingRpcId, w => { w.Write(px); w.Write(py); });
         }
 
         private static void SyncMarkers(MapBehaviour map) {

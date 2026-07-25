@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>Elérhető egy új TOR - HOSTFIX frissítés ({0})</size>\n{1}",
  "hostfix.updater.announcement_title": "TOR - Hostfix közlemény",
  "hostfix.updater.announcement_shorttitle": "TOR - Hostfix frissítés",
+ "uts.impcount.enable_option": "Véletlen Impostor-szám",
+ "uts.impcount.min_option": "Minimum Impostorok",
+ "uts.impcount.max_option": "Maximum Impostorok",
+ "uts.impcount.refill_option": "A Sidekick csak egy hiányzó Impostort tölt be",
+ "uts.impcount.sidekick_chance_option": "Az esély, hogy a Jackal létrehozhat egy Sidekicket",
  "uts.mapping.option_name": "Térkép-jelölés gyűlés alatt (kattints a térképre)",
  "uts.maplang.label": "Nyelv: {0}"
 }

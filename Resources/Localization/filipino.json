@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>Available na ang bagong TOR - HOSTFIX update na {0}</size>\n{1}",
  "hostfix.updater.announcement_title": "TOR - Hostfix Announcement",
  "hostfix.updater.announcement_shorttitle": "TOR - Hostfix Update",
+ "uts.impcount.enable_option": "Random Impostor Count",
+ "uts.impcount.min_option": "Minimum Impostors",
+ "uts.impcount.max_option": "Maximum Impostors",
+ "uts.impcount.refill_option": "Nagpupuno Lang ang Sidekick ng Nawawalang Impostor",
+ "uts.impcount.sidekick_chance_option": "Chance That The Jackal Can Create A Sidekick",
  "uts.mapping.option_name": "Map Ping sa Miting (I-click ang Mapa)",
  "uts.maplang.label": "Wika: {0}"
 }

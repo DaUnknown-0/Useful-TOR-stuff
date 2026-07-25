@@ -65,6 +65,10 @@ namespace UsefulTORStuff {
         private static byte? lastDeadShieldedId;
 
         public static void CreateOptions() {
+            // Receiver registration for the consolidated RPC channel (UTSRpc.CallId = 240).
+            // CreateOptions is this feature's only load-time entry point, so it doubles as init.
+            UTSRpc.Register(ReshieldRpcId, HandleModuleRpc);
+
             try {
                 Option = CustomOption.Create(
                     1230, Types.Crewmate, "Medic Can Reshield",
@@ -93,14 +97,11 @@ namespace UsefulTORStuff {
         }
 
         // Broadcast + apply the shield reset (sender never receives its own RPC).
+        // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 249 + consolidated channel 240. Classified
+        // IDEMPOTENT: ApplyReset only nulls Medic.shielded/futureShielded and clears usedShield, so
+        // running it twice ends in exactly the same state. The legacy half can go in a breaking release.
         private static void SendReset() {
-            try {
-                MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
-                    PlayerControl.LocalPlayer.NetId, ReshieldRpcId, SendOption.Reliable, -1);
-                AmongUsClient.Instance.FinishRpcImmediately(writer);
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[MedicReshield] SendReset failed: {e}");
-            }
+            UTSRpc.SendDual(ReshieldRpcId, ReshieldRpcId, null); // no payload
             ApplyReset();
         }
 
@@ -112,7 +113,10 @@ namespace UsefulTORStuff {
             } catch { }
         }
 
-        // Receive RPC 249.
+        // Receiver on the consolidated channel (module byte 249). Registered from CreateOptions.
+        private static void HandleModuleRpc(MessageReader reader) => ApplyReset();
+
+        // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 249 from pre-240 builds.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {

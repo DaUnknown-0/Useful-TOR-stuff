@@ -47,6 +47,10 @@ namespace UsefulTORStuff {
         private static CustomButton selfLimpButton;
 
         public static void CreateOptions() {
+            // Receiver registration for the consolidated RPC channel (UTSRpc.CallId = 240).
+            // CreateOptions is this feature's only load-time entry point, so it doubles as init.
+            UTSRpc.Register(SelfLimpRpcId, HandleModuleRpc);
+
             try {
                 TrappedOption = CustomOption.Create(
                     1270, Types.Crewmate, "Trapped Players Limp", false, CustomOptionHolder.trapperSpawnRate);
@@ -149,22 +153,26 @@ namespace UsefulTORStuff {
         // ---- Self-limp toggle (button + synced RPC) ---------------------------------------------
         private static void ToggleSelfLimp() {
             selfLimping = !selfLimping;
-            try {
-                MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
-                    PlayerControl.LocalPlayer.NetId, SelfLimpRpcId, SendOption.Reliable, -1);
-                writer.Write(selfLimping ? (byte)1 : (byte)0);
-                AmongUsClient.Instance.FinishRpcImmediately(writer);
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[TrapperLimp] ToggleSelfLimp send failed: {e}");
-            }
+            // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 248 + consolidated channel 240.
+            // Classified IDEMPOTENT: the TOGGLE happens locally on the sender, the wire carries the
+            // resulting ABSOLUTE state (0/1) and the receiver just assigns it - so applying the same
+            // payload twice yields the same flag. The legacy half can go in a breaking release.
+            byte state = selfLimping ? (byte)1 : (byte)0;
+            UTSRpc.SendDual(SelfLimpRpcId, SelfLimpRpcId, w => w.Write(state));
         }
 
+        // Receiver on the consolidated channel (module byte 248). Registered from CreateOptions.
+        private static void HandleModuleRpc(MessageReader reader) {
+            try { selfLimping = reader.ReadByte() != 0; } catch { }
+        }
+
+        // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 248 from pre-240 builds.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
             public static bool Prefix(byte callId, MessageReader reader) {
                 if (callId == SelfLimpRpcId) {
-                    try { selfLimping = reader.ReadByte() != 0; } catch { }
+                    HandleModuleRpc(reader);
                     return false;
                 }
                 return true;

@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>TOR - HOSTFIX の新しいアップデート {0} が利用可能です</size>\n{1}",
  "hostfix.updater.announcement_title": "TOR - Hostfix お知らせ",
  "hostfix.updater.announcement_shorttitle": "TOR - Hostfix アップデート",
+ "uts.impcount.enable_option": "ランダムなインポスター数",
+ "uts.impcount.min_option": "インポスターの最小数",
+ "uts.impcount.max_option": "インポスターの最大数",
+ "uts.impcount.refill_option": "Sidekickは欠員インポスターのみ補充可能",
+ "uts.impcount.sidekick_chance_option": "JackalがSidekickを作成できる確率",
  "uts.mapping.option_name": "会議中のマップピン（マップをクリック）",
  "uts.maplang.label": "Language: {0}"
 }

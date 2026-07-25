@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>O nouă actualizare TOR - HOSTFIX la {0} este disponibilă</size>\n{1}",
  "hostfix.updater.announcement_title": "Anunț TOR - Hostfix",
  "hostfix.updater.announcement_shorttitle": "Actualizare TOR - Hostfix",
+ "uts.impcount.enable_option": "Numărul Aleatoriu de Impostori",
+ "uts.impcount.min_option": "Impostori minimi",
+ "uts.impcount.max_option": "Impostori maximi",
+ "uts.impcount.refill_option": "Sidekick completează doar un Impostor lipsă",
+ "uts.impcount.sidekick_chance_option": "Șansa ca Jackal să poată crea un Sidekick",
  "uts.mapping.option_name": "Ping pe hartă în ședință (clic pe hartă)",
  "uts.maplang.label": "Limbă: {0}"
 }

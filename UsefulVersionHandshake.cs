@@ -71,19 +71,41 @@ namespace UsefulTORStuff {
                 Assembly.GetExecutingAssembly().ManifestModule.ModuleVersionId.Equals(guid);
         }
 
+        // Receiver registration for the consolidated RPC channel (UTSRpc.CallId = 240). Called once
+        // from UsefulTORStuffPlugin.Load() - this module has no other load-time entry point (all its
+        // patches are attribute-based and picked up by PatchAll).
+        public static void RegisterRpc() {
+            UTSRpc.Register(UsefulTORStuffPlugin.VersionHandshakeRpcId, HandleModuleRpc);
+        }
+
+        private static void HandleModuleRpc(MessageReader reader) {
+            // No subtype byte (there never was one) - the payload starts straight at the version
+            // bytes, exactly as it did when 253 was a standalone callId.
+            try { ReceiveRpc(reader); } catch { }
+        }
+
         public static void ShareVersion() {
             if (AmongUsClient.Instance == null || PlayerControl.LocalPlayer == null) return;
             var v = UsefulTORStuffPlugin.Version;
+            int clientId = AmongUsClient.Instance.ClientId;
+            byte[] guidBytes = Assembly.GetExecutingAssembly().ManifestModule.ModuleVersionId.ToByteArray();
 
-            MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
-                PlayerControl.LocalPlayer.NetId, UsefulTORStuffPlugin.VersionHandshakeRpcId, SendOption.Reliable, -1);
-            writer.Write((byte)v.Major);
-            writer.Write((byte)v.Minor);
-            writer.Write((byte)v.Build);
-            writer.WritePacked(AmongUsClient.Instance.ClientId);
-            writer.Write((byte)(v.Revision < 0 ? 0xFF : v.Revision));
-            writer.Write(Assembly.GetExecutingAssembly().ManifestModule.ModuleVersionId.ToByteArray());
-            AmongUsClient.Instance.FinishRpcImmediately(writer);
+            // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 253 + consolidated channel 240. This one
+            // MUST keep the legacy path for the foreseeable future - the handshake is precisely the
+            // message an older build has to be able to read, otherwise a mixed lobby would show
+            // "missing mod" for everyone running a pre-240 version. Classified IDEMPOTENT: Receive()
+            // only writes playerVersions[clientId] = new PlayerVersion(...), so both copies store the
+            // identical entry under the identical key.
+            UTSRpc.SendDual(UsefulTORStuffPlugin.VersionHandshakeRpcId,
+                            UsefulTORStuffPlugin.VersionHandshakeRpcId,
+                            writer => {
+                                writer.Write((byte)v.Major);
+                                writer.Write((byte)v.Minor);
+                                writer.Write((byte)v.Build);
+                                writer.WritePacked(clientId);
+                                writer.Write((byte)(v.Revision < 0 ? 0xFF : v.Revision));
+                                writer.Write(guidBytes);
+                            });
 
             // Apply locally too (the sender never receives its own broadcast).
             Receive(v.Major, v.Minor, v.Build, v.Revision,
@@ -442,7 +464,8 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Receive RPC 253 (Prefix with high priority → before the TOR switch handler).
+        // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 253 from pre-240 builds
+        // (Prefix with high priority → before the TOR switch handler).
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class UsefulHandleRpcPatch {

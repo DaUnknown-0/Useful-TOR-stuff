@@ -1013,6 +1013,12 @@
  "hostfix.updater.announcement_body": "<size=150%>Ein neues TOR - HOSTFIX Update auf {0} ist verfügbar</size>\n{1}",
  "hostfix.updater.announcement_title": "TOR - Hostfix Ankündigung",
  "hostfix.updater.announcement_shorttitle": "TOR - Hostfix Update",
+ "uts.impcount.enable_option": "Zufällige Impostor-Anzahl",
+ "uts.impcount.min_option": "Minimale Impostor",
+ "uts.impcount.max_option": "Maximale Impostor",
+ "uts.impcount.refill_option": "Sidekick füllt nur einen fehlenden Impostor auf",
+ "uts.impcount.sidekick_chance_option": "Chance, dass der Jackal einen Sidekick erstellen kann",
+ "uts.truemodifierchances.enabled": "Echte Modifier-Chancen",
  "uts.mapping.option_name": "Meeting-Karten-Ping (Klick auf die Karte)",
  "uts.maplang.label": "Sprache: {0}"
 }

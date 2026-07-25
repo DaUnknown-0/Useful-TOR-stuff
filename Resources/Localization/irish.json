@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>Tá nuashonrú nua TOR - HOSTFIX go dtí {0} ar fáil</size>\n{1}",
  "hostfix.updater.announcement_title": "Fógra TOR - Hostfix",
  "hostfix.updater.announcement_shorttitle": "Nuashonrú TOR - Hostfix",
+ "uts.impcount.enable_option": "Líon Randamach Impostors",
+ "uts.impcount.min_option": "Íosmhéid Impostors",
+ "uts.impcount.max_option": "Uasmhéid Impostors",
+ "uts.impcount.refill_option": "Ní líonann an Sidekick ach Impostor atá in easnamh",
+ "uts.impcount.sidekick_chance_option": "An Seans gur Féidir le Jackal Sidekick a Chruthú",
  "uts.mapping.option_name": "Pingeáil Léarscáile sa Chruinniú (Cliceáil ar an Léarscáil)",
  "uts.maplang.label": "Teanga: {0}"
 }

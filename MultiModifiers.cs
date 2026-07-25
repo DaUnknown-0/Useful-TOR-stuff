@@ -76,6 +76,11 @@ namespace UsefulTORStuff {
         private static int MiniQty() => MiniQuantity != null ? MiniQuantity.getQuantity() : 1;
         private static int ArmoredQty() => ArmoredQuantity != null ? ArmoredQuantity.getQuantity() : 1;
 
+        // The quantities as they are ACTUALLY applied (extras need the handshake). TrueModifierChances
+        // rolls every copy itself and reads them through these.
+        public static int EffectiveMiniQuantity() => EveryoneHasMod() ? MiniQty() : 1;
+        public static int EffectiveArmoredQuantity() => EveryoneHasMod() ? ArmoredQty() : 1;
+
         private static bool IsExtraMini(PlayerControl p) =>
             p != null && minis.Contains(p.PlayerId)
             && (Mini.mini == null || Mini.mini.PlayerId != p.PlayerId);
@@ -119,6 +124,7 @@ namespace UsefulTORStuff {
         // Reflection patches (internal TOR members).
         // ====================================================================
         public static void TryPatch(Harmony harmony) {
+            UTSRpc.Register(RpcId, HandleModuleRpc);
             try {
                 var torAsm = typeof(CustomOption).Assembly;
                 var rmsr = torAsm.GetType("TheOtherRoles.Patches.RoleManagerSelectRolesPatch");
@@ -149,6 +155,9 @@ namespace UsefulTORStuff {
         // ====================================================================
         public static void GetSelectionForRoleIdPostfix(ref int __result, RoleId roleId, bool multiplyQuantity) {
             try {
+                // TrueModifierChances already rolled every copy and writes the final ensured count
+                // itself - multiplying on top of that would square the quantity.
+                if (TrueModifierChances.IsActive) return;
                 if (!multiplyQuantity || !EveryoneHasMod()) return;
                 if (roleId == RoleId.Mini) __result *= MiniQty();
                 else if (roleId == RoleId.Armored) __result *= ArmoredQty();
@@ -403,28 +412,36 @@ namespace UsefulTORStuff {
 
         private static void SendBreakExtraArmor(byte playerId) {
             try {
-                MessageWriter w = AmongUsClient.Instance.StartRpcImmediately(
-                    PlayerControl.LocalPlayer.NetId, RpcId, SendOption.Reliable, -1);
-                w.Write(SubBreakExtraArmor);
-                w.Write(playerId);
-                AmongUsClient.Instance.FinishRpcImmediately(w);
+                // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 245 + consolidated channel 240.
+                // Classified IDEMPOTENT: the receiver only does brokenExtraArmor.Add(id) on a
+                // HashSet, so a second copy of the same id changes nothing. The legacy half exists
+                // for pre-240 builds and can be deleted in a future breaking release.
+                UTSRpc.SendDual(RpcId, RpcId, w => { w.Write(SubBreakExtraArmor); w.Write(playerId); });
                 brokenExtraArmor.Add(playerId);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] break-armor send failed: {e}");
             }
         }
 
+        // Receiver on the consolidated channel (module byte 245). Registered from TryPatch; the
+        // module byte is already consumed, so this starts at the subtype byte exactly as before.
+        private static void HandleModuleRpc(MessageReader reader) {
+            try {
+                byte subtype = reader.ReadByte();
+                if (subtype == SubBreakExtraArmor) brokenExtraArmor.Add(reader.ReadByte());
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] HandleRpc failed: {e}");
+            }
+        }
+
+        // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 245 from pre-240
+        // builds. Idempotent, so receiving both copies is harmless.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
             public static bool Prefix(byte callId, MessageReader reader) {
                 if (callId != RpcId) return true;
-                try {
-                    byte subtype = reader.ReadByte();
-                    if (subtype == SubBreakExtraArmor) brokenExtraArmor.Add(reader.ReadByte());
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] HandleRpc failed: {e}");
-                }
+                HandleModuleRpc(reader);
                 return false;
             }
         }

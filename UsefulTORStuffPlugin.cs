@@ -51,11 +51,12 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.4";
+    public const string PluginVersion = "1.3.3.5";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
-    // Custom RPC for the mod-presence handshake (see UsefulVersionHandshake).
-    // 253 is free: TOR's CustomRPC enum runs 100–~180, the Chance mod uses 200/201/250/251.
+    // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
+    // consolidation this is BOTH the module byte on UTSRpc.CallId = 240 and - for as long as the
+    // legacy dual-send exists - the standalone callId older builds still listen on. See UTSRpc.cs.
     public const byte VersionHandshakeRpcId = 253;
 
     public static ManualLogSource Logger { get; private set; }
@@ -122,6 +123,15 @@ public class UsefulTORStuffPlugin : BasePlugin
             "TCP port for the local settings web page. If busy, the next few ports are tried.");
 
         var harmony = new Harmony(PluginGuid);
+
+        // Collision watchdog for our consolidated custom callId (see UTSRpc.cs). TOR's CustomRPC enum
+        // grows with every release; if it ever reaches our channel (or Unknown's Collection's), the
+        // mods would silently mis-parse each other. Reflection-only, log-only, once per start.
+        WarnOnRpcIdCollisions();
+
+        // Mod-presence handshake receiver on the consolidated channel. It has no other load-time
+        // entry point (all its patches are attribute-based), so it is registered here.
+        UsefulVersionHandshake.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -230,6 +240,22 @@ public class UsefulTORStuffPlugin : BasePlugin
         // The map language toggle (MapLanguageToggle) is patch-only - nothing to create.
         MeetingMapPing.CreateOptions();
 
+        // Random impostor count (host rolls min..max at game start, stays secret), Spy unlock
+        // at max >= 2, and the Jackal sidekick gating (refill / per-game chance, RPC 244).
+        // SelectRoles / GetAdjustedNumImpostors / intro / HandleRpc patches are attribute-based
+        // (PatchAll); TryPatch adds the reflection postfix on getRoleAssignmentData (Spy unlock).
+        ImpostorCountRange.CreateOptions();
+        ImpostorCountRange.TryPatch(harmony);
+
+        // True Modifier Chances (option 1375, Modifier tab, default OFF): the modifier percentages
+        // become real independent spawn chances instead of TOR's lottery tickets. TryPatch adds the
+        // reflection patches on assignModifiers (roll + result log) and getSelectionForRoleId
+        // (winner -> ensured, loser -> 0); setModifier/resetVariables/OnGameJoined are
+        // attribute-based (PatchAll). Must be created AFTER TiebreakerMultiple/MultiModifiers -
+        // it reads their quantities and switches their own multiply postfixes off while active.
+        TrueModifierChances.CreateOptions();
+        TrueModifierChances.TryPatch(harmony);
+
         // Localization engine: loads the string tables and mutates TOR's role/option strings
         // in place (LocalizationTOR). Must run AFTER every CreateOptions above so first-pass
         // originals are complete; the SetLanguage/GetString patches are attribute-based
@@ -281,6 +307,48 @@ public class UsefulTORStuffPlugin : BasePlugin
         }
 
         Logger.LogInfo($"{PluginName} v{PluginVersion} loaded.");
+    }
+
+    // ========================================================================
+    // RPC collision watchdog: reads TOR's internal CustomRPC enum via reflection and warns if TOR
+    // ever grew into the byte range the DaUnknown mods reserved for themselves. Purely diagnostic -
+    // nothing is changed, the log line just tells us to move a channel BEFORE players hit the
+    // mis-parse in a live round. Runs before TORAssembly is set (PatchBloodyThrottle), so it
+    // resolves the assembly itself.
+    // ========================================================================
+    private void WarnOnRpcIdCollisions()
+    {
+        try {
+            var tor = TORAssembly ?? AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(a => a.GetName().Name == "TheOtherRoles");
+            var rpcEnum = tor?.GetType("TheOtherRoles.CustomRPC");
+            if (rpcEnum == null || !rpcEnum.IsEnum) {
+                Logger.LogWarning("[UTSRpc][DIAG] TOR's CustomRPC enum not found — RPC collision watchdog skipped.");
+                return;
+            }
+
+            int highest = -1;
+            var collisions = new List<string>();
+            foreach (var name in Enum.GetNames(rpcEnum)) {
+                int value = Convert.ToInt32(Enum.Parse(rpcEnum, name));
+                if (value > highest) highest = value;
+                // >= 200: TOR has entered the block the DaUnknown mods reserved for themselves.
+                // == 240 / == 230: a direct hit on our channel / Unknown's Collection's channel.
+                if (value >= 200 || value == UTSRpc.CallId || value == 230)
+                    collisions.Add($"{name}={value}");
+            }
+
+            if (collisions.Count > 0)
+                Logger.LogWarning(
+                    "[UTSRpc][DIAG] TOR's CustomRPC now uses ids in the range reserved by the DaUnknown mods: "
+                    + string.Join(", ", collisions)
+                    + $". Our channel is {UTSRpc.CallId} (Unknown's Collection uses 230) — move the affected "
+                    + "channel before the next release or RPC payloads will be mis-parsed.");
+
+            Logger.LogInfo($"[UTSRpc][DIAG] channel {UTSRpc.CallId}; highest TOR CustomRPC id is {highest}.");
+        } catch (Exception ex) {
+            Logger.LogWarning($"[UTSRpc][DIAG] RPC collision watchdog failed: {ex.Message}");
+        }
     }
 
     // ========================================================================

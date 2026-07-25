@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Internal
+- **All custom RPCs moved onto a single channel (callId 240).** Custom RPCs share one byte-wide
+  id space with TOR's own `CustomRPC` enum, which grows with every TOR release (100–183 today).
+  This plugin held nine separate bytes (244–249, 252–254), i.e. nine chances for a future TOR
+  release to land on one of ours — and such a collision is not a build error but a silent
+  mis-parse in a live round. Everything now travels as `[240][module byte][payload]`, where the
+  module byte is each feature's historical id, so only one byte has to stay globally free.
+  The payload behind the module byte is byte-for-byte unchanged.
+  Because this plugin has no gate that stops a round on a version mismatch (the version handshake
+  is informational) and is explicitly meant for mixed lobbies, migrated messages are **dual-sent**:
+  once on the old callId (understood by older builds) and once on channel 240, with both receive
+  paths active. That is only safe for messages whose application is idempotent, so every RPC was
+  classified first: `SidekickAllowed` (244), `MultiModifiers` armor-break (245), `SelfLimp` (248),
+  `MedicReshield` (249), `CancelBomb` (252), the version handshake (253) and `MeetingMapPing` (254)
+  are pure state assignments and were migrated; the Trickster avatar mixup (246, replays a global
+  audio cue) and the whole Lover/Revenger protocol (247, kills + chat + win flags) are **not**
+  idempotent and deliberately stay on their standalone callId. All legacy paths are marked
+  `LEGACY DUAL-SEND` in the source and can be dropped in one go in a future breaking release.
+- **RPC collision watchdog.** On load the plugin reads TOR's `CustomRPC` enum via reflection and
+  logs a warning if TOR ever uses an id ≥ 200 (or exactly 230/240, the Unknown's Collection and
+  Forgotten Fixes channels), plus an info line with the highest TOR id currently in use. Purely
+  diagnostic — it surfaces a looming collision before players run into it in a live round.
+
 ### Fixes
 - **No more phantom Minis/Armored/Tiebreakers in foreign lobbies.** The Mini/Armored/
   Tiebreaker holder lists were only cleared by TOR's `resetVariables` RPC — which only a
@@ -29,6 +52,38 @@
   stacking Mini+Armored on the same player) is gone.
 
 ### Features
+- **True Modifier Chances.** New host option "True Modifier Chances" (option 1375, Modifier
+  tab, default OFF): the modifier percentages finally behave like actual probabilities.
+  TOR never rolls them - 100% modifiers are placed directly and everything else throws
+  `percentage x quantity` LOTTERY TICKETS into a pool that is then filled up until the
+  modifier count is reached. With enough slots a 10% modifier therefore spawns every single
+  round, and with few slots even a 90% one keeps missing. With the option on, the host rolls
+  every modifier - and every copy of a quantity modifier - separately against its real
+  percentage before the assignment: winners are guaranteed, losers do not appear at all this
+  round, and "Minimum/Maximum Modifiers" turns into a pure upper limit instead of a target
+  that is always hit exactly (surplus winners are trimmed randomly, which is logged). The
+  Lovers pair is untouched - TOR already rolls it correctly. Works with plain-TOR clients
+  (host-side only) and switches the Tiebreaker/Mini/Armored quantity multipliers of this
+  plugin off while active, so nothing is counted twice.
+- **Random Impostor Count (min/max).** New host options "Random Impostor Count" +
+  "Minimum/Maximum Impostors" (each 1-3, options 1370-1372, General tab): the host rolls
+  the actual impostor count once per game right before role assignment; it stays fixed
+  for the whole round and secret from everyone. All visible surfaces (lobby settings,
+  intro "There are X Impostors") keep showing the configured maximum: the host-side
+  vanilla impostor setting is auto-enforced to the max while the feature is on. With a
+  max of 2+ the Spy stays in the role pool even when only 1 impostor was rolled (a Spy
+  sighting must not reveal the count), and the intro team lineup is hidden at 1 impostor
+  exactly like TOR already hides it at 2+ whenever the Spy is enabled. Limitation: TOR's
+  Role Draft keeps its own hardcoded "2+ actual impostors" Spy filter.
+- **Jackal sidekick gating (refill / per-game chance).** Two new mutually exclusive
+  controls on top of TOR's "Jackal Can Create A Sidekick" (both need it ON):
+  "Sidekick Only Fills A Missing Impostor" (option 1373, sub-option of the range
+  feature) gives the Jackal the sidekick button exactly when fewer impostors spawned
+  than the configured max (guaranteed; no button at full count), so the sidekick refills
+  the missing evil role. Otherwise "Chance That The Jackal Can Create A Sidekick"
+  (option 1374, 0-100%) is rolled once per game by the host; at 100% TOR's behavior is
+  untouched. The verdict is broadcast via RPC 244 and sets Jackal.canCreateSidekick on
+  every client; a Sidekick promoted to Jackal keeps TOR's own promotion rules.
 - **Meeting Map Ping.** Open the map during a meeting and click anywhere: every player
   (with the mod) sees the vanilla HerePoint crewmate icon in YOUR player color at that
   spot — one marker per player, a new click moves yours, with a red shader outline

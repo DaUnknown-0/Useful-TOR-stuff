@@ -1013,6 +1013,11 @@
  "hostfix.updater.announcement_body": "<size=150%>Доступно новое обновление TOR - HOSTFIX до версии {0}</size>\n{1}",
  "hostfix.updater.announcement_title": "Объявление TOR - Hostfix",
  "hostfix.updater.announcement_shorttitle": "Обновление TOR - Hostfix",
+ "uts.impcount.enable_option": "Случайное количество Impostor",
+ "uts.impcount.min_option": "Минимум Impostor",
+ "uts.impcount.max_option": "Максимум Impostor",
+ "uts.impcount.refill_option": "Sidekick только восполняет недостающего Impostor",
+ "uts.impcount.sidekick_chance_option": "Шанс, что Jackal может создать Sidekick",
  "uts.mapping.option_name": "Метка на карте во время собрания (клик по карте)",
  "uts.maplang.label": "Язык: {0}"
 }

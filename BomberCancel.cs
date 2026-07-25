@@ -40,6 +40,10 @@ namespace UsefulTORStuff {
         // Create the option under Bomber. Called from UsefulTORStuffPlugin.Load() after TOR's
         // CustomOptionHolder.Load() (guaranteed by the hard dependency).
         public static void CreateOptions() {
+            // Receiver registration for the consolidated RPC channel (UTSRpc.CallId = 240).
+            // CreateOptions is this feature's only load-time entry point, so it doubles as init.
+            UTSRpc.Register(CancelBombRpcId, HandleModuleRpc);
+
             try {
                 // ID 1217: must be unique. 1210 collided with MeetingDurationOverride (1210-1216),
                 // which shares the config slot and scrambles both options' selections.
@@ -64,19 +68,22 @@ namespace UsefulTORStuff {
 
         // Broadcast the cancel to all clients and apply it locally (the sender never receives its
         // own RPC). Bomber.clearBomb() is state-independent: it only checks Bomber.bomb != null.
+        // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 252 + consolidated channel 240. Classified
+        // IDEMPOTENT: Bomber.clearBomb() is state-independent (it only acts if Bomber.bomb != null and
+        // then nulls it), so a second call is a no-op. The legacy half can go in a breaking release.
         private static void SendCancel() {
-            try {
-                MessageWriter writer = AmongUsClient.Instance.StartRpcImmediately(
-                    PlayerControl.LocalPlayer.NetId, CancelBombRpcId, SendOption.Reliable, -1);
-                AmongUsClient.Instance.FinishRpcImmediately(writer);
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[BomberCancel] SendCancel failed: {e}");
-            }
+            UTSRpc.SendDual(CancelBombRpcId, CancelBombRpcId, null); // no payload
             try { Bomber.clearBomb(); } catch { }
         }
 
-        // Receive RPC 252 (Prefix with high priority → before TOR's HandleRpc switch). Returns
-        // false only for our id; everything else falls through to TOR untouched.
+        // Receiver on the consolidated channel (module byte 252). Registered from CreateOptions.
+        private static void HandleModuleRpc(MessageReader reader) {
+            try { Bomber.clearBomb(); } catch { }
+        }
+
+        // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 252 from pre-240 builds
+        // (Prefix with high priority → before TOR's HandleRpc switch). Returns false only for our id;
+        // everything else falls through to TOR untouched.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {

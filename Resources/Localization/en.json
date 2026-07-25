@@ -1013,6 +1013,12 @@
  "hostfix.updater.announcement_shorttitle": "TOR - Hostfix Update",
  "tor.role.goodGuesser.intro": "Guess and shoot",
  "tor.role.badGuesser.intro": "Guess and shoot",
+ "uts.impcount.enable_option": "Random Impostor Count",
+ "uts.impcount.min_option": "Minimum Impostors",
+ "uts.impcount.max_option": "Maximum Impostors",
+ "uts.impcount.refill_option": "Sidekick Only Fills A Missing Impostor",
+ "uts.impcount.sidekick_chance_option": "Chance That The Jackal Can Create A Sidekick",
+ "uts.truemodifierchances.enabled": "True Modifier Chances",
  "uts.mapping.option_name": "Meeting Map Ping (Click On Map)",
  "uts.maplang.label": "Language: {0}"
 }
