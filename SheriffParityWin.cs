@@ -18,6 +18,9 @@
  *
  * The two win-check methods are private/static in TOR's internal CheckEndCriteriaPatch, so they
  * are patched via reflection + Harmony (like the Bloody patches in UsefulTORStuffPlugin).
+ *
+ * A living HUNTER (Unknown's Collection, the promoted Sheriff) counts exactly like the Sheriff here:
+ * same gun, same option, no second setting. See HunterAlive() for why he needs a probe of his own.
  */
 
 using System;
@@ -121,6 +124,45 @@ namespace UsefulTORStuff {
             return s != null && s.Data != null && !s.Data.IsDead;
         }
 
+        // Unknown's Collection's Hunter is a promoted Sheriff and shoots by exactly the same rules, so
+        // he keeps the parity win suppressed just like the Sheriff he was. He needs his own probe:
+        // with UC option 1506 ("Deputy Promotes To Sheriff When The Hunter Rises") a living Deputy
+        // takes over the sheriff slot, and from that moment Sheriff.sheriff points at the DEPUTY - a
+        // dead deputy-sheriff plus a living Hunter would otherwise read as "nobody left to break
+        // parity" while the crew's actual gun is still walking around.
+        //
+        // Resolved by reflection (same shape as SabotageTuning's Chance-mod probe): UC is an optional
+        // sibling plugin, so this must stay a no-op when it is not installed.
+        private static bool hunterResolved;
+        private static FieldInfo hunterField, hunterActiveField;
+
+        private static bool HunterAlive() {
+            if (!hunterResolved) {
+                hunterResolved = true;
+                try {
+                    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) {
+                        Type t = null;
+                        try { t = asm.GetType("UnknownsCollection.Hunter", false); } catch { }
+                        if (t != null) {
+                            hunterField = t.GetField("hunter", BindingFlags.Public | BindingFlags.Static);
+                            hunterActiveField = t.GetField("active", BindingFlags.Public | BindingFlags.Static);
+                            UsefulTORStuffPlugin.Logger?.LogInfo(
+                                "[SheriffParityWin] UC Hunter found — he blocks the parity win too.");
+                            break;
+                        }
+                    }
+                } catch { }
+            }
+            if (hunterField == null || hunterActiveField == null) return false;
+            try {
+                if (!(bool)hunterActiveField.GetValue(null)) return false;   // no hunt this round
+                var h = hunterField.GetValue(null) as PlayerControl;
+                return h != null && h.Data != null && !h.Data.IsDead && !h.Data.Disconnected;
+            } catch {
+                return false;
+            }
+        }
+
         // Counts mirror TOR's PlayerStatistics: alive players, alive Impostors, alive Jackal+Sidekick.
         private static void CountAlive(out int total, out int impAlive, out int jackalAlive) {
             total = impAlive = jackalAlive = 0;
@@ -136,8 +178,8 @@ namespace UsefulTORStuff {
         }
 
         private static bool ShouldSuppress(int killerAlive, int totalAlive) {
-            if (Option == null || !Option.getBool()) return false; // option off
-            if (!SheriffAlive()) return false;                     // no Sheriff to break parity
+            if (Option == null || !Option.getBool()) return false;   // option off
+            if (!SheriffAlive() && !HunterAlive()) return false;      // nobody left to break parity
             bool outnumber = killerAlive > (totalAlive - killerAlive);
             // Scope 0 ("At Exact Parity Only"): when killers truly outnumber crew, a Sheriff kill
             // can't break parity, so let the win fire. Scope 1 ("Always"): block while Sheriff alive.
