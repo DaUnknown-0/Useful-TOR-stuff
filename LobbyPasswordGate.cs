@@ -45,6 +45,17 @@ namespace UsefulTORStuff
         internal const string AppKeyActive   = "LobbyPasswordGate.Active";
         internal const string AppKeyUnlocked = "LobbyPasswordGate.Unlocked";
 
+        // Letterbox for OTHER mods to hand in a password (Role Control's local web page uses it, so
+        // the host can type into a real text field instead of into the frozen lobby - the gate blocks
+        // the mouse and eats the keyboard, which is exactly when a second screen is handy).
+        // Same AppDomain-only contract as the two keys above: no assembly reference either way.
+        //   Submit  (string)  written by the caller, consumed and cleared here
+        //   Result  (string)  written here: "ok" | "wrong" | "notready" | "inactive"
+        // The password itself never leaves this process: the page posts to 127.0.0.1 and the value is
+        // hashed here, exactly like a typed one.
+        internal const string AppKeySubmit = "LobbyPasswordGate.Submit";
+        internal const string AppKeyResult = "LobbyPasswordGate.SubmitResult";
+
         private enum FetchState { Loading, Ready, Failed }
 
         public static LobbyPasswordGate Instance { get; private set; }
@@ -95,6 +106,10 @@ namespace UsefulTORStuff
 
         public void Update()
         {
+            // A password handed in from outside (see AppKeySubmit). Checked FIRST and unconditionally:
+            // if it is left lying around while the panel is closed, the next lobby would swallow it.
+            ConsumeSubmittedPassword();
+
             // Left the lobby / returned to the menu: the GameStartManager.Update postfix that drives
             // this panel stops firing, so close it here and unfreeze. Unlocked is kept for the session.
             if (_panel != null && _panel.activeSelf && GameStartManager.Instance == null)
@@ -332,11 +347,36 @@ namespace UsefulTORStuff
             return true;
         }
 
+        // ── Password from another mod (Role Control's web page) ───────────────────────────────
+
+        private void ConsumeSubmittedPassword()
+        {
+            string submitted;
+            try { submitted = AppDomain.CurrentDomain.GetData(AppKeySubmit) as string; }
+            catch { return; }
+            if (submitted == null) return;
+
+            // Take it out of the box before doing anything else, so a throw cannot make it repeat.
+            try { AppDomain.CurrentDomain.SetData(AppKeySubmit, null); } catch { }
+
+            if (Unlocked)                       { SetSubmitResult("ok");       return; }
+            if (_panel == null || !_panel.activeSelf) { SetSubmitResult("inactive"); return; }
+            if (_fetchState != FetchState.Ready)     { SetSubmitResult("notready"); return; }
+
+            _inputBuffer = submitted;
+            TryUnlock();                        // writes the result itself
+        }
+
+        private void SetSubmitResult(string result)
+        {
+            try { AppDomain.CurrentDomain.SetData(AppKeyResult, result); } catch { }
+        }
+
         // ── Password check ────────────────────────────────────────────────────────────────────
 
         private void TryUnlock()
         {
-            if (_fetchState != FetchState.Ready || _fetchedHash == null) return;
+            if (_fetchState != FetchState.Ready || _fetchedHash == null) { SetSubmitResult("notready"); return; }
             try
             {
                 byte[] inputBytes = Encoding.UTF8.GetBytes(_inputBuffer);
@@ -350,11 +390,13 @@ namespace UsefulTORStuff
                 {
                     Unlocked = true;
                     AppDomain.CurrentDomain.SetData(AppKeyUnlocked, true);
+                    SetSubmitResult("ok");
                     HidePanel();
                     UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Unlocked.");
                 }
                 else
                 {
+                    SetSubmitResult("wrong");
                     ShowError(UTSLocalization.Tr("uts.lobbypasswordgate.wrong_password"));
                     UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Wrong password attempt.");
                 }
