@@ -24,6 +24,7 @@ namespace UsefulTORStuff {
         public static readonly Dictionary<int, PlayerVersion> playerVersions = new Dictionary<int, PlayerVersion>();
         private static bool versionSent;
         private static bool snitchFixChatShown;
+        private static bool gateChatShown;
 
         // Post the "snitch fix active" confirmation to the local chat once. The guard is re-armed
         // each lobby frame (see GameStartManagerUpdatePatch), so it fires once per started game.
@@ -35,6 +36,19 @@ namespace UsefulTORStuff {
 
             hud.Chat.AddChat(PlayerControl.LocalPlayer,
                 UTSLocalization.Tr("uts.versionhandshake.snitch_fix_active_chat"));
+        }
+
+        // Same one-shot mechanism for the settings gate: tell the local player once per round that
+        // their own option values are not in play, because the host doesn't run this mod. Without
+        // this the effect is invisible - buttons and timers simply behave like vanilla TOR and it
+        // looks like the mod is broken rather than deliberately standing down.
+        private static void PostGateChatOnce() {
+            if (gateChatShown) return;
+            var hud = HudManager.Instance;
+            if (hud == null || hud.Chat == null || PlayerControl.LocalPlayer == null) return;
+            gateChatShown = true;
+
+            hud.Chat.AddChat(PlayerControl.LocalPlayer, UTSLocalization.Tr("uts.gate.chat_disabled"));
         }
 
         // Draw a message anchored to the top-left corner on TOR's shared GameStartText. Guards
@@ -158,6 +172,15 @@ namespace UsefulTORStuff {
                     message += UTSLocalization.Tr("uts.versionhandshake.modified_mod", name, pv.version, pv.guid);
             }
             return message;
+        }
+
+        // True when EVERY connected player runs this same build. The precondition for features that
+        // are reimplemented on each client rather than enforced by the host: extra Mini/Armored
+        // holders (MultiModifiers) and extra Jesters (MultiJester) only exist in the clients that
+        // run this code, so a single player without it would see and play a different game.
+        public static bool EveryoneHasMod() {
+            try { return BuildMismatchMessage() == ""; }
+            catch { return false; }
         }
 
         // --- F1: Cross-mod lobby handshake board (presentation-layer merge) ---
@@ -327,6 +350,10 @@ namespace UsefulTORStuff {
                 playerVersions.Clear();
                 versionSent = false;
                 tintedClients.Clear(); // client ids are per-connection; never carry tints across lobbies
+                // The handshake is empty again, so "the host has no mod" cannot be concluded from it
+                // yet: re-open the settings gate until the first lobby frames have re-evaluated it.
+                UTSGate.ResetOnGameJoined();
+                gateChatShown = false;
             }
         }
 
@@ -359,6 +386,12 @@ namespace UsefulTORStuff {
 
                 if (AmongUsClient.Instance == null) return;
 
+                // Settings gate: does the HOST have this mod? Only then do its option values reach
+                // everyone through TOR's normal option sync, which is the precondition for any
+                // settings-driven feature to be allowed to act (UTSGate). Evaluated every lobby
+                // frame and latched into the round that follows, exactly like the mismatch state below.
+                UTSGate.EvaluateInLobby();
+
                 // F1: publish our own snapshot every lobby frame so the combined overview (which we
                 // own) and any future renderer can read it uniformly.
                 PublishSnapshot();
@@ -369,6 +402,7 @@ namespace UsefulTORStuff {
                 // Re-arm the chat post each lobby frame so it fires once per started game (the actual
                 // post happens at game start in IntroEndChatPatch, after this stops running).
                 snitchFixChatShown = false;
+                gateChatShown = false;
 
                 // Compute on EVERY client. GameStartManager.Update only runs in the lobby, so this
                 // value naturally persists (latches) into the game that follows.
@@ -393,22 +427,44 @@ namespace UsefulTORStuff {
                 }
                 if (text == null) return;
 
+                // Settings gate warning. This is the one lobby message aimed at the CLIENT, not the
+                // host: our own options are not being synced by this host, so everything settings-
+                // driven falls back to its default and the round is played by TOR's rules. Drawn
+                // before the host-only blocks below, which all return early for non-hosts.
+                if (!UTSGate.SettingsActive) {
+                    DrawTopLeftMessage(__instance, text,
+                        UTSLocalization.Tr("uts.gate.host_missing_mod"),
+                        "settings gate: host without mod");
+                }
+
                 // Sheriff parity-win warning: the feature is host-enforced and always applies, but
                 // clients without the mod don't see the option. Warn the host (own marker so it
                 // coexists with the Snitch messages below; placed before their non-host returns).
                 if (AmongUsClient.Instance.AmHost
-                    && SheriffParityWin.Option != null && SheriffParityWin.Option.getBool()
+                    && SheriffParityWin.Option != null && UTSGate.Bool(SheriffParityWin.Option)
                     && !everyone) {
                     DrawTopLeftMessage(__instance, text,
                         UTSLocalization.Tr("uts.versionhandshake.sheriff_parity_warning"),
                         "Sheriff Prevents Killer Parity Win");
                 }
 
+                // Multi-Jester warning: the extra Jesters exist only inside this mod (role display,
+                // neutral status and win condition are reimplemented per client), so the feature
+                // stands down entirely unless everyone has it. Tell the host that his setting is
+                // not in effect rather than letting him find out after the round.
+                if (AmongUsClient.Instance.AmHost
+                    && MultiJester.Quantity != null && MultiJester.ConfiguredQuantity > 1
+                    && !everyone) {
+                    DrawTopLeftMessage(__instance, text,
+                        UTSLocalization.Tr("uts.versionhandshake.multijester_warning"),
+                        "Jester Quantity");
+                }
+
                 // Lover "Delay Lover Death / Revenger" warning: this feature is client-side and only
                 // works when everyone has the mod (unlike the host-enforced Sheriff parity win). Warn
                 // the host when it is ON but someone is missing the mod — it will simply not apply.
                 if (AmongUsClient.Instance.AmHost
-                    && LoverRevenger.DelayOption != null && LoverRevenger.DelayOption.getBool()
+                    && LoverRevenger.DelayOption != null && UTSGate.Bool(LoverRevenger.DelayOption)
                     && !everyone) {
                     DrawTopLeftMessage(__instance, text,
                         UTSLocalization.Tr("uts.versionhandshake.revenger_warning"),
@@ -461,6 +517,8 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 if (UsefulTORStuffPlugin.SnitchClientFixActive)
                     PostSnitchFixChatOnce();
+                if (!UTSGate.SettingsActive)
+                    PostGateChatOnce();
             }
         }
 

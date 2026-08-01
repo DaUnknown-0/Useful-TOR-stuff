@@ -134,7 +134,7 @@ namespace UsefulTORStuff {
                 for (int i = 0; i < shuffled.Count; i++)
                     map[shuffled[i]] = shuffled[(i + 1) % shuffled.Count];
 
-                float dur = DurationOption != null ? DurationOption.getFloat() : 10f;
+                float dur = DurationOption != null ? UTSGate.Num(DurationOption) : 10f;
 
                 // NOT migrated to the consolidated channel (UTSRpc.CallId = 240) - deliberately.
                 // Classified NOT IDEMPOTENT: ApplyMixup() does not only assign mixupMap/mixupTimer,
@@ -242,7 +242,7 @@ namespace UsefulTORStuff {
                             TriggerMixup();
                             sabotageButton.Timer = sabotageButton.MaxTimer;
                         },
-                        () => Option != null && Option.getBool()
+                        () => Option != null && UTSGate.Bool(Option)
                               && Trickster.trickster != null && Trickster.trickster == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
                         // Any map; not during camouflage, not while a mixup runs, shared CD with lights.
@@ -259,7 +259,7 @@ namespace UsefulTORStuff {
                         false,
                         ""
                     );
-                    sabotageButton.MaxTimer = CooldownOption != null ? CooldownOption.getFloat() : 30f;
+                    sabotageButton.MaxTimer = CooldownOption != null ? UTSGate.Num(CooldownOption) : 30f;
                     sabotageButton.Timer = sabotageButton.MaxTimer; // start on cooldown
 
                     // Block the Camouflager's button while a mixup is active (other direction of the

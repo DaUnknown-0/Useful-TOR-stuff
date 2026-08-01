@@ -65,7 +65,7 @@ namespace UsefulTORStuff {
         }
 
         private static bool LocalIsSpy() =>
-            Option != null && Option.getBool()
+            Option != null && UTSGate.Bool(Option)
             && Spy.spy != null && Spy.spy == PlayerControl.LocalPlayer;
 
         // Force the Spy's entry permission on each round-reload when the option is on (TOR's
@@ -74,7 +74,7 @@ namespace UsefulTORStuff {
         static class SpyClearAndReloadPatch {
             public static void Postfix() {
                 try {
-                    if (Option != null && Option.getBool()) Spy.canEnterVents = true;
+                    if (Option != null && UTSGate.Bool(Option)) Spy.canEnterVents = true;
                 } catch { }
             }
         }

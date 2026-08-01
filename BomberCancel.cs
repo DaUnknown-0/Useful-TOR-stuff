@@ -107,7 +107,7 @@ namespace UsefulTORStuff {
                     cancelButton = new CustomButton(
                         () => { SendCancel(); UTSAssets.PlayBombCancel(); },
                         // HasButton: only the Bomber, only while alive, only when the option is on.
-                        () => Option != null && Option.getBool()
+                        () => Option != null && UTSGate.Bool(Option)
                               && Bomber.bomber != null && Bomber.bomber == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
                         // CouldUse: whenever a live bomb exists, regardless of arm state / visibility.

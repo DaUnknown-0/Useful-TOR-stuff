@@ -107,13 +107,13 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 try {
                     if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
-                    if (Enabled == null || !Enabled.getBool()) return;
+                    if (Enabled == null || !UTSGate.Bool(Enabled)) return;
 
                     CaptureOriginalsOnce();
                     CountAliveDead(out int alive, out int dead);
 
-                    int disc = Compute(DiscussionBase.getFloat(), DiscussionPerAlive.getFloat(), DiscussionPerDead.getFloat(), alive, dead);
-                    int vote = Compute(VotingBase.getFloat(), VotingPerAlive.getFloat(), VotingPerDead.getFloat(), alive, dead);
+                    int disc = Compute(UTSGate.Num(DiscussionBase), UTSGate.Num(DiscussionPerAlive), UTSGate.Num(DiscussionPerDead), alive, dead);
+                    int vote = Compute(UTSGate.Num(VotingBase), UTSGate.Num(VotingPerAlive), UTSGate.Num(VotingPerDead), alive, dead);
 
                     var opts = GameOptionsManager.Instance.currentNormalGameOptions;
                     opts.DiscussionTime = disc;

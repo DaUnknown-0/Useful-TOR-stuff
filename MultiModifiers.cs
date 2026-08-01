@@ -68,13 +68,11 @@ namespace UsefulTORStuff {
         private static readonly List<byte> armoreds = new List<byte>();
         private static readonly HashSet<byte> brokenExtraArmor = new HashSet<byte>();
 
-        private static bool EveryoneHasMod() {
-            try { return UsefulVersionHandshake.BuildMismatchMessage() == ""; }
-            catch { return false; }
-        }
+        // Shared with MultiJester, which needs the exact same precondition.
+        private static bool EveryoneHasMod() => UsefulVersionHandshake.EveryoneHasMod();
 
-        private static int MiniQty() => MiniQuantity != null ? MiniQuantity.getQuantity() : 1;
-        private static int ArmoredQty() => ArmoredQuantity != null ? ArmoredQuantity.getQuantity() : 1;
+        private static int MiniQty() => MiniQuantity != null ? UTSGate.Qty(MiniQuantity) : 1;
+        private static int ArmoredQty() => ArmoredQuantity != null ? UTSGate.Qty(ArmoredQuantity) : 1;
 
         // The quantities as they are ACTUALLY applied (extras need the handshake). TrueModifierChances
         // rolls every copy itself and reads them through these.

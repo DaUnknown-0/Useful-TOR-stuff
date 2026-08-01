@@ -160,11 +160,11 @@ namespace UsefulTORStuff {
         // ---- shared state helpers -------------------------------------------------------------
 
         public static int EffectiveMax =>
-            OptionMax == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(OptionMax.getFloat()), 1, 3);
+            OptionMax == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMax)), 1, 3);
 
         public static int EffectiveMin {
             get {
-                int min = OptionMin == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(OptionMin.getFloat()), 1, 3);
+                int min = OptionMin == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMin)), 1, 3);
                 int max = EffectiveMax;
                 return min > max ? max : min; // TOR convention for min/max pairs
             }
@@ -173,9 +173,11 @@ namespace UsefulTORStuff {
         // Feature is on AND we are in a normal TOR game (custom gamemodes HideNSeek/PropHunt
         // pick their own impostor count, vanilla HideNSeek has no Normal GameMode).
         private static bool FeatureEnabled =>
-            OptionEnable != null && OptionEnable.getBool() && IsNormalTorGame();
+            OptionEnable != null && UTSGate.Bool(OptionEnable) && IsNormalTorGame();
 
-        private static bool IsNormalTorGame() {
+        // Public so other features that must not touch HideNSeek/PropHunt/vanilla modes can reuse it
+        // (MultiJester). The reflection handle behind it is resolved once and cached here.
+        public static bool IsNormalTorGame() {
             try {
                 var mgr = GameOptionsManager.Instance;
                 if (mgr == null || mgr.CurrentGameOptions == null) return false;
@@ -358,12 +360,12 @@ namespace UsefulTORStuff {
             if (!CustomOptionHolder.jackalCanCreateSidekick.getBool()) return; // TOR master off
 
             bool allowed;
-            if (FeatureEnabled && OptionSidekickRefill != null && OptionSidekickRefill.getBool()) {
+            if (FeatureEnabled && OptionSidekickRefill != null && UTSGate.Bool(OptionSidekickRefill)) {
                 // Sidekick only fills a missing impostor slot.
                 allowed = CountAssignedImpostors() < EffectiveMax;
             } else {
                 if (OptionSidekickChance == null) return;
-                int chance = Mathf.RoundToInt(OptionSidekickChance.getFloat());
+                int chance = Mathf.RoundToInt(UTSGate.Num(OptionSidekickChance));
                 if (chance >= 100) return; // pure TOR behaviour, no override needed
                 allowed = rnd.Next(1, 101) <= chance;
             }

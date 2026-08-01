@@ -149,12 +149,12 @@ namespace UsefulTORStuff {
                         // HasButton: medic, alive, option on, a shield is currently active (something to
                         // remove), and a charge remains to re-give (0 = unlimited).
                         // Clearing usedShield hides this button again and re-shows TOR's shield button.
-                        () => Option != null && Option.getBool()
+                        () => Option != null && UTSGate.Bool(Option)
                               && Medic.medic != null && Medic.medic == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead
                               && Medic.usedShield
-                              && (OptionShieldCharges == null || OptionShieldCharges.getSelection() == 0
-                                  || placementsUsed < OptionShieldCharges.getSelection()),
+                              && (OptionShieldCharges == null || UTSGate.Sel(OptionShieldCharges) == 0
+                                  || placementsUsed < UTSGate.Sel(OptionShieldCharges)),
                         () => PlayerControl.LocalPlayer.CanMove,
                         () => { },
                         UTSAssets.UnshieldIcon ?? Medic.getButtonSprite(),
@@ -181,12 +181,12 @@ namespace UsefulTORStuff {
         static class ChargeTickPatch {
             public static void Postfix() {
                 try {
-                    if (Option == null || !Option.getBool()) return;
+                    if (Option == null || !UTSGate.Bool(Option)) return;
                     var lp = PlayerControl.LocalPlayer;
                     if (Medic.medic == null || lp == null || Medic.medic != lp
                         || lp.Data == null || lp.Data.IsDead) return;
 
-                    int max = OptionShieldCharges == null ? 0 : OptionShieldCharges.getSelection();
+                    int max = OptionShieldCharges == null ? 0 : UTSGate.Sel(OptionShieldCharges);
                     bool unlimited = max == 0;
 
                     // 1) Placement → spend one charge. usedShield is set true exactly when a shield is

@@ -86,7 +86,7 @@ namespace UsefulTORStuff {
             }
         }
 
-        private static float Ratio() => StrengthOption != null ? StrengthOption.getFloat() : 0.5f;
+        private static float Ratio() => StrengthOption != null ? UTSGate.Num(StrengthOption) : 0.5f;
 
         // Dead players (ghosts) still have CanMove == true, so the limp would otherwise follow them
         // into death — permanently for the time-unbounded self-limp. Only the living limp.
@@ -94,9 +94,9 @@ namespace UsefulTORStuff {
             p != null && p.Data != null && !p.Data.IsDead;
 
         private static bool ShouldLimp(byte id) {
-            if (TrappedOption != null && TrappedOption.getBool()
+            if (TrappedOption != null && UTSGate.Bool(TrappedOption)
                 && limpUntil.TryGetValue(id, out float until) && Time.time < until) return true;
-            if (SelfOption != null && SelfOption.getBool() && selfLimping
+            if (SelfOption != null && UTSGate.Bool(SelfOption) && selfLimping
                 && Trapper.trapper != null && Trapper.trapper.PlayerId == id) return true;
             return false;
         }
@@ -108,8 +108,8 @@ namespace UsefulTORStuff {
         static class TriggerTrapPatch {
             public static void Postfix(byte playerId, byte trapId) {
                 try {
-                    if (TrappedOption == null || !TrappedOption.getBool()) return;
-                    float dur = DurationOption != null ? DurationOption.getFloat() : 5f;
+                    if (TrappedOption == null || !UTSGate.Bool(TrappedOption)) return;
+                    float dur = DurationOption != null ? UTSGate.Num(DurationOption) : 5f;
                     // Limp window starts now and lasts through the freeze plus the configured tail, so
                     // the player keeps limping after being released.
                     limpUntil[playerId] = Time.time + Trapper.trapDuration + dur;
@@ -186,7 +186,7 @@ namespace UsefulTORStuff {
                 try {
                     selfLimpButton = new CustomButton(
                         () => { ToggleSelfLimp(); UTSAssets.PlayLimpToggle(); },
-                        () => SelfOption != null && SelfOption.getBool()
+                        () => SelfOption != null && UTSGate.Bool(SelfOption)
                               && Trapper.trapper != null && Trapper.trapper == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
                         () => PlayerControl.LocalPlayer.CanMove,

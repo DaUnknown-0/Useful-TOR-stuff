@@ -24,6 +24,12 @@ property of Innersloth LLC. © Innersloth LLC.
 - **Bloody killer-map fix** — `Bloody.bloodyKillerMap[killer]` used to stay pinned to the first
   victim, so trails after the second kill had the wrong color. The map entry is now overwritten via
   indexer so a trail tracks the *latest* victim.
+- **Grouped option sync** — TOR's option receiver resolves each incoming id with `First(...)`, which
+  throws on an unknown id and aborts the rest of that 200-option block (RPC.cs:203). A client without
+  one of the host's mods therefore lost every TOR setting that came after the first mod option and
+  played the round with its own stored values for them. The host now sends TOR's options and each
+  mod's options in separate blocks, so an abort can only ever drop options the receiver doesn't have
+  anyway. Incoming unknown ids are skipped instead of aborting, too.
 - **Client-side Snitch reveal** — a reimplementation of the Snitch reveal that runs on every client,
   built on a persistent own room map (recorded from `ShareRoom` RPCs) instead of TOR's
   `playerRoomMap`, which the host loses on reset. Gated on *all players having this mod*
@@ -59,6 +65,7 @@ Options appear in TOR's own settings tabs, directly under the relevant role.
 
 | Option | Default | Notes |
 |---|---|---|
+| Jester Quantity (max 3) | 1 | Extra Jesters, assigned host-side to players who ended up as plain crewmates, and only when TOR spawned a Jester at all. Selectable up to the same limit in the **role draft** (spawn chance unchanged). **Each Jester wins alone**: whoever is voted out is the sole winner, the others lose. Every Jester sees his own role card; nobody else does. Requires **all** players to have the mod (otherwise it falls back to 1, with a host warning). Raises the neutral count above TOR's "Neutral Roles" limits by design |
 | Vulture Counts Guessed Players As Eaten | Off | Host-authoritative; a Vulture's own correct guess (Guesser mode) counts +1 body |
 | ↳ Play Eat Sound On Counted Guess | Off | Plays the eat sound on a counted guess (audible to everyone) |
 | Sidekick Can Kill Jackal | Off | Sidekick can target the Jackal (promotion is governed by TOR's own option) |
@@ -166,6 +173,24 @@ Each client broadcasts its version + assembly GUID at lobby time so every client
 all players share the same build (the precondition for the client-side Snitch fix). The handshake
 cache is cleared on joining a lobby so it only reflects the current lobby. Wire format is unchanged
 across 1.0.x/1.1.x, so mixed lobbies keep working.
+
+## Settings gate: host without the mod
+
+TOR's option sync is host-driven, so an option the host does not have is never broadcast and every
+client keeps its own locally saved value for it. To stop that from turning into a one-sided rule
+change, **every settings-driven feature of this plugin stands down when the host does not run it**:
+options fall back to their defaults, which is exactly TOR's behaviour without this plugin.
+
+- Open (everything works) when you are the host, or when the host runs this mod in any version.
+- Closed (settings-driven features off) only for a client whose host is missing from the mod
+  handshake. Such a client gets an orange lobby notice and one chat line when the round starts.
+- Unaffected either way: the option-less bugfixes (Bloody throttle and killer map, Trapper shift
+  charges, positional sounds, Snitch client fix) and the local tools (Mod Manager, WebConfig, lobby
+  password gate, map language toggle).
+- Also exempt, by decision: options that cannot hand anyone an advantage the rest of the lobby
+  doesn't have. Today those are the **meeting map ping** (a communication tool) and the **Drunk
+  rename** (a local display name). Everything that changes a rule, a cooldown, a modifier count or
+  what one player can see stays gated.
 
 ## Configuration (BepInEx config)
 

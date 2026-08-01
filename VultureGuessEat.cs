@@ -115,7 +115,7 @@ namespace UsefulTORStuff {
         // so the host-side increment + host-authoritative VultureWin check fire.
         public static void GuesserShootPostfix(byte __0, byte __1) {
             try {
-                if (Option == null || !Option.getBool()) return;        // option off
+                if (Option == null || !UTSGate.Bool(Option)) return;        // option off
 
                 var vulture = Vulture.vulture;
                 if (vulture == null || vulture.Data == null || vulture.Data.IsDead) return; // Vulture must be alive
@@ -132,7 +132,7 @@ namespace UsefulTORStuff {
                 // the eat-button (Buttons.cs:1465). The postfix runs on every client, so an unconditional
                 // play means everyone in the meeting hears it (intended). Reuses the bundled "vultureEat"
                 // clip — SoundEffectsManager is public static in TOR's assembly.
-                if (SoundOption != null && SoundOption.getBool()) {
+                if (SoundOption != null && UTSGate.Bool(SoundOption)) {
                     SoundEffectsManager.play("vultureEat");
                 }
 

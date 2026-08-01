@@ -601,7 +601,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
         static class IntroEndPatch {
             public static void Postfix() {
-                active = DelayOption != null && DelayOption.getBool()
+                active = DelayOption != null && UTSGate.Bool(DelayOption)
                          && Lovers.bothDie && EveryoneHasMod();
                 // List the Revenger as a guessable role only while the feature is actually usable.
                 SetGuessable(active);
@@ -741,9 +741,9 @@ namespace UsefulTORStuff {
                         // Surviving Lover already gone -> nothing to decide.
                         pendingArmed = false; pendingLover = null;
                     } else {
-                        int sel = RevengerChance != null ? RevengerChance.getSelection() : 0;
+                        int sel = RevengerChance != null ? UTSGate.Sel(RevengerChance) : 0;
                         bool become = active && rnd.Next(1, 101) <= sel * 10;
-                        byte mode = (byte)(RevengerMode != null ? RevengerMode.getSelection() : 0);
+                        byte mode = (byte)(RevengerMode != null ? UTSGate.Sel(RevengerMode) : 0);
                         SendDecision(pendingLover.PlayerId, become, pendingKillerId, mode);
                         justAwakened = become;
                     }
@@ -827,7 +827,7 @@ namespace UsefulTORStuff {
                     hud,
                     KeyCode.Q
                 );
-                revengerButton.MaxTimer = RevengerCooldown != null ? RevengerCooldown.getFloat() : 30f;
+                revengerButton.MaxTimer = RevengerCooldown != null ? UTSGate.Num(RevengerCooldown) : 30f;
                 revengerButton.Timer = revengerButton.MaxTimer;
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] button creation failed: {e}");

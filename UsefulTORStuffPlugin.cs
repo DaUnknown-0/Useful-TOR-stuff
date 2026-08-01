@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.7";
+    public const string PluginVersion = "1.3.3.8";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -140,6 +140,12 @@ public class UsefulTORStuffPlugin : BasePlugin
         PatchBloodyKillerMap(harmony);
         PatchBloodyResetVariables(harmony);
         SnitchLogic.Initialize(harmony);
+
+        // Snapshot of TOR's option list BEFORE any of our own options exist. Everything added
+        // between here and EndOptionCapture() below belongs to this mod and is therefore subject to
+        // the "host does not have this mod" gate (UTSGate). Keep every CreateOptions() call inside
+        // this bracket - an option created outside it silently stays ungated.
+        UTSGate.BeginOptionCapture();
 
         // Sheriff "prevents killer parity win" option + win-check patches. CreateOptions must run
         // after TOR's CustomOptionHolder.Load() (guaranteed by the hard dependency on TOR).
@@ -255,6 +261,15 @@ public class UsefulTORStuffPlugin : BasePlugin
         // it reads their quantities and switches their own multiply postfixes off while active.
         TrueModifierChances.CreateOptions();
         TrueModifierChances.TryPatch(harmony);
+
+        // Multi-Jester (option 1376, Neutral tab): up to three Jesters, each of whom wins alone.
+        // The role-identity/win patches are attribute-based (PatchAll); TryPatch adds the manual
+        // postfix on TOR's internal ExileControllerWrapUpPatch.WrapUpPostfix (the win trigger).
+        MultiJester.CreateOptions();
+        MultiJester.TryPatch(harmony);
+
+        // Close the bracket opened above: every option this mod owns is now known to UTSGate.
+        UTSGate.EndOptionCapture();
 
         // Localization engine: loads the string tables and mutates TOR's role/option strings
         // in place (LocalizationTOR). Must run AFTER every CreateOptions above so first-pass
