@@ -110,7 +110,7 @@ namespace UsefulTORStuff {
 
         private static bool Active() {
             try {
-                if (Option == null || !Option.getBool()) return false;
+                if (Option == null || !UTSGate.Bool(Option)) return false;
                 if (Invert.invert == null || Invert.meetings <= 0) return false;
                 var lp = PlayerControl.LocalPlayer;
                 if (lp == null || lp.Data == null || lp.Data.IsDead) return false;

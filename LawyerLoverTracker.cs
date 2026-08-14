@@ -74,18 +74,18 @@ namespace UsefulTORStuff {
             var lp = PlayerControl.LocalPlayer;
             if (lp == null) return null;
 
-            if (LawyerRound != null && LawyerRound.getBool()
+            if (LawyerRound != null && UTSGate.Bool(LawyerRound)
                 && Lawyer.lawyer != null && Lawyer.lawyer == lp && Lawyer.target != null) {
-                meetingAllowed = LawyerMeeting != null && LawyerMeeting.getBool();
+                meetingAllowed = LawyerMeeting != null && UTSGate.Bool(LawyerMeeting);
                 return Lawyer.target;
             }
 
-            if (LoverRound != null && LoverRound.getBool()
+            if (LoverRound != null && UTSGate.Bool(LoverRound)
                 && Lovers.lover1 != null && Lovers.lover2 != null
                 && (Lovers.lover1 == lp || Lovers.lover2 == lp)) {
                 var partner = Lovers.otherLover(lp);
                 if (partner != null) {
-                    meetingAllowed = LoverMeeting != null && LoverMeeting.getBool();
+                    meetingAllowed = LoverMeeting != null && UTSGate.Bool(LoverMeeting);
                     return partner;
                 }
             }

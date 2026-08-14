@@ -74,7 +74,7 @@ namespace UsefulTORStuff {
         // Jackal so the Sidekick can target it. Only when the option is on and Fake-SK is possible.
         public static void Postfix() {
             try {
-                if (Option == null || !Option.getBool()) return;
+                if (Option == null || !UTSGate.Bool(Option)) return;
                 if (Sidekick.sidekick == null || Sidekick.sidekick != PlayerControl.LocalPlayer) return;
                 if (!Sidekick.canKill) return;
                 if (Jackal.canCreateSidekickFromImpostor) return; // Fake-SK not possible → no-op

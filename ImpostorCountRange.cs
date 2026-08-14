@@ -140,7 +140,13 @@ namespace UsefulTORStuff {
         // Spy unlock: getRoleAssignmentData lives in the internal RoleManagerSelectRolesPatch,
         // so it is patched via reflection (postfix adds the Spy to the crew pool).
         public static void TryPatch(Harmony harmony) {
-            UTSRpc.Register(SidekickAllowedRpcId, HandleModuleRpc);
+            // HOST-ONLY on the consolidated channel. Guarded HERE and not inside HandleModuleRpc,
+            // because that method serves BOTH paths: on the legacy callId UTSRpc.Sender is not set,
+            // so a check inside would reject every legitimate legacy message. The legacy receiver
+            // does its own check with its own __instance (see HandleRpcPatch below).
+            UTSRpc.Register(SidekickAllowedRpcId, r => {
+                if (UTSRpc.RequireHost("ImpostorCountRange.SidekickAllowed")) HandleModuleRpc(r);
+            });
             try {
                 var torAsm = typeof(CustomOption).Assembly;
                 var type = torAsm.GetType("TheOtherRoles.Patches.RoleManagerSelectRolesPatch");
@@ -160,11 +166,11 @@ namespace UsefulTORStuff {
         // ---- shared state helpers -------------------------------------------------------------
 
         public static int EffectiveMax =>
-            OptionMax == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(OptionMax.getFloat()), 1, 3);
+            OptionMax == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMax)), 1, 3);
 
         public static int EffectiveMin {
             get {
-                int min = OptionMin == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(OptionMin.getFloat()), 1, 3);
+                int min = OptionMin == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMin)), 1, 3);
                 int max = EffectiveMax;
                 return min > max ? max : min; // TOR convention for min/max pairs
             }
@@ -173,9 +179,11 @@ namespace UsefulTORStuff {
         // Feature is on AND we are in a normal TOR game (custom gamemodes HideNSeek/PropHunt
         // pick their own impostor count, vanilla HideNSeek has no Normal GameMode).
         private static bool FeatureEnabled =>
-            OptionEnable != null && OptionEnable.getBool() && IsNormalTorGame();
+            OptionEnable != null && UTSGate.Bool(OptionEnable) && IsNormalTorGame();
 
-        private static bool IsNormalTorGame() {
+        // Public so other features that must not touch HideNSeek/PropHunt/vanilla modes can reuse it
+        // (MultiJester). The reflection handle behind it is resolved once and cached here.
+        public static bool IsNormalTorGame() {
             try {
                 var mgr = GameOptionsManager.Instance;
                 if (mgr == null || mgr.CurrentGameOptions == null) return false;
@@ -358,12 +366,12 @@ namespace UsefulTORStuff {
             if (!CustomOptionHolder.jackalCanCreateSidekick.getBool()) return; // TOR master off
 
             bool allowed;
-            if (FeatureEnabled && OptionSidekickRefill != null && OptionSidekickRefill.getBool()) {
+            if (FeatureEnabled && OptionSidekickRefill != null && UTSGate.Bool(OptionSidekickRefill)) {
                 // Sidekick only fills a missing impostor slot.
                 allowed = CountAssignedImpostors() < EffectiveMax;
             } else {
                 if (OptionSidekickChance == null) return;
-                int chance = Mathf.RoundToInt(OptionSidekickChance.getFloat());
+                int chance = Mathf.RoundToInt(UTSGate.Num(OptionSidekickChance));
                 if (chance >= 100) return; // pure TOR behaviour, no override needed
                 allowed = rnd.Next(1, 101) <= chance;
             }
@@ -398,8 +406,12 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         private static class HandleRpcPatch {
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId != SidekickAllowedRpcId) return true;
+                // HOST-ONLY on the LEGACY path too: gating only the consolidated channel would leave
+                // this callId as an open back door for the exact same message (AUDIT H-3). __instance
+                // is the sender here - the UTSRpc.Sender the channel path uses is not set on this path.
+                if (!UTSRpc.RequireHost(__instance, "ImpostorCountRange.SidekickAllowed(legacy)")) return false;
                 HandleModuleRpc(reader);
                 return false;
             }

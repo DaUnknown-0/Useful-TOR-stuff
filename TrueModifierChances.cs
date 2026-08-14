@@ -105,7 +105,7 @@ namespace UsefulTORStuff {
 
         /// True while the feature is in charge. The other modules' getSelectionForRoleId postfixes
         /// and TiebreakerMultiple.TopUp bail out on this so nothing is applied twice.
-        public static bool IsActive => patchesReady && Option != null && Option.getBool();
+        public static bool IsActive => patchesReady && Option != null && UTSGate.Bool(Option);
 
         // ====================================================================
         // Option

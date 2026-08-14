@@ -72,12 +72,17 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(1360, Types.General,
                     "Meeting Map Ping (Click On Map)", true);
                 UTSLocalization.BindOptionTitle(Option, "uts.mapping.option_name");
+
+                // Exempt from the "host doesn't have this mod" gate (UTSGate): pinging is a
+                // communication tool, not a rule. It shows everyone with the mod a marker the pinger
+                // could just as well have described out loud, so it hands nobody an advantage.
+                UTSGate.MarkAlwaysActive(Option);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[MapPing] CreateOptions failed: {e}");
             }
         }
 
-        private static bool Enabled => Option != null && Option.getBool();
+        private static bool Enabled => Option != null && UTSGate.Bool(Option);
 
         // ---- receive ------------------------------------------------------------------------
 

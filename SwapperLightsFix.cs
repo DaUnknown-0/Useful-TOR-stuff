@@ -67,9 +67,9 @@ namespace UsefulTORStuff {
         private static bool IsLocalSwapper() =>
             Swapper.swapper != null && Swapper.swapper == PlayerControl.LocalPlayer;
         private static bool LightsActive() =>
-            LightsOption != null && LightsOption.getBool() && IsLocalSwapper();
+            LightsOption != null && UTSGate.Bool(LightsOption) && IsLocalSwapper();
         private static bool CommsActive() =>
-            CommsOption != null && CommsOption.getBool() && IsLocalSwapper();
+            CommsOption != null && UTSGate.Bool(CommsOption) && IsLocalSwapper();
 
         // Re-allow the lights/comms console for the local Swapper. Runs after TOR's
         // ConsoleCanUsePatch.Prefix (which forced canUse=couldUse=false), so we just recompute a

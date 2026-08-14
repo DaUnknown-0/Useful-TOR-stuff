@@ -31,7 +31,7 @@ namespace UsefulTORStuff {
                 Option = CustomOption.Create(
                     1311, Types.Modifier, "Rename to Drunk",
                     false, CustomOptionHolder.modifierInvert,
-                    onChange: () => ApplyRename(Option.getBool()));
+                    onChange: () => ApplyRename(UTSGate.Bool(Option)));
                 UTSLocalization.BindOptionTitle(Option, "uts.drunkrename.option_name");
 
                 var opts = CustomOption.options;
@@ -41,12 +41,17 @@ namespace UsefulTORStuff {
                 opts.Insert(idx + 1, Option);
 
                 // Apply immediately if already saved as ON in the config
-                if (Option.getBool()) ApplyRename(true);
+                if (UTSGate.Bool(Option)) ApplyRename(true);
 
                 // LocalizationTOR re-applies TOR's own RoleInfo/CustomOption strings on every
                 // language switch, which would overwrite the Drunk rename with "Invert" again.
                 // Re-apply ours afterwards (LanguageApplied fires after LocalizationTOR.Apply()).
-                UTSLocalization.LanguageApplied += () => ApplyRename(Option.getBool());
+                UTSLocalization.LanguageApplied += () => ApplyRename(UTSGate.Bool(Option));
+
+                // Exempt from the "host doesn't have this mod" gate (UTSGate): this only changes what
+                // ONE modifier is called on the local screen. It cannot give anyone an advantage over
+                // the others, so switching it off in a foreign lobby would be pure loss.
+                UTSGate.MarkAlwaysActive(Option);
 
                 UsefulTORStuffPlugin.Logger?.LogInfo("[DrunkRename] Option created.");
             } catch (Exception e) {

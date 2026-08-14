@@ -52,6 +52,66 @@
   stacking Mini+Armored on the same player) is gone.
 
 ### Features
+- **Settings-based features stand down when the HOST doesn't have the mod.** TOR's option sync is
+  host-driven: the host broadcasts `(option id, selection)` for every option **it** owns, and an
+  option the host does not have is simply never sent. So a client running this mod in a lobby whose
+  host does not run it kept every one of our options at whatever its own config last stored, while
+  nobody else played by those values: shorter sabotage cooldowns, extra Mini/Armored/Tiebreaker
+  holders, the Medic's unshield button, the Lawyer/Lover map tracker, the Trickster mixup sabotage,
+  a Revenger, ... one-sided, invisible to everyone else, and not something anyone had agreed to.
+  Every settings-driven feature now reads its option through `UTSGate`, which returns the option's
+  **default** while the host lacks the mod, i.e. exactly TOR's behaviour without this plugin. The
+  gate is open whenever we are the host (our values are the ones being shared) and closes only for
+  a client whose host is missing from the mod handshake (`AmongUsClient.HostId`), latched in the
+  lobby into the round that follows. The affected options are captured automatically: the option
+  list is snapshotted before and after this plugin's `CreateOptions()` calls, so a future feature
+  is gated the day it is written and TOR's own options (which DO come from the host) keep their
+  real values. Bugfixes without an option (Bloody throttle and killer map, Trapper shift charges,
+  positional sounds, the Snitch client fix with its own stricter gate) stay active, as do the local
+  tools (Mod Manager, WebConfig, lobby password gate, map language toggle). A client in such a
+  lobby is told what happened: an orange lobby notice and one chat line at game start.
+  Exempt from the gate are the options that cannot hand anyone an advantage the others don't have:
+  the meeting map ping and the Drunk rename. The option-less features were never affected anyway
+  (Bloody drop throttle, map language toggle, the plain bug fixes).
+
+- **Up to three Jesters, each winning alone.** New option "Jester Quantity (max 3)" (option 1376,
+  Neutral tab, default 1). TOR's Jester is a single `PlayerControl` field, so extra Jesters are kept
+  in their own list and the handful of places where TOR asks "is this the Jester?" are extended:
+  role display (`RoleInfo.getRoleInfoForPlayer`, which also feeds `Helpers.isNeutral`), fake tasks,
+  impostor vision, the killer check, and the emergency-button lock. They are assigned host-side
+  after TOR's whole assignment has run, only when TOR actually spawned a Jester (so the spawn chance
+  keeps its meaning), and only to players who ended up as plain crewmates. When a Jester is voted
+  out he wins ALONE: the winner list becomes exactly the player who was exiled, so the other Jesters
+  lose, and on every other ending all extra Jesters are removed from the winners the same way TOR
+  removes its own. Each Jester is told he is one (his own intro role card is re-stamped when the
+  assignment arrives, so a late message can't leave him looking at "Crewmate"); nobody else's screen
+  is touched.
+  **Role draft**: works there too, up to the same limit. TOR removes a picked role from everyone
+  else's choices via `alreadyPicked.Contains(...)` inside the draft coroutine, so the Jester entry is
+  swapped for a neutral placeholder that the draft never offers (`RoleId.Sidekick`) while the
+  quantity still has room, which leaves every other count that reads that list intact. The spawn
+  chance is untouched: the draft only offers the Jester when TOR's own filters do. The second and
+  third pick become extra Jesters instead of overwriting `Jester.jester` (prefix on `setRole`, live
+  only while the draft runs), and since `receivePick` runs on every client, no message of our own is
+  needed.
+  Like the extra Mini/Armored holders, this **only applies when every player has the mod** (the
+  extra Jesters exist only inside this code); otherwise the quantity falls back to 1 and the host
+  gets a lobby warning. Note that it deliberately exceeds TOR's "Neutral Roles" limits.
+
+### Fixes
+- **A mod option no longer costs plain-TOR clients the settings that follow it.** TOR's option
+  receiver resolves each incoming id with `CustomOption.options.First(...)`, which THROWS on an
+  unknown id, and the try/catch sits outside the loop (RPC.cs:203-211). The host sends the settings
+  in blocks of 200, so on a client that lacks one of the host's mods the first unknown id aborted
+  the rest of that block: every TOR option after it kept that client's own locally stored value,
+  silently, for the whole round. Our options sit right next to the TOR options they belong to, i.e.
+  in the middle of the first block, so this was neither rare nor small. The host now sends the same
+  data in the same wire format but never mixes owners within a block: TOR's own options first, then
+  one group per mod assembly (resolved by reflection: every CustomOption reachable from a static
+  field of an assembly that references TOR, with TOR's own always counted as core). An abort can
+  then only ever drop the tail of a group the receiver doesn't have anyway. The receiving side is
+  fixed too (unknown ids are skipped instead of aborting), which covers the mirror case for us.
+
 - **True Modifier Chances.** New host option "True Modifier Chances" (option 1375, Modifier
   tab, default OFF): the modifier percentages finally behave like actual probabilities.
   TOR never rolls them - 100% modifiers are placed directly and everything else throws

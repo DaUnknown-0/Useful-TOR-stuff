@@ -178,12 +178,12 @@ namespace UsefulTORStuff {
         }
 
         private static bool ShouldSuppress(int killerAlive, int totalAlive) {
-            if (Option == null || !Option.getBool()) return false;   // option off
+            if (Option == null || !UTSGate.Bool(Option)) return false;   // option off
             if (!SheriffAlive() && !HunterAlive()) return false;      // nobody left to break parity
             bool outnumber = killerAlive > (totalAlive - killerAlive);
             // Scope 0 ("At Exact Parity Only"): when killers truly outnumber crew, a Sheriff kill
             // can't break parity, so let the win fire. Scope 1 ("Always"): block while Sheriff alive.
-            if (ScopeOption != null && ScopeOption.getSelection() == 0 && outnumber) return false;
+            if (ScopeOption != null && UTSGate.Sel(ScopeOption) == 0 && outnumber) return false;
             return true;
         }
     }

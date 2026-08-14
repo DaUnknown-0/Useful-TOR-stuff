@@ -143,7 +143,7 @@ namespace UsefulTORStuff {
             }
         }
 
-        private static bool Active => Enabled != null && Enabled.getBool();
+        private static bool Active => Enabled != null && UTSGate.Bool(Enabled);
 
         // Cross-plugin sabotage block from Unknown's Collection's Siphoner (AppDomain shared data, no hard
         // dependency). While the Siphoner is draining a nearby impostor it publishes an absolute Time.time
@@ -166,9 +166,9 @@ namespace UsefulTORStuff {
         // cooldown above its configured value (only stop the reduction from going lower).
         private static float CurrentMax(SabType t) {
             int i = (int)t;
-            float baseMax = cdOpt[i] != null ? cdOpt[i].getFloat() : 30f;
-            float red = redOpt[i] != null ? redOpt[i].getFloat() : 0f;
-            float floor = Mathf.Min(minCooldownOpt != null ? minCooldownOpt.getFloat() : MIN_COOLDOWN, baseMax);
+            float baseMax = cdOpt[i] != null ? UTSGate.Num(cdOpt[i]) : 30f;
+            float red = redOpt[i] != null ? UTSGate.Num(redOpt[i]) : 0f;
+            float floor = Mathf.Min(minCooldownOpt != null ? UTSGate.Num(minCooldownOpt) : MIN_COOLDOWN, baseMax);
             return Mathf.Max(floor, baseMax - usage[i] * red);
         }
 
@@ -226,15 +226,15 @@ namespace UsefulTORStuff {
             var reactorRaw = GetRaw(ship, SystemTypes.Reactor) ?? GetRaw(ship, SystemTypes.Laboratory);
             var reactor = reactorRaw != null ? reactorRaw.TryCast<ReactorSystemType>() : null;
             if (reactor != null && reactor.IsActive && reactorDur != null && reactorCountdownSetter != null) {
-                try { reactorCountdownSetter.Invoke(reactor, new object[] { reactorDur.getFloat() }); } catch { }
+                try { reactorCountdownSetter.Invoke(reactor, new object[] { UTSGate.Num(reactorDur) }); } catch { }
             }
 
             var o2 = GetRaw(ship, SystemTypes.LifeSupp)?.TryCast<LifeSuppSystemType>();
-            if (o2 != null && o2.IsActive && oxygenDur != null) o2.Countdown = oxygenDur.getFloat();
+            if (o2 != null && o2.IsActive && oxygenDur != null) o2.Countdown = UTSGate.Num(oxygenDur);
 
             var heli = GetRaw(ship, SystemTypes.HeliSabotage)?.TryCast<HeliSabotageSystem>();
             if (heli != null && heli.IsActive && heliDur != null && heliCountdownSetter != null) {
-                try { heliCountdownSetter.Invoke(heli, new object[] { heliDur.getFloat() }); } catch { }
+                try { heliCountdownSetter.Invoke(heli, new object[] { UTSGate.Num(heliDur) }); } catch { }
             }
         }
 

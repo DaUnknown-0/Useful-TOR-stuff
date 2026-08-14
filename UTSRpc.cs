@@ -119,6 +119,31 @@ namespace UsefulTORStuff {
 
         public static int RegisteredCount => handlers.Count;
 
+        // ---- Host authorization (AUDIT-2026-08-11.md, H-3) ----
+        //
+        // IMPORTANT for this plugin specifically: because features here DUAL-SEND, every host-only
+        // message arrives on TWO paths - the consolidated channel (Sender is set by the dispatcher
+        // below) and the legacy callId, whose per-feature HandleRpc prefix has its own __instance.
+        // Gating only one of them would leave the other wide open, so the overload taking an explicit
+        // sender exists for the legacy receivers.
+        public static bool IsHost(PlayerControl sender) =>
+            sender != null && AmongUsClient.Instance != null
+            && sender.OwnerId == AmongUsClient.Instance.HostId;
+
+        public static bool SenderIsHost => IsHost(Sender);
+
+        // Guard for host-authoritative messages on the consolidated channel (uses Sender).
+        public static bool RequireHost(string what) => RequireHost(Sender, what);
+
+        // Guard for host-authoritative messages on a LEGACY callId receiver (explicit sender).
+        public static bool RequireHost(PlayerControl sender, string what) {
+            if (IsHost(sender)) return true;
+            UsefulTORStuffPlugin.Logger?.LogWarning(
+                $"[UTSRpc] host-only message '{what}' from non-host player " +
+                $"{sender?.PlayerId.ToString() ?? "?"} (owner {sender?.OwnerId.ToString() ?? "?"}) - ignored.");
+            return false;
+        }
+
         // Single dispatcher. Runs BEFORE TOR's own HandleRpc handler (Priority.High) and always
         // consumes callId 240 - the channel belongs to us, nobody else may parse it.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]

@@ -144,7 +144,7 @@ namespace UsefulTORStuff {
             }
         }
 
-        private static int Qty() => Quantity != null ? Quantity.getQuantity() : 1;
+        private static int Qty() => Quantity != null ? UTSGate.Qty(Quantity) : 1;
 
         // The Tiebreaker quantity as actually applied - TrueModifierChances rolls each copy itself.
         public static int EffectiveQuantity() => Qty();

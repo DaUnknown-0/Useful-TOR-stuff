@@ -107,7 +107,7 @@ namespace UsefulTORStuff {
         static class SpyDeathFlashPatch {
             public static void Postfix(PlayerControl __instance, PlayerControl target) {
                 try {
-                    if (OptionDeathFlash == null || !OptionDeathFlash.getBool()) return;
+                    if (OptionDeathFlash == null || !UTSGate.Bool(OptionDeathFlash)) return;
                     if (target == null || target != Spy.spy) return;
 
                     // Only when the dying Spy also has the VIP modifier
@@ -127,7 +127,7 @@ namespace UsefulTORStuff {
                                   && lp.PlayerId == Seer.seer.PlayerId
                                   && !Seer.seer.Data.IsDead;
 
-                    if (isSeer && OptionSeerTrueFlash != null && OptionSeerTrueFlash.getBool() && Vip.showColor)
+                    if (isSeer && OptionSeerTrueFlash != null && UTSGate.Bool(OptionSeerTrueFlash) && Vip.showColor)
                         // White = true crewmate colour (Spy is a Crew role; matches VIP showColor scheme).
                         // Only when Vip.showColor is on — with colours off there is nothing to reveal,
                         // so the Seer falls through to the red evil flash like everyone else.
@@ -172,7 +172,7 @@ namespace UsefulTORStuff {
             public static bool Prefix(byte targetId) {
                 try {
                     if (OptionShifterInteraction == null) return true;
-                    int mode = OptionShifterInteraction.getSelection();
+                    int mode = UTSGate.Sel(OptionShifterInteraction);
                     if (mode == 0) return true; // Shift Succeeds = vanilla
 
                     var target = Helpers.playerById(targetId);
@@ -193,7 +193,7 @@ namespace UsefulTORStuff {
                     } else {
                         // Shift Cancelled, No One Dies
                         bool giveback = OptionShifterGetsShiftBack != null
-                                        && OptionShifterGetsShiftBack.getBool();
+                                        && UTSGate.Bool(OptionShifterGetsShiftBack);
                         if (giveback) {
                             // Hand the shift back: keep the player as the Shifter and only clear the
                             // queued shift, so the shift button returns. HasButton needs

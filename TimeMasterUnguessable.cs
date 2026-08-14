@@ -57,7 +57,7 @@ namespace UsefulTORStuff {
             }
         }
 
-        private static bool Active() => Option != null && Option.getBool() && shieldSavedThisGame;
+        private static bool Active() => Option != null && UTSGate.Bool(Option) && shieldSavedThisGame;
 
         // Hide the Time Master from the guesser role list — exactly like TOR hides the Spy from the
         // evil guesser (MeetingPatch.cs:417/429). guesserOnClick builds the role buttons by iterating
