@@ -105,8 +105,10 @@ namespace UsefulTORStuff {
                     } else if (!Expanded()) {
                         // ">" / "v" rather than a real arrow glyph: the HUD's TMP font is ASCII-only
                         // (see the world-space overlay lesson - ▸▾ etc. render as a missing-glyph box).
+                        // A bare ">" (not "&gt;" - this TMP build does not decode the entity) is safe:
+                        // rich text only treats "<...>" pairs as tags.
                         block = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
-                              + $" ({members.Count}) &gt;</link>";
+                              + $" ({members.Count}) ></link>";
                     } else {
                         var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
                         string header = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
