@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.15";
+    public const string PluginVersion = "1.3.3.16";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -94,10 +94,14 @@ public class UsefulTORStuffPlugin : BasePlugin
         Logger = Log;
         Logger.LogInfo($"{PluginName} v{PluginVersion} loading...");
 
-        // Check if this mod is enabled. Early return wenn deaktiviert.
+        // Check if this mod is enabled. Early return wenn deaktiviert - ABER der Mod Manager läuft
+        // trotzdem (siehe LoadModManagerOnly): dieser Mod BESITZT den Manager, und der Schalter zum
+        // Wiedereinschalten liegt genau darin. Ohne das wäre "aus" eine Einbahnstraße, die sich nur
+        // noch per Hand in der .cfg umkehren lässt.
         var enabled = Config.Bind("General", "Enabled", true, "Enable this mod");
         if (!enabled.Value) {
-            Logger.LogInfo($"{PluginName} is disabled in config — skipping load.");
+            Logger.LogInfo($"{PluginName} is disabled in config — loading the Mod Manager only.");
+            LoadModManagerOnly(enabled);
             return;
         }
 
@@ -374,6 +378,71 @@ public class UsefulTORStuffPlugin : BasePlugin
         }
 
         Logger.LogInfo($"{PluginName} v{PluginVersion} loaded.");
+    }
+
+    // ========================================================================
+    // Disabled mode: the Mod Manager, and nothing else.
+    //
+    // This plugin owns the Mod Manager - the main-menu button, the UI, the registry. Switching this
+    // mod off used to take all of that with it, and since the manager is also where every mod's
+    // on/off switch lives, the only way back was editing the .cfg by hand. Unknown's Collection
+    // already registers itself while disabled for the same reason; here it has to go one step
+    // further and actually run the manager.
+    //
+    // What deliberately does NOT happen here: no Harmony.PatchAll, no CreateOptions, no RPC
+    // registration, no localisation applied to TOR's strings. Nothing this branch does can change
+    // anything in a round - it draws a menu and lets you flip switches that take effect after a
+    // restart.
+    // ========================================================================
+    private void LoadModManagerOnly(ConfigEntry<bool> enabled)
+    {
+        try {
+            var modManagerEnabled = Config.Bind("ModManager", "Enabled", true,
+                "When enabled, update buttons move into the Mod Manager UI. When disabled, update buttons "
+                + "appear at their original positions.");
+            ModManagerRegistry.SetModManagerEnabled(modManagerEnabled.Value);
+            ModManagerButtonX = Config.Bind("ModManager", "ButtonPositionX", 0.8f,
+                "X position of the Mod Manager button (anchor point 0-1)");
+            ModManagerButtonY = Config.Bind("ModManager", "ButtonPositionY", 0.21f,
+                "Y position of the Mod Manager button (anchor point 0-1)");
+
+            // The manager shows every mod's version line, so the shared display flag has to be set
+            // even here.
+            ShowTestVersionsConfig = Config.Bind("Version", "ShowTestVersions", false,
+                "Show the 4th version component (the test-version number, e.g. v1.2.3.4) in mod version "
+                + "lines. Stable builds (vX.Y.Z) are unaffected. Toggleable in the Mod Manager.");
+            VersionDisplay.SetShowTestVersions(ShowTestVersionsConfig.Value);
+
+            // Tables only - the full Initialize() would mutate TOR's role and option strings.
+            UTSLocalization.InitializeDisplayOnly(Config);
+
+            // The updater keeps working: a disabled mod must still be updatable, and the manager
+            // reads its state to show what needs updating.
+            AddComponent<UsefulTORStuffUpdater>();
+            ModManagerRegistry.MarkUpdateCheckNow();
+
+            AddComponent<ModManagerButton>();
+            AddComponent<ModManagerUI>();
+
+            // Register ourselves so the entry (and its switch) is in the list. RuntimeEnabled is
+            // false: our patches never ran this session, so turning it back on needs a restart, and
+            // the manager says so instead of pretending the mod is live.
+            var modData = new System.Collections.Generic.Dictionary<string, object> {
+                { "Guid", PluginGuid },
+                { "Name", PluginName },
+                { "Version", Version },
+                { "RepositoryOwner", UsefulTORStuffUpdater.RepositoryOwner },
+                { "RepositoryName", UsefulTORStuffUpdater.RepositoryName },
+                { "ButtonColor", Color.green },
+                { "Enabled", enabled },
+                { "RuntimeEnabled", false }
+            };
+            ModManagerRegistry.RegisterMod(PluginGuid, modData);
+
+            Logger.LogInfo($"{PluginName} v{PluginVersion}: Mod Manager loaded, all game features off.");
+        } catch (Exception ex) {
+            Logger.LogError($"Mod-Manager-only load failed: {ex}");
+        }
     }
 
     // ========================================================================

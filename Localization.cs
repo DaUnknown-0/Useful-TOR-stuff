@@ -87,7 +87,7 @@ namespace UsefulTORStuff {
         public static bool TierBActive => Array.IndexOf(TierBCodes, ActiveCode) >= 0;
         public static event Action LanguageApplied;
 
-        public static void Initialize(ConfigFile config) {
+        private static void BindConfig(ConfigFile config) {
             ModLanguage = config.Bind("Localization", "ModLanguage", "auto",
                 "Language for all mod texts (and, for languages Among Us itself does not offer, "
                 + "also the vanilla texts). \"auto\" follows the game language. Codes: "
@@ -97,10 +97,24 @@ namespace UsefulTORStuff {
                 "Write a one-time dump of all vanilla StringNames texts (current game language) "
                 + "to BepInEx/config/UTSLocalization/. Source material for translating vanilla "
                 + "texts into the extra (non-vanilla) languages.");
+        }
 
+        public static void Initialize(ConfigFile config) {
+            BindConfig(config);
             LoadTable("en", english);
             ModLanguage.SettingChanged += (_, __) => Reapply("config change");
             Reapply("initial load");
+        }
+
+        /// Tables only - no TOR mutation, no option bindings, nothing that touches the game.
+        /// For the "this mod is switched off but the Mod Manager still has to work" path: the
+        /// manager needs its own labels translated, and that is all it may do.
+        public static void InitializeDisplayOnly(ConfigFile config) {
+            BindConfig(config);
+            LoadTable("en", english);
+            var code = ResolveCode();
+            LoadTable(code, active);
+            ActiveCode = code;
         }
 
         // ---------- public lookup API ----------
