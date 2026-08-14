@@ -22,7 +22,7 @@
  *     still rolls the spawn chance, and assignModifiersToPlayers draws all modifiers from one
  *     shared player pool = max ONE modifier per person. (An earlier host-side "top-up" that
  *     force-filled the quantity after the first spawn is deliberately GONE - it bypassed the
- *     chance and could stack Mini+Armored on the same player; user decision 2026-07-05.)
+ *     chance and could stack Mini+Armored on the same player.)
  *   - Body scale + collider: postfix on PlayerControlFixedUpdatePatch.playerSizeUpdate.
  *   - Age suffix on the name tag: postfix on HudManagerUpdatePatch.miniUpdate (internal, reflection).
  *   - Kill protection while not grown up: postfix on Helpers.checkMuderAttempt (SuppressKill).

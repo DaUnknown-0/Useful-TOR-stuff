@@ -35,6 +35,22 @@ namespace UsefulTORStuff {
         private const string MarkerPrefix = "unknownsCollective";
         private const string ToggleLinkId = "unknownsCollectiveToggle";
         private const string SoleLinkId = "unknownsCollectiveSole";
+        // Click debounce, SHARED across every copy of this file via AppDomain like all other state
+        // here. Render() runs once per frame PER LOADED MOD, and each copy sees the same
+        // GetMouseButtonDown - so one click toggled the block five times in a row (open/shut
+        // flicker, net effect depending on the mod count's parity). A per-assembly static would
+        // only fix the copy that owns it; the shared timestamp makes the FIRST copy consume the
+        // click and every other copy (and every further click for half a second) a no-op.
+        private const string LastToggleKey = "TORMods.CollectiveLastToggle";
+        private const float ToggleCooldown = 0.5f;
+
+        private static bool ToggleReady() {
+            float last = AppDomain.CurrentDomain.GetData(LastToggleKey) is float f ? f : -999f;
+            return Time.realtimeSinceStartup - last >= ToggleCooldown;
+        }
+
+        private static void MarkToggled() =>
+            AppDomain.CurrentDomain.SetData(LastToggleKey, Time.realtimeSinceStartup);
 
         private static Dictionary<string, string> Members() {
             var d = AppDomain.CurrentDomain.GetData(MembersKey) as Dictionary<string, string>;
@@ -79,7 +95,8 @@ namespace UsefulTORStuff {
                     int link = TMP_TextUtilities.FindIntersectingLink(tmp, Input.mousePosition, cam);
                     if (link != -1) {
                         string id = tmp.textInfo.linkInfo[link].GetLinkID();
-                        if (id == ToggleLinkId || id == SoleLinkId) {
+                        if ((id == ToggleLinkId || id == SoleLinkId) && ToggleReady()) {
+                            MarkToggled();
                             // The click always drives the shared credit line, exactly like clicking
                             // any single mod's name always has.
                             AppDomain.CurrentDomain.SetData(CreditKey, !CreditVisible());
@@ -98,7 +115,7 @@ namespace UsefulTORStuff {
                         // its own - one clickable line, no collective wrapper.
                         block = $"<link=\"{SoleLinkId}\">{members.Values.First()}</link>";
                     } else if (ShipStatus.Instance == null) {
-                        // Lobby: the "Unknown's Collective" name is a round-time thing (user rule) -
+                        // Lobby: the "Unknown's Collective" name is a round-time thing -
                         // list every mod's own line here, same as each used to show on its own.
                         var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
                         block = $"<link=\"{ToggleLinkId}\">" + string.Join("\n", lines) + "</link>";

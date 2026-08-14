@@ -65,7 +65,7 @@
  * WHAT THE SHIELD DELIBERATELY DOES NOT COVER
  * A shielded newcomer who is a LOVER still dies when their partner dies. TOR's lover cascade calls
  * MurderPlayer directly (PlayerControlPatch.cs:1226) and bypasses every check, and that is left
- * alone on purpose (decision 2026-08-14): the shield protects against being killed, not against the
+ * alone on purpose: the shield protects against being killed, not against the
  * bond itself. Suppressing it would mean a lover pair cannot die together in the first round, which
  * quietly guts the lovers' own rule for everybody else at the table.
  *
@@ -89,11 +89,21 @@ namespace UsefulTORStuff {
         public static CustomOption Enabled;
         public static CustomOption NotifyKiller;
 
-        // ---- Host state: survives rounds and lobbies, dies with the process ----
-        // Friend codes that have already started a round with this host. "Session" is deliberately
-        // the lifetime of the game process (user decision), so a restart gives everyone a fresh
-        // round again.
+        // ---- Host state: survives rounds, lobbies, and now short restarts ----
+        // Friend codes that have already started a round with this host. Originally memory-only;
+        // since 2026-08-15 the set is persisted with a heartbeat and RESTORED when the game comes
+        // back within ten minutes: a crash or a quick reboot must not hand the
+        // whole lobby a fresh shield round. Only after ten minutes of the game being gone does the
+        // session truly start over.
         private static readonly HashSet<string> seenFriendCodes = new HashSet<string>();
+
+        // THE FIRST-LOBBY GRACE: the very first lobby of a session is
+        // the regular group assembling, not newcomers arriving - so nobody who joins before the
+        // session's FIRST round starts gets the automatic shield. Only people who show up once a
+        // round has already been played this session count as new. A restored session (crash +
+        // relaunch within the window) had its first round already, so the grace does not re-apply.
+        // The host's MANUAL mark still wins even in the first lobby: an explicit click is intent.
+        private static bool sessionHadRound;
         // Friend codes the host marked by hand in the lobby; they get the same one-round shield.
         private static readonly HashSet<string> manualNewcomers = new HashSet<string>();
         // ...and the opposite: people the host took the shield away from. Without this second set the
@@ -138,6 +148,62 @@ namespace UsefulTORStuff {
 
         public static void RegisterRpc() {
             UTSRpc.Register(RpcId, HandleModuleRpc);
+            RestoreState();
+        }
+
+        // ---- persistence: the ten minute window ----
+        // The state file holds a heartbeat timestamp, the first-round flag and the seen set, one
+        // code per line (player names cannot contain newlines, so no escaping is needed). The
+        // heartbeat is refreshed every 30 seconds while the set is non-empty, so even a hard crash
+        // leaves a timestamp within half a minute of the real exit. On startup the state is
+        // restored only when that heartbeat is younger than ten minutes; otherwise it is ignored
+        // and the session starts fresh, first-lobby grace included.
+        private static readonly TimeSpan PersistWindow = TimeSpan.FromMinutes(10);
+        private const float HeartbeatSeconds = 30f;
+        private static float nextHeartbeat;
+
+        private static string StatePath =>
+            System.IO.Path.Combine(BepInEx.Paths.ConfigPath, "UTSNewcomerShield.state");
+
+        private static void RestoreState() {
+            try {
+                if (!System.IO.File.Exists(StatePath)) return;
+                var lines = System.IO.File.ReadAllLines(StatePath);
+                if (lines.Length < 2) return;
+                if (!DateTime.TryParse(lines[0], System.Globalization.CultureInfo.InvariantCulture,
+                                       System.Globalization.DateTimeStyles.RoundtripKind, out var stamp)) return;
+                var age = DateTime.UtcNow - stamp.ToUniversalTime();
+                if (age > PersistWindow || age < TimeSpan.FromMinutes(-5)) {
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[NewcomerShield] stored session is {age.TotalMinutes:F1} min old - starting fresh.");
+                    return;
+                }
+                sessionHadRound = lines[1] == "1";
+                int n = 0;
+                for (int i = 2; i < lines.Length; i++) {
+                    if (string.IsNullOrWhiteSpace(lines[i])) continue;
+                    seenFriendCodes.Add(lines[i]);
+                    n++;
+                }
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[NewcomerShield] session restored ({n} known player(s), "
+                    + $"heartbeat {age.TotalSeconds:F0}s old) - a crash or quick restart does not re-shield anyone.");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[NewcomerShield] state restore failed: {e.Message}");
+            }
+        }
+
+        private static void SaveState() {
+            try {
+                var lines = new List<string>(seenFriendCodes.Count + 2) {
+                    DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
+                    sessionHadRound ? "1" : "0"
+                };
+                lines.AddRange(seenFriendCodes);
+                System.IO.File.WriteAllLines(StatePath, lines);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[NewcomerShield] state save failed: {e.Message}");
+            }
         }
 
         // ---- helpers ----
@@ -177,7 +243,12 @@ namespace UsefulTORStuff {
             string code = CodeOf(p);
             if (string.IsNullOrEmpty(code)) return false;
             if (manualExcluded.Contains(code)) return false;
-            return manualNewcomers.Contains(code) || !seenFriendCodes.Contains(code);
+            if (manualNewcomers.Contains(code)) return true;
+            // First-lobby grace: before the session's first round, the automatic rule is off -
+            // everyone assembling in lobby one is the regular group, not a newcomer. Mirrored
+            // here so the lobby preview never promises a shield the round start will not grant.
+            if (!sessionHadRound) return false;
+            return !seenFriendCodes.Contains(code);
         }
 
         public static bool IsManual(PlayerControl p) {
@@ -283,6 +354,14 @@ namespace UsefulTORStuff {
                 var client = AmongUsClient.Instance;
                 if (client == null) return;
 
+                // Heartbeat for the ten minute persistence window: while there is state worth
+                // keeping, its timestamp stays within 30 seconds of "now" - so even a hard crash
+                // reads as "the game was here a moment ago" and a relaunch restores the session.
+                if (seenFriendCodes.Count > 0 && Time.realtimeSinceStartup >= nextHeartbeat) {
+                    nextHeartbeat = Time.realtimeSinceStartup + HeartbeatSeconds;
+                    SaveState();
+                }
+
                 bool inRound = ShipStatus.Instance != null && client.IsGameStarted;
                 if (!inRound) {
                     roundSeen = false;
@@ -366,6 +445,9 @@ namespace UsefulTORStuff {
         private static void AssignShields() {
             try {
                 int realCodes = 0, nameFallbacks = 0;
+                // The session's first round: the automatic rule stands down (see sessionHadRound),
+                // only an explicit host mark shields. Everyone present is registered as known.
+                bool grace = !sessionHadRound;
                 var ids = new List<byte>();
                 foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
                     if (!IsAlive(p)) continue;
@@ -373,7 +455,8 @@ namespace UsefulTORStuff {
                     if (string.IsNullOrEmpty(code)) continue;
                     if (HasRealCode(p)) realCodes++; else nameFallbacks++;
 
-                    bool isNew = manualNewcomers.Contains(code) || !seenFriendCodes.Contains(code);
+                    bool isNew = manualNewcomers.Contains(code)
+                                 || (!grace && !seenFriendCodes.Contains(code));
                     if (isNew) ids.Add(p.PlayerId);
 
                     // Playing this round counts as having been here, whether shielded or not.
@@ -383,11 +466,14 @@ namespace UsefulTORStuff {
                     manualNewcomers.Remove(code);
                     manualExcluded.Remove(code);
                 }
+                sessionHadRound = true;
+                SaveState();
 
                 // Always logged, even for zero shields: this line is the proof the decision ran at
                 // all, and the identity counts answer whether this server hands out friend codes.
                 UsefulTORStuffPlugin.Logger?.LogInfo(
-                    $"[NewcomerShield] round start: {realCodes} player(s) with a friend code, "
+                    $"[NewcomerShield] round start{(grace ? " (first round, grace - automatic rule off)" : "")}: "
+                    + $"{realCodes} player(s) with a friend code, "
                     + $"{nameFallbacks} on the name fallback, {ids.Count} to shield.");
 
                 if (ids.Count > 0) SendSetShields(ids);
