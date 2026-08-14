@@ -36,12 +36,41 @@ using UnityEngine;
 
 namespace UsefulTORStuff {
 
+    /// The one safe way to ask "is there a lobby screen?".
+    ///
+    /// NEVER read GameStartManager.Instance as a question. The getter is Among Us'
+    /// DestroyableSingleton, and a DestroyableSingleton getter CONSTRUCTS an instance when none
+    /// exists - a blank GameStartManager with every serialized field null, whose Start() and
+    /// Update() then throw natively every frame. The 2026-08-14 log shows exactly that: a
+    /// GameStartManager.Start NullReference at BOOT, before the main menu even loaded, in every
+    /// session since the first build that polled the getter from a menu-time component
+    /// (v1.3.3.15), and none before. That phantom object is the strongest suspect behind the
+    /// degraded rounds (permanently openable chat, uncallable meetings, dead decon doors) that
+    /// vanish when this mod is removed. InstanceExists reads the backing field and constructs
+    /// nothing; the real lobby screen registers itself there in Awake, so the answer is right
+    /// whenever it matters.
+    public static class LobbyScreen {
+        public static bool Exists {
+            get {
+                try { return DestroyableSingleton<GameStartManager>.InstanceExists; }
+                catch { return false; }
+            }
+        }
+
+        /// The instance, or null - guaranteed not to construct one.
+        public static GameStartManager InstanceOrNull() {
+            try { return Exists ? DestroyableSingleton<GameStartManager>._instance : null; }
+            catch { return null; }
+        }
+    }
+
     public static class LobbyLeakGuard {
 
         // Log each distinct failure once, not per frame - the per-frame log spam was half the damage.
         private static bool loggedStart;
         private static bool loggedUpdate;
         private static bool loggedDestroy;
+        private static bool loggedChatClamp;
 
         private static bool InRound() =>
             ShipStatus.Instance != null && AmongUsClient.Instance != null
@@ -92,10 +121,14 @@ namespace UsefulTORStuff {
         static class HudUpdatePatch {
             public static void Postfix(HudManager __instance) {
                 try {
-                    if (!InRound()) { loggedDestroy = false; return; }
+                    if (!InRound()) { loggedDestroy = false; loggedChatClamp = false; return; }
 
-                    // B: the lobby screen has no business existing in a round.
-                    var gsm = GameStartManager.Instance;
+                    // B: the lobby screen has no business existing in a round. Asked through the
+                    // side-effect-free helper: the previous build read GameStartManager.Instance
+                    // here EVERY ROUND FRAME, and since that getter constructs a blank instance
+                    // when none exists, destroy-then-recreate could churn a fresh broken
+                    // GameStartManager every frame of the round. See LobbyScreen above.
+                    var gsm = LobbyScreen.InstanceOrNull();
                     if (gsm != null) {
                         if (!loggedDestroy) {
                             loggedDestroy = true;
@@ -114,7 +147,32 @@ namespace UsefulTORStuff {
                     if ((me == Lovers.lover1 || me == Lovers.lover2) && Lovers.enableChat) return;
 
                     var chat = __instance.Chat;
-                    if (chat != null && chat.isActiveAndEnabled) chat.SetVisible(false);
+                    if (chat == null) return;
+
+                    // IDEMPOTENT, and that word is load-bearing. chat.isActiveAndEnabled is true
+                    // for the entire round (the ChatController component always runs), so the old
+                    // guard called SetVisible(false) EVERY FRAME of EVERY round. SetVisible is not
+                    // a cheap setter: each call logs "Chat is hidden" and walks ControllerManager
+                    // through QuickChatMenu/BanMenu CloseOverlayMenu - the exact per-frame spam
+                    // filling the 2026-08-14 log (thousands of lines in seconds), plus per-frame UI
+                    // menu-stack churn in a round that is already degraded. So the clamp now acts
+                    // only when there is visibly something to clamp: the chat button is shown, or
+                    // the chat window is open.
+                    bool buttonShown = false, windowOpen = false;
+                    try { buttonShown = chat.chatButton != null && chat.chatButton.gameObject.activeSelf; } catch { }
+                    try { windowOpen = chat.IsOpenOrOpening; } catch { }
+                    if (!buttonShown && !windowOpen) return;
+
+                    if (!loggedChatClamp) {
+                        loggedChatClamp = true;
+                        UsefulTORStuffPlugin.Logger?.LogWarning(
+                            "[LobbyLeakGuard] mid-round chat was visible for a living player - clamping "
+                            + $"(button={buttonShown}, window={windowOpen}).");
+                    }
+                    chat.SetVisible(false);
+                    // SetVisible only governs the button; a window that is already open stays open
+                    // without this.
+                    if (windowOpen) { try { chat.ForceClosed(); } catch { } }
                 } catch { }
             }
         }

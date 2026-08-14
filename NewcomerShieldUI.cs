@@ -61,10 +61,20 @@ namespace UsefulTORStuff {
 
         // public, like every other Unity message in this plugin (see UTSModSyncUI).
         public void Update() {
+            // The feature's own driver: lobby preview and round-start assignment. It lives on this
+            // MonoBehaviour and NOT on a Harmony postfix precisely so no other mod's throwing patch
+            // can ever keep it from running (see the NewcomerShield header). Every frame, before
+            // this component's own poll throttle; Tick throttles itself.
+            NewcomerShield.Tick();
+
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
 
-            if (panelRoot != null && GameStartManager.Instance == null) Close();
+            // LobbyScreen.Exists, never GameStartManager.Instance: that getter CONSTRUCTS a blank
+            // GameStartManager when none exists (LobbyScreen in LobbyLeakGuard.cs has the whole
+            // story), and this component polling it from boot onwards is how v1.3.3.15 planted the
+            // phantom that degraded every session since.
+            if (panelRoot != null && !LobbyScreen.Exists) Close();
 
             bool show = ShouldShow();
             if (show && lobbyButton == null) BuildLobbyButton();
@@ -76,7 +86,7 @@ namespace UsefulTORStuff {
         [HideFromIl2Cpp]
         private bool ShouldShow() {
             try {
-                if (GameStartManager.Instance == null) return false;         // lobby only
+                if (!LobbyScreen.Exists) return false;                       // lobby only
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return false;
                 return NewcomerShield.Enabled != null && NewcomerShield.Enabled.getBool();
             } catch { return false; }

@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.19";
+    public const string PluginVersion = "1.3.3.20";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -148,6 +148,10 @@ public class UsefulTORStuffPlugin : BasePlugin
             + "Loopback-only (never exposed to the network); only the host can change values.");
         WebConfigPort = Config.Bind("WebConfig", "Port", 32200,
             "TCP port for the local settings web page. If busy, the next few ports are tried.");
+
+        // Read-only tracer for the decon-door / emergency-meeting reports; see DeconDiag.cs for
+        // what each log line proves. The patch is attribute-based (PatchAll below).
+        DeconDiag.Bind(Config);
 
         var harmony = new Harmony(PluginGuid);
 

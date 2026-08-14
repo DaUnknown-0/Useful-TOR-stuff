@@ -36,6 +36,32 @@
  * Either way the AUTHORITY over the list stays with the host: he decides who is shielded and hands
  * the ids out over RPC. No client can shield itself.
  *
+ * WHY THE ASSIGNMENT AND THE PREVIEW RUN OFF THEIR OWN TICK, NOT OFF HARMONY POSTFIXES
+ * The first build hung both on Priority.Low POSTFIXES (IntroCutscene.OnDestroy for the round
+ * start, GameStartManager.Update for the lobby preview). That is a dependency on every OTHER
+ * patch of the same method finishing cleanly: Harmony runs the original and all postfixes inside
+ * one compiled replacement, in priority order, and an exception thrown by an earlier postfix
+ * unwinds past every later one. A finalizer (LobbyLeakGuard has them on GameStartManager) only
+ * swallows the exception at the method boundary; it cannot resurrect the skipped postfixes. On
+ * this install TOR's GameStartManagerUpdatePatch.Postfix throws EVERY FRAME over the broken
+ * lobby screen (LogOutput 2026-08-14: "GameStartManager.Update threw ... suppressed"), so the
+ * preview postfix never ran once. The playtest proved it: no preview, no outline, no
+ * "[NewcomerShield] ... shielded" line.
+ *
+ * So both now run from NewcomerShieldUI.Update, a plain MonoBehaviour on the plugin's own
+ * GameObject (the UTSModSyncUI pattern): no foreign patch can throw it away. The only Harmony
+ * hook left in the decision path is a Priority.First PREFIX marker on IntroCutscene.OnDestroy,
+ * which by definition runs before anything else on that method can throw, and a 10 second
+ * fallback covers even that being lost.
+ *
+ * IDENTITY ON CUSTOM SERVERS
+ * This lobby plays on a custom server (useDtls false in the log), and servers without account
+ * auth hand out EMPTY friend codes. An empty code used to mean "never shielded", silently. Now
+ * an empty code falls back to a name-based key ("name:" + PlayerName). A name can be copied, a
+ * friend code cannot - but the shield is a courtesy worth one round, not a security boundary,
+ * and the fallback is what makes the feature exist at all on such servers. The assignment logs
+ * how many players sat on each identity kind, so the next playtest answers which case we are in.
+ *
  * WHAT THE SHIELD DELIBERATELY DOES NOT COVER
  * A shielded newcomer who is a LOVER still dies when their partner dies. TOR's lover cascade calls
  * MurderPlayer directly (PlayerControlPatch.cs:1226) and bypasses every check, and that is left
@@ -117,10 +143,27 @@ namespace UsefulTORStuff {
         // ---- helpers ----
         private static bool AmHost() => AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost;
 
-        // The identifier. Empty codes are treated as "not identifiable" and simply never shielded:
-        // the alternative would be matching on the player NAME, which anybody can copy.
+        // The identifier. Friend code when the server hands one out; on auth-less custom servers
+        // (this lobby's feinis.deb.at, and every plain Impostor server) the code is EMPTY for
+        // everybody, and treating that as "not identifiable, never shielded" made the feature
+        // silently dead there. So an empty code falls back to a name-based key. A name can be
+        // copied and a friend code cannot, but the shield is one free round, not a security
+        // boundary, and without the fallback it does not exist at all on the server this group
+        // actually plays on. The "name:" prefix keeps the two identity kinds from ever colliding.
         public static string CodeOf(PlayerControl p) {
-            try { return p?.Data?.FriendCode ?? ""; } catch { return ""; }
+            try {
+                string code = p?.Data?.FriendCode;
+                if (!string.IsNullOrEmpty(code)) return code;
+                string name = p?.Data?.PlayerName;
+                return string.IsNullOrEmpty(name) ? "" : "name:" + name;
+            } catch { return ""; }
+        }
+
+        // True when the player has a REAL friend code (not the name fallback). Only used for the
+        // diagnostic count in the round-start log, so the next playtest can tell which identity
+        // kind this server actually delivers.
+        private static bool HasRealCode(PlayerControl p) {
+            try { return !string.IsNullOrEmpty(p?.Data?.FriendCode); } catch { return false; }
         }
 
         private static bool IsAlive(PlayerControl p) =>
@@ -214,37 +257,142 @@ namespace UsefulTORStuff {
         private static void ApplyClear() => shielded.Clear();
 
         // ====================================================================
+        // The driver: one tick, owned by this feature, driven by NewcomerShieldUI.Update
+        //
+        // NOT a Harmony postfix on anything. The first build died because it shared patched
+        // methods with TOR: TOR's GameStartManagerUpdatePatch.Postfix throws every frame on this
+        // install, and Harmony skips every later postfix of the same method once an earlier one
+        // has thrown (a finalizer only swallows the exception at the method boundary, the skipped
+        // postfixes stay skipped). A MonoBehaviour Update on the plugin's own GameObject cannot be
+        // taken down by anyone else's patch. See the header for the full autopsy.
+        // ====================================================================
+        private static float nextTick;
+        private static bool roundSeen;          // a round transition was observed by this tick
+        private static float roundSeenAt;
+        private static bool assignedThisRound;  // the one-shot latch for the round-start decision
+        // Set by the Priority.First prefix marker below; the timeout exists for the day even that
+        // marker is lost (an intro skipped or destroyed abnormally).
+        private static bool introOverSeen;
+        private const float IntroFallbackSeconds = 10f;
+
+        public static void Tick() {
+            try {
+                if (Time.realtimeSinceStartup < nextTick) return;
+                nextTick = Time.realtimeSinceStartup + 0.5f;
+
+                var client = AmongUsClient.Instance;
+                if (client == null) return;
+
+                bool inRound = ShipStatus.Instance != null && client.IsGameStarted;
+                if (!inRound) {
+                    roundSeen = false;
+                    introOverSeen = false;
+                    assignedThisRound = false;
+                    PhantomWatchdog();
+                    // Lobby: the host recomputes and broadcasts the preview. LobbyScreen.Exists,
+                    // never GameStartManager.Instance - the getter CONSTRUCTS a broken instance
+                    // when none exists (see LobbyScreen in LobbyLeakGuard.cs), and polling it from
+                    // this always-on tick is exactly how v1.3.3.15 planted a phantom
+                    // GameStartManager at boot and degraded every session since.
+                    if (client.AmHost && LobbyScreen.Exists) LobbyPreviewTick();
+                    return;
+                }
+
+                if (!roundSeen) { roundSeen = true; roundSeenAt = Time.realtimeSinceStartup; }
+
+                // The shield ends with the first meeting. MeetingStartPatch says the same, but it
+                // is a postfix on MeetingHud.Start, a method TOR also patches - and this feature's
+                // whole autopsy is about not trusting shared patch chains. The tick repeats the
+                // clear from outside any chain, so the shield can never outlive the meeting.
+                if (shielded.Count > 0 && MeetingHud.Instance != null) {
+                    if (client.AmHost) SendClear();
+                    else shielded.Clear();
+                }
+
+                if (assignedThisRound || !client.AmHost) return;
+                if (Enabled == null || !Enabled.getBool()) { assignedThisRound = true; return; }
+
+                // Wait for the intro to be over before deciding. Two reasons: the shield list must
+                // be built AFTER TOR's resetVariables (which clears it and runs during round setup,
+                // well before the intro ends - see the resetVariables memory note), and the intro
+                // end is also when the old IntroCutscene.OnDestroy hook fired, so the round
+                // semantics stay exactly what they were.
+                if (!introOverSeen
+                    && Time.realtimeSinceStartup - roundSeenAt < IntroFallbackSeconds) return;
+
+                assignedThisRound = true;
+                AssignShields();
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[NewcomerShield] tick failed: {e}");
+            }
+        }
+
+        // The proof-of-fix probe for the phantom GameStartManager (see LobbyScreen in
+        // LobbyLeakGuard.cs). A GameStartManager outside a joined lobby is ALWAYS wrong; before
+        // this build one appeared at boot in every session and is the prime suspect behind the
+        // degraded rounds. Logged once per sighting streak so the next playtest log answers
+        // whether the getter hygiene actually removed it. FindObjectOfType constructs nothing.
+        private static bool phantomLogged;
+        private static void PhantomWatchdog() {
+            try {
+                if (AmongUsClient.Instance != null && AmongUsClient.Instance.GameState != InnerNet.InnerNetClient.GameStates.NotJoined) {
+                    phantomLogged = false;
+                    return;   // joined or in a lobby: a GameStartManager is legitimate
+                }
+                var gsm = UnityEngine.Object.FindObjectOfType<GameStartManager>();
+                if (gsm == null) { phantomLogged = false; return; }
+                if (phantomLogged) return;
+                phantomLogged = true;
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "[NewcomerShield] phantom GameStartManager detected OUTSIDE any lobby "
+                    + $"(object '{gsm.gameObject.name}') - some code constructed one via the "
+                    + "DestroyableSingleton getter. This is the degraded-session trigger.");
+            } catch { }
+        }
+
+        // The only Harmony hook left in the decision path, and deliberately the safest kind there
+        // is: a Priority.First PREFIX that sets one flag and can neither throw nor be skipped -
+        // prefixes run in priority order BEFORE the original, so nothing that throws later in the
+        // chain (TOR's own OnDestroy patches included) can reach back and un-run it.
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        [HarmonyPriority(Priority.First)]
+        static class IntroOverMarkerPatch {
+            public static void Prefix() => introOverSeen = true;
+        }
+
+        // ====================================================================
         // Host: decide at the start of the round
         // ====================================================================
-        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
-        [HarmonyPriority(Priority.Low)]
-        static class IntroEndPatch {
-            public static void Postfix() {
-                try {
-                    if (!AmHost()) return;
-                    if (Enabled == null || !Enabled.getBool()) return;
+        private static void AssignShields() {
+            try {
+                int realCodes = 0, nameFallbacks = 0;
+                var ids = new List<byte>();
+                foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
+                    if (!IsAlive(p)) continue;
+                    string code = CodeOf(p);
+                    if (string.IsNullOrEmpty(code)) continue;
+                    if (HasRealCode(p)) realCodes++; else nameFallbacks++;
 
-                    var ids = new List<byte>();
-                    foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
-                        if (!IsAlive(p)) continue;
-                        string code = CodeOf(p);
-                        if (string.IsNullOrEmpty(code)) continue;
+                    bool isNew = manualNewcomers.Contains(code) || !seenFriendCodes.Contains(code);
+                    if (isNew) ids.Add(p.PlayerId);
 
-                        bool isNew = manualNewcomers.Contains(code) || !seenFriendCodes.Contains(code);
-                        if (isNew) ids.Add(p.PlayerId);
-
-                        // Playing this round counts as having been here, whether shielded or not.
-                        // The manual mark is one-shot for the same reason: the host ticked a box for
-                        // THIS round, not forever.
-                        seenFriendCodes.Add(code);
-                        manualNewcomers.Remove(code);
-                        manualExcluded.Remove(code);
-                    }
-
-                    if (ids.Count > 0) SendSetShields(ids);
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[NewcomerShield] round start failed: {e}");
+                    // Playing this round counts as having been here, whether shielded or not.
+                    // The manual mark is one-shot for the same reason: the host ticked a box for
+                    // THIS round, not forever.
+                    seenFriendCodes.Add(code);
+                    manualNewcomers.Remove(code);
+                    manualExcluded.Remove(code);
                 }
+
+                // Always logged, even for zero shields: this line is the proof the decision ran at
+                // all, and the identity counts answer whether this server hands out friend codes.
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[NewcomerShield] round start: {realCodes} player(s) with a friend code, "
+                    + $"{nameFallbacks} on the name fallback, {ids.Count} to shield.");
+
+                if (ids.Count > 0) SendSetShields(ids);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[NewcomerShield] round start failed: {e}");
             }
         }
 
@@ -398,42 +546,34 @@ namespace UsefulTORStuff {
         // point is that everybody - the newcomer included - knows about it BEFORE the round starts.
         // So the host broadcasts the same list already in the lobby and refreshes it whenever it
         // changes (someone joins or leaves, the host ticks a box, the option is switched).
+        //
+        // Called from Tick(), which has already established: we are the host, no round is running
+        // (ShipStatus is null, so a leaked lobby screen can never make this recompute mid-game and
+        // clear a live shield), and GameStartManager.Instance exists. Formerly a Priority.Low
+        // postfix on GameStartManager.Update - the method whose TOR postfix throws every frame on
+        // this install, which is why the preview never once ran. See the header.
         // ====================================================================
-        private static float nextPreview;
         private static string lastPreviewKey = "";
 
-        [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
-        [HarmonyPriority(Priority.Low)]
-        static class LobbyPreviewPatch {
-            public static void Postfix() {
-                try {
-                    if (!AmHost() || AmongUsClient.Instance == null) return;
-                    // LOBBY ONLY, checked on the ship rather than on this patch running: a
-                    // GameStartManager that keeps updating into a started round (it happens - see the
-                    // lobby-screen fallout) would otherwise recompute the preview mid-game, find
-                    // everybody already "seen", and clear the shield the round is relying on.
-                    if (ShipStatus.Instance != null) return;
-                    if (Time.realtimeSinceStartup < nextPreview) return;
-                    nextPreview = Time.realtimeSinceStartup + 0.5f;
-
-                    var ids = new List<byte>();
-                    if (Enabled != null && Enabled.getBool()) {
-                        foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
-                            if (p == null || p.Data == null || p.Data.Disconnected) continue;
-                            if (WouldShield(p)) ids.Add(p.PlayerId);
-                        }
+        private static void LobbyPreviewTick() {
+            try {
+                var ids = new List<byte>();
+                if (Enabled != null && Enabled.getBool()) {
+                    foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
+                        if (p == null || p.Data == null || p.Data.Disconnected) continue;
+                        if (WouldShield(p)) ids.Add(p.PlayerId);
                     }
+                }
 
-                    // Only send when something actually changed - this runs every lobby frame.
-                    ids.Sort();
-                    string key = string.Join(",", ids);
-                    if (key == lastPreviewKey) return;
-                    lastPreviewKey = key;
+                // Only send when something actually changed - this runs twice a second.
+                ids.Sort();
+                string key = string.Join(",", ids);
+                if (key == lastPreviewKey) return;
+                lastPreviewKey = key;
 
-                    if (ids.Count > 0) SendSetShields(ids);
-                    else SendClear();
-                } catch { }
-            }
+                if (ids.Count > 0) SendSetShields(ids);
+                else SendClear();
+            } catch { }
         }
 
         // ====================================================================

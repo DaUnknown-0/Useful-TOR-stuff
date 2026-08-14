@@ -112,7 +112,9 @@ namespace UsefulTORStuff
 
             // Left the lobby / returned to the menu: the GameStartManager.Update postfix that drives
             // this panel stops firing, so close it here and unfreeze. Unlocked is kept for the session.
-            if (_panel != null && _panel.activeSelf && GameStartManager.Instance == null)
+            // LobbyScreen.Exists, never GameStartManager.Instance: the getter constructs a blank
+            // instance when none exists (see LobbyScreen in LobbyLeakGuard.cs).
+            if (_panel != null && _panel.activeSelf && !LobbyScreen.Exists)
             {
                 HidePanel();
                 return;

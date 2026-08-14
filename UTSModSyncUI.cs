@@ -93,7 +93,9 @@ namespace UsefulTORStuff {
 
             // Leaving the lobby (round start, back to menu) must take the panel with it - a modal
             // canvas at sortingOrder 9500 would otherwise sit on top of the running game.
-            if (panelRoot != null && GameStartManager.Instance == null) Close();
+            // LobbyScreen.Exists, never GameStartManager.Instance: the getter constructs a blank
+            // instance when none exists (see LobbyScreen in LobbyLeakGuard.cs).
+            if (panelRoot != null && !LobbyScreen.Exists) Close();
 
             bool shouldShow = ShouldShowLobbyButton();
             if (shouldShow && lobbyButton == null) BuildLobbyButton();
@@ -108,7 +110,7 @@ namespace UsefulTORStuff {
             try {
                 if (UsefulTORStuffPlugin.ModSyncEnabled != null && !UsefulTORStuffPlugin.ModSyncEnabled.Value)
                     return false;
-                if (GameStartManager.Instance == null) return false;      // lobby screen only
+                if (!LobbyScreen.Exists) return false;                    // lobby screen only
                 if (AmongUsClient.Instance == null) return false;
                 if (AmongUsClient.Instance.AmHost) return false;          // the host syncs nothing
                 if (!UTSModSync.HostReported) return false;               // host has no mod sync
