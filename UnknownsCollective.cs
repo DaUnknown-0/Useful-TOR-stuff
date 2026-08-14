@@ -70,12 +70,6 @@ namespace UsefulTORStuff {
                 var members = Members();
                 if (members.Count == 0) return text;
 
-                // The collective name is a round-time thing: with two or more mods contributing,
-                // fold them into "Unknown's Collective" only while a round is actually in progress
-                // (ShipStatus.Instance is set), not in the lobby. A single contributing mod is
-                // unaffected - it keeps showing its own line everywhere, exactly as it always has.
-                if (members.Count > 1 && ShipStatus.Instance == null) return text;
-
                 if (Input.GetMouseButtonDown(0)) {
                     Camera cam = Camera.main;
                     var canvas = tmp.canvas;
@@ -103,13 +97,20 @@ namespace UsefulTORStuff {
                         // Exactly one of our mods loaded: behave exactly as every mod used to on
                         // its own - one clickable line, no collective wrapper.
                         block = $"<link=\"{SoleLinkId}\">{members.Values.First()}</link>";
+                    } else if (ShipStatus.Instance == null) {
+                        // Lobby: the "Unknown's Collective" name is a round-time thing (user rule) -
+                        // list every mod's own line here, same as each used to show on its own.
+                        var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
+                        block = $"<link=\"{ToggleLinkId}\">" + string.Join("\n", lines) + "</link>";
                     } else if (!Expanded()) {
+                        // ">" / "v" rather than a real arrow glyph: the HUD's TMP font is ASCII-only
+                        // (see the world-space overlay lesson - ▸▾ etc. render as a missing-glyph box).
                         block = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
-                              + $" ({members.Count}) ▸</link>";
+                              + $" ({members.Count}) &gt;</link>";
                     } else {
                         var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
                         string header = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
-                              + " ▾</link>";
+                              + " v</link>";
                         block = header + "\n" + string.Join("\n", lines);
                     }
 
