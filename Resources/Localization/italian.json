@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "link di download rifiutato",
  "uts.modsync.error_download": "download fallito",
  "uts.modsync.error_write": "impossibile scrivere il file",
- "uts.modsync.rejoin_button": "Torna alla lobby {0}"
+ "uts.modsync.rejoin_button": "Torna alla lobby {0}",
+ "uts.newcomershield.option_name": "Proteggi i giocatori nuovi di questa sessione",
+ "uts.newcomershield.option_notify": "Di' all'assassino perché l'omicidio è fallito",
+ "uts.newcomershield.kill_blocked": "Questo giocatore è nuovo e non può essere ucciso prima della prima riunione.",
+ "uts.newcomershield.lobby_button": "Scudo per i nuovi ({0})",
+ "uts.newcomershield.title": "Scudo per i nuovi",
+ "uts.newcomershield.subtitle": "I giocatori protetti non possono essere uccisi prima della prima riunione. I contrassegni valgono per il turno successivo.",
+ "uts.newcomershield.close": "Chiudi",
+ "uts.newcomershield.state_new": "nuovo - protetto",
+ "uts.newcomershield.state_manual": "segnato dall'host",
+ "uts.newcomershield.state_known": "ha già giocato",
+ "uts.newcomershield.btn_protect": "Proteggi",
+ "uts.newcomershield.btn_unprotect": "Rimuovi"
 }

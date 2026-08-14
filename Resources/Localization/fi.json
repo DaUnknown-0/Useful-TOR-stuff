@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "latauslinkki hylätty",
  "uts.modsync.error_download": "lataus epäonnistui",
  "uts.modsync.error_write": "tiedostoa ei voitu kirjoittaa",
- "uts.modsync.rejoin_button": "Takaisin aulaan {0}"
+ "uts.modsync.rejoin_button": "Takaisin aulaan {0}",
+ "uts.newcomershield.option_name": "Suojaa tämän istunnon uudet pelaajat",
+ "uts.newcomershield.option_notify": "Kerro tappajalle, miksi tappo epäonnistui",
+ "uts.newcomershield.kill_blocked": "Tämä pelaaja on täällä uusi, eikä häntä voi tappaa ennen ensimmäistä kokousta.",
+ "uts.newcomershield.lobby_button": "Tulokassuoja ({0})",
+ "uts.newcomershield.title": "Tulokassuoja",
+ "uts.newcomershield.subtitle": "Suojattuja pelaajia ei voi tappaa ennen ensimmäistä kokousta. Merkinnät koskevat seuraavaa kierrosta.",
+ "uts.newcomershield.close": "Sulje",
+ "uts.newcomershield.state_new": "uusi - suojattu",
+ "uts.newcomershield.state_manual": "isännän merkitsemä",
+ "uts.newcomershield.state_known": "on jo pelannut",
+ "uts.newcomershield.btn_protect": "Suojaa",
+ "uts.newcomershield.btn_unprotect": "Poista"
 }

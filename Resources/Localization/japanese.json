@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "ダウンロードリンクを拒否しました",
  "uts.modsync.error_download": "ダウンロードに失敗しました",
  "uts.modsync.error_write": "ファイルを書き込めませんでした",
- "uts.modsync.rejoin_button": "ロビー {0} に戻る"
+ "uts.modsync.rejoin_button": "ロビー {0} に戻る",
+ "uts.newcomershield.option_name": "このセッションで初参加のプレイヤーを保護",
+ "uts.newcomershield.option_notify": "キルが失敗した理由をキラーに伝える",
+ "uts.newcomershield.kill_blocked": "このプレイヤーは初参加のため、最初の会議までキルできません。",
+ "uts.newcomershield.lobby_button": "初心者保護 ({0})",
+ "uts.newcomershield.title": "初心者保護",
+ "uts.newcomershield.subtitle": "保護されたプレイヤーは最初の会議までキルされません。指定は次のラウンドに適用されます。",
+ "uts.newcomershield.close": "閉じる",
+ "uts.newcomershield.state_new": "初参加 - 保護中",
+ "uts.newcomershield.state_manual": "ホストが指定",
+ "uts.newcomershield.state_known": "参加済み",
+ "uts.newcomershield.btn_protect": "保護する",
+ "uts.newcomershield.btn_unprotect": "解除"
 }

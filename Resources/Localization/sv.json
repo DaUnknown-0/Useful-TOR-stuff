@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "nedladdningslänk avvisad",
  "uts.modsync.error_download": "nedladdningen misslyckades",
  "uts.modsync.error_write": "filen kunde inte skrivas",
- "uts.modsync.rejoin_button": "Tillbaka till lobby {0}"
+ "uts.modsync.rejoin_button": "Tillbaka till lobby {0}",
+ "uts.newcomershield.option_name": "Skydda spelare som är nya denna session",
+ "uts.newcomershield.option_notify": "Berätta för mördaren varför mordet misslyckades",
+ "uts.newcomershield.kill_blocked": "Den här spelaren är ny här och kan inte dödas före det första mötet.",
+ "uts.newcomershield.lobby_button": "Nybörjarskydd ({0})",
+ "uts.newcomershield.title": "Nybörjarskydd",
+ "uts.newcomershield.subtitle": "Skyddade spelare kan inte dödas före det första mötet. Markeringar gäller nästa runda.",
+ "uts.newcomershield.close": "Stäng",
+ "uts.newcomershield.state_new": "ny - skyddad",
+ "uts.newcomershield.state_manual": "markerad av värden",
+ "uts.newcomershield.state_known": "har redan spelat",
+ "uts.newcomershield.btn_protect": "Skydda",
+ "uts.newcomershield.btn_unprotect": "Ta bort"
 }

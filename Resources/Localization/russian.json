@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "ссылка на загрузку отклонена",
  "uts.modsync.error_download": "загрузка не удалась",
  "uts.modsync.error_write": "не удалось записать файл",
- "uts.modsync.rejoin_button": "Назад в лобби {0}"
+ "uts.modsync.rejoin_button": "Назад в лобби {0}",
+ "uts.newcomershield.option_name": "Защищать новичков этой сессии",
+ "uts.newcomershield.option_notify": "Сообщать убийце, почему убийство не удалось",
+ "uts.newcomershield.kill_blocked": "Этот игрок здесь впервые, до первого собрания его нельзя убить.",
+ "uts.newcomershield.lobby_button": "Защита новичков ({0})",
+ "uts.newcomershield.title": "Защита новичков",
+ "uts.newcomershield.subtitle": "Защищённых игроков нельзя убить до первого собрания. Отметки действуют на следующий раунд.",
+ "uts.newcomershield.close": "Закрыть",
+ "uts.newcomershield.state_new": "новичок - защищён",
+ "uts.newcomershield.state_manual": "отмечен хостом",
+ "uts.newcomershield.state_known": "уже играл",
+ "uts.newcomershield.btn_protect": "Защитить",
+ "uts.newcomershield.btn_unprotect": "Снять"
 }

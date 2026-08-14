@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.14";
+    public const string PluginVersion = "1.3.3.15";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -63,6 +63,10 @@ public class UsefulTORStuffPlugin : BasePlugin
     // in the UTS block (244-254 are taken). New feature, so it exists ONLY on channel 240 - no
     // legacy callId, and older builds ignore it by design (UTSRpc.HandleRpcPatch).
     public const byte ModInventoryRpcId = 255;
+
+    // Module byte for the newcomer kill shield (NewcomerShield). 242 sits just below MultiJester's
+    // 243; like the inventory above it is a new feature and exists ONLY on channel 240.
+    public const byte NewcomerShieldRpcId = 242;
 
     public static ManualLogSource Logger { get; private set; }
 
@@ -155,6 +159,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Mod inventory receiver (module byte 255). Like the handshake above it has no other
         // load-time entry point - all its patches are attribute-based.
         UTSModInventory.RegisterRpc();
+
+        // Newcomer kill shield receiver (module byte 242). Same reason as the two above: its patches
+        // are attribute-based, so the RPC registration has no other home.
+        NewcomerShield.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -291,6 +299,13 @@ public class UsefulTORStuffPlugin : BasePlugin
         MultiJester.CreateOptions();
         MultiJester.TryPatch(harmony);
 
+        // Newcomer kill shield (options 1380-1381, General tab): somebody playing with this host for
+        // the first time cannot be killed before the first meeting of their first round. The host
+        // decides who counts as new and hands the ids out over RPC 242; enforcement runs both
+        // host-side (vanilla CheckMurder) and on each client (TOR's checkMuderAttempt). All patches
+        // are attribute-based and picked up by PatchAll below.
+        NewcomerShield.CreateOptions();
+
         // Close the bracket opened above: every option this mod owns is now known to UTSGate.
         UTSGate.EndOptionCapture();
 
@@ -333,6 +348,9 @@ public class UsefulTORStuffPlugin : BasePlugin
         AddComponent<UTSModDownloader>();
         AddComponent<UTSRejoinButton>();
         AddComponent<UTSModSyncUI>();
+
+        // Host-only lobby panel for the newcomer kill shield (who gets a free first round).
+        AddComponent<NewcomerShieldUI>();
 
         // Registriere diese Mod in der Mod-Manager-Registry.
         try {

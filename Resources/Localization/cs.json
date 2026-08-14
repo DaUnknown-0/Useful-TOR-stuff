@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "odkaz ke stažení odmítnut",
  "uts.modsync.error_download": "stahování selhalo",
  "uts.modsync.error_write": "soubor se nepodařilo zapsat",
- "uts.modsync.rejoin_button": "Zpět do lobby {0}"
+ "uts.modsync.rejoin_button": "Zpět do lobby {0}",
+ "uts.newcomershield.option_name": "Chránit hráče nové v této relaci",
+ "uts.newcomershield.option_notify": "Říct vrahovi, proč vražda selhala",
+ "uts.newcomershield.kill_blocked": "Tento hráč je tu nový a nelze ho zabít před první schůzí.",
+ "uts.newcomershield.lobby_button": "Ochrana nováčků ({0})",
+ "uts.newcomershield.title": "Ochrana nováčků",
+ "uts.newcomershield.subtitle": "Chránění hráči nemohou být zabiti před první schůzí. Označení platí pro další kolo.",
+ "uts.newcomershield.close": "Zavřít",
+ "uts.newcomershield.state_new": "nový - chráněný",
+ "uts.newcomershield.state_manual": "označen hostitelem",
+ "uts.newcomershield.state_known": "už hrál",
+ "uts.newcomershield.btn_protect": "Chránit",
+ "uts.newcomershield.btn_unprotect": "Zrušit"
 }

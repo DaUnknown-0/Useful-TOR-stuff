@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "link de descărcare respins",
  "uts.modsync.error_download": "descărcarea a eșuat",
  "uts.modsync.error_write": "fișierul nu a putut fi scris",
- "uts.modsync.rejoin_button": "Înapoi în lobby-ul {0}"
+ "uts.modsync.rejoin_button": "Înapoi în lobby-ul {0}",
+ "uts.newcomershield.option_name": "Protejează jucătorii noi din această sesiune",
+ "uts.newcomershield.option_notify": "Spune-i ucigașului de ce a eșuat crima",
+ "uts.newcomershield.kill_blocked": "Acest jucător este nou aici și nu poate fi ucis înainte de prima ședință.",
+ "uts.newcomershield.lobby_button": "Scut pentru începători ({0})",
+ "uts.newcomershield.title": "Scut pentru începători",
+ "uts.newcomershield.subtitle": "Jucătorii protejați nu pot fi uciși înainte de prima ședință. Marcajele sunt valabile pentru runda următoare.",
+ "uts.newcomershield.close": "Închide",
+ "uts.newcomershield.state_new": "nou - protejat",
+ "uts.newcomershield.state_manual": "marcat de gazdă",
+ "uts.newcomershield.state_known": "a jucat deja",
+ "uts.newcomershield.btn_protect": "Protejează",
+ "uts.newcomershield.btn_unprotect": "Elimină"
 }

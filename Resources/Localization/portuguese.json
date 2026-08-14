@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "link de download recusado",
  "uts.modsync.error_download": "falha no download",
  "uts.modsync.error_write": "não foi possível escrever o ficheiro",
- "uts.modsync.rejoin_button": "Voltar à sala {0}"
+ "uts.modsync.rejoin_button": "Voltar à sala {0}",
+ "uts.newcomershield.option_name": "Proteger jogadores novos nesta sessão",
+ "uts.newcomershield.option_notify": "Dizer ao assassino porque a morte falhou",
+ "uts.newcomershield.kill_blocked": "Este jogador é novo aqui e não pode ser morto antes da primeira reunião.",
+ "uts.newcomershield.lobby_button": "Proteção de novatos ({0})",
+ "uts.newcomershield.title": "Proteção de novatos",
+ "uts.newcomershield.subtitle": "Jogadores protegidos não podem ser mortos antes da primeira reunião. As marcas valem para a ronda seguinte.",
+ "uts.newcomershield.close": "Fechar",
+ "uts.newcomershield.state_new": "novo - protegido",
+ "uts.newcomershield.state_manual": "marcado pelo anfitrião",
+ "uts.newcomershield.state_known": "já jogou",
+ "uts.newcomershield.btn_protect": "Proteger",
+ "uts.newcomershield.btn_unprotect": "Remover"
 }

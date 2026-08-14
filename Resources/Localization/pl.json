@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "link do pobrania odrzucony",
  "uts.modsync.error_download": "pobieranie nie powiodło się",
  "uts.modsync.error_write": "nie można zapisać pliku",
- "uts.modsync.rejoin_button": "Powrót do poczekalni {0}"
+ "uts.modsync.rejoin_button": "Powrót do poczekalni {0}",
+ "uts.newcomershield.option_name": "Chroń graczy nowych w tej sesji",
+ "uts.newcomershield.option_notify": "Powiedz zabójcy, dlaczego zabójstwo się nie udało",
+ "uts.newcomershield.kill_blocked": "Ten gracz jest tu nowy i nie może zostać zabity przed pierwszym zebraniem.",
+ "uts.newcomershield.lobby_button": "Ochrona nowych ({0})",
+ "uts.newcomershield.title": "Ochrona nowych",
+ "uts.newcomershield.subtitle": "Chronieni gracze nie mogą zostać zabici przed pierwszym zebraniem. Oznaczenia obowiązują w następnej rundzie.",
+ "uts.newcomershield.close": "Zamknij",
+ "uts.newcomershield.state_new": "nowy - chroniony",
+ "uts.newcomershield.state_manual": "oznaczony przez hosta",
+ "uts.newcomershield.state_known": "już grał",
+ "uts.newcomershield.btn_protect": "Chroń",
+ "uts.newcomershield.btn_unprotect": "Usuń"
 }

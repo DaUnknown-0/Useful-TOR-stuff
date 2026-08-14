@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "downloadlink geweigerd",
  "uts.modsync.error_download": "download mislukt",
  "uts.modsync.error_write": "bestand kon niet worden geschreven",
- "uts.modsync.rejoin_button": "Terug naar lobby {0}"
+ "uts.modsync.rejoin_button": "Terug naar lobby {0}",
+ "uts.newcomershield.option_name": "Nieuwe spelers van deze sessie beschermen",
+ "uts.newcomershield.option_notify": "De moordenaar vertellen waarom de kill mislukte",
+ "uts.newcomershield.kill_blocked": "Deze speler is hier nieuw en kan voor de eerste vergadering niet gedood worden.",
+ "uts.newcomershield.lobby_button": "Nieuwelingenschild ({0})",
+ "uts.newcomershield.title": "Nieuwelingenschild",
+ "uts.newcomershield.subtitle": "Beschermde spelers kunnen voor de eerste vergadering niet gedood worden. Markeringen gelden voor de volgende ronde.",
+ "uts.newcomershield.close": "Sluiten",
+ "uts.newcomershield.state_new": "nieuw - beschermd",
+ "uts.newcomershield.state_manual": "door host gemarkeerd",
+ "uts.newcomershield.state_known": "heeft al gespeeld",
+ "uts.newcomershield.btn_protect": "Beschermen",
+ "uts.newcomershield.btn_unprotect": "Opheffen"
 }

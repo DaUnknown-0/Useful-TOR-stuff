@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "indirme bağlantısı reddedildi",
  "uts.modsync.error_download": "indirme başarısız",
  "uts.modsync.error_write": "dosya yazılamadı",
- "uts.modsync.rejoin_button": "{0} lobisine dön"
+ "uts.modsync.rejoin_button": "{0} lobisine dön",
+ "uts.newcomershield.option_name": "Bu oturumda yeni olan oyuncuları koru",
+ "uts.newcomershield.option_notify": "Öldürmenin neden başarısız olduğunu katile söyle",
+ "uts.newcomershield.kill_blocked": "Bu oyuncu burada yeni ve ilk toplantıdan önce öldürülemez.",
+ "uts.newcomershield.lobby_button": "Yeni oyuncu kalkanı ({0})",
+ "uts.newcomershield.title": "Yeni oyuncu kalkanı",
+ "uts.newcomershield.subtitle": "Korunan oyuncular ilk toplantıdan önce öldürülemez. İşaretler bir sonraki tur için geçerlidir.",
+ "uts.newcomershield.close": "Kapat",
+ "uts.newcomershield.state_new": "yeni - korunuyor",
+ "uts.newcomershield.state_manual": "sunucu işaretledi",
+ "uts.newcomershield.state_known": "zaten oynadı",
+ "uts.newcomershield.btn_protect": "Koru",
+ "uts.newcomershield.btn_unprotect": "Kaldır"
 }

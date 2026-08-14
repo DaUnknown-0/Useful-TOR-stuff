@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "liên kết tải về bị từ chối",
  "uts.modsync.error_download": "tải về thất bại",
  "uts.modsync.error_write": "không ghi được tệp",
- "uts.modsync.rejoin_button": "Quay lại phòng {0}"
+ "uts.modsync.rejoin_button": "Quay lại phòng {0}",
+ "uts.newcomershield.option_name": "Bảo vệ người chơi mới trong phiên này",
+ "uts.newcomershield.option_notify": "Cho kẻ giết biết vì sao không giết được",
+ "uts.newcomershield.kill_blocked": "Người chơi này mới đến và không thể bị giết trước cuộc họp đầu tiên.",
+ "uts.newcomershield.lobby_button": "Khiên người mới ({0})",
+ "uts.newcomershield.title": "Khiên người mới",
+ "uts.newcomershield.subtitle": "Người chơi được bảo vệ không thể bị giết trước cuộc họp đầu tiên. Đánh dấu áp dụng cho vòng kế tiếp.",
+ "uts.newcomershield.close": "Đóng",
+ "uts.newcomershield.state_new": "mới - được bảo vệ",
+ "uts.newcomershield.state_manual": "chủ phòng đánh dấu",
+ "uts.newcomershield.state_known": "đã chơi rồi",
+ "uts.newcomershield.btn_protect": "Bảo vệ",
+ "uts.newcomershield.btn_unprotect": "Bỏ"
 }

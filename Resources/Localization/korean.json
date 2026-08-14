@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "다운로드 링크를 거부했습니다",
  "uts.modsync.error_download": "다운로드 실패",
  "uts.modsync.error_write": "파일을 쓸 수 없습니다",
- "uts.modsync.rejoin_button": "로비 {0}(으)로 돌아가기"
+ "uts.modsync.rejoin_button": "로비 {0}(으)로 돌아가기",
+ "uts.newcomershield.option_name": "이번 세션에 처음 온 플레이어 보호",
+ "uts.newcomershield.option_notify": "킬이 실패한 이유를 킬러에게 알리기",
+ "uts.newcomershield.kill_blocked": "이 플레이어는 처음 왔기 때문에 첫 회의 전에는 죽일 수 없습니다.",
+ "uts.newcomershield.lobby_button": "신규 보호 ({0})",
+ "uts.newcomershield.title": "신규 보호",
+ "uts.newcomershield.subtitle": "보호된 플레이어는 첫 회의 전에 죽일 수 없습니다. 표시는 다음 라운드에 적용됩니다.",
+ "uts.newcomershield.close": "닫기",
+ "uts.newcomershield.state_new": "신규 - 보호됨",
+ "uts.newcomershield.state_manual": "호스트가 지정",
+ "uts.newcomershield.state_known": "이미 참여함",
+ "uts.newcomershield.btn_protect": "보호",
+ "uts.newcomershield.btn_unprotect": "해제"
 }

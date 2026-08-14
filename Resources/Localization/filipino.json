@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "tinanggihan ang download link",
  "uts.modsync.error_download": "nabigo ang download",
  "uts.modsync.error_write": "hindi maisulat ang file",
- "uts.modsync.rejoin_button": "Balik sa lobby {0}"
+ "uts.modsync.rejoin_button": "Balik sa lobby {0}",
+ "uts.newcomershield.option_name": "Protektahan ang mga bagong manlalaro ngayong sesyon",
+ "uts.newcomershield.option_notify": "Sabihin sa pumatay kung bakit nabigo ang pagpatay",
+ "uts.newcomershield.kill_blocked": "Bago pa lang dito ang manlalarong ito at hindi siya mapapatay bago ang unang meeting.",
+ "uts.newcomershield.lobby_button": "Proteksyon sa bago ({0})",
+ "uts.newcomershield.title": "Proteksyon sa bago",
+ "uts.newcomershield.subtitle": "Hindi mapapatay ang mga protektadong manlalaro bago ang unang meeting. Ang marka ay para sa susunod na round.",
+ "uts.newcomershield.close": "Isara",
+ "uts.newcomershield.state_new": "bago - protektado",
+ "uts.newcomershield.state_manual": "minarkahan ng host",
+ "uts.newcomershield.state_known": "naglaro na",
+ "uts.newcomershield.btn_protect": "Protektahan",
+ "uts.newcomershield.btn_unprotect": "Alisin"
 }

@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "tautan unduhan ditolak",
  "uts.modsync.error_download": "unduhan gagal",
  "uts.modsync.error_write": "berkas tidak dapat ditulis",
- "uts.modsync.rejoin_button": "Kembali ke lobi {0}"
+ "uts.modsync.rejoin_button": "Kembali ke lobi {0}",
+ "uts.newcomershield.option_name": "Lindungi pemain yang baru di sesi ini",
+ "uts.newcomershield.option_notify": "Beri tahu pembunuh mengapa pembunuhan gagal",
+ "uts.newcomershield.kill_blocked": "Pemain ini baru di sini dan tidak bisa dibunuh sebelum rapat pertama.",
+ "uts.newcomershield.lobby_button": "Perisai pemain baru ({0})",
+ "uts.newcomershield.title": "Perisai pemain baru",
+ "uts.newcomershield.subtitle": "Pemain yang dilindungi tidak bisa dibunuh sebelum rapat pertama. Tanda berlaku untuk ronde berikutnya.",
+ "uts.newcomershield.close": "Tutup",
+ "uts.newcomershield.state_new": "baru - dilindungi",
+ "uts.newcomershield.state_manual": "ditandai host",
+ "uts.newcomershield.state_known": "sudah pernah main",
+ "uts.newcomershield.btn_protect": "Lindungi",
+ "uts.newcomershield.btn_unprotect": "Hapus"
 }

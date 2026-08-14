@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "посилання на завантаження відхилено",
  "uts.modsync.error_download": "завантаження не вдалося",
  "uts.modsync.error_write": "не вдалося записати файл",
- "uts.modsync.rejoin_button": "Назад до лобі {0}"
+ "uts.modsync.rejoin_button": "Назад до лобі {0}",
+ "uts.newcomershield.option_name": "Захищати новачків цієї сесії",
+ "uts.newcomershield.option_notify": "Повідомляти вбивці, чому вбивство не вдалося",
+ "uts.newcomershield.kill_blocked": "Цей гравець тут уперше, до перших зборів його не можна вбити.",
+ "uts.newcomershield.lobby_button": "Захист новачків ({0})",
+ "uts.newcomershield.title": "Захист новачків",
+ "uts.newcomershield.subtitle": "Захищених гравців не можна вбити до перших зборів. Позначки діють на наступний раунд.",
+ "uts.newcomershield.close": "Закрити",
+ "uts.newcomershield.state_new": "новачок - захищений",
+ "uts.newcomershield.state_manual": "позначений хостом",
+ "uts.newcomershield.state_known": "вже грав",
+ "uts.newcomershield.btn_protect": "Захистити",
+ "uts.newcomershield.btn_unprotect": "Зняти"
 }

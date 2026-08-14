@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "diúltaíodh don nasc íoslódála",
  "uts.modsync.error_download": "theip ar an íoslódáil",
  "uts.modsync.error_write": "níorbh fhéidir an comhad a scríobh",
- "uts.modsync.rejoin_button": "Ar ais go forhalla {0}"
+ "uts.modsync.rejoin_button": "Ar ais go forhalla {0}",
+ "uts.newcomershield.option_name": "Cosain imreoirí atá nua sa seisiún seo",
+ "uts.newcomershield.option_notify": "Inis don mharfóir cén fáth ar theip ar an marú",
+ "uts.newcomershield.kill_blocked": "Tá an t-imreoir seo nua anseo agus ní féidir é a mharú roimh an gcéad chruinniú.",
+ "uts.newcomershield.lobby_button": "Sciath do na daoine nua ({0})",
+ "uts.newcomershield.title": "Sciath do na daoine nua",
+ "uts.newcomershield.subtitle": "Ní féidir imreoirí cosanta a mharú roimh an gcéad chruinniú. Baineann na marcanna leis an gcéad bhabhta eile.",
+ "uts.newcomershield.close": "Dún",
+ "uts.newcomershield.state_new": "nua - cosanta",
+ "uts.newcomershield.state_manual": "marcáilte ag an óstach",
+ "uts.newcomershield.state_known": "d'imir cheana",
+ "uts.newcomershield.btn_protect": "Cosain",
+ "uts.newcomershield.btn_unprotect": "Bain"
 }

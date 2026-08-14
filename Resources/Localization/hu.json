@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "letöltési link elutasítva",
  "uts.modsync.error_download": "a letöltés nem sikerült",
  "uts.modsync.error_write": "a fájlt nem lehetett írni",
- "uts.modsync.rejoin_button": "Vissza a(z) {0} lobbyba"
+ "uts.modsync.rejoin_button": "Vissza a(z) {0} lobbyba",
+ "uts.newcomershield.option_name": "A munkamenet új játékosainak védelme",
+ "uts.newcomershield.option_notify": "Mondd meg a gyilkosnak, miért nem sikerült",
+ "uts.newcomershield.kill_blocked": "Ez a játékos új itt, az első gyűlés előtt nem ölhető meg.",
+ "uts.newcomershield.lobby_button": "Újoncvédelem ({0})",
+ "uts.newcomershield.title": "Újoncvédelem",
+ "uts.newcomershield.subtitle": "A védett játékosok az első gyűlés előtt nem ölhetők meg. A jelölések a következő körre érvényesek.",
+ "uts.newcomershield.close": "Bezárás",
+ "uts.newcomershield.state_new": "új - védett",
+ "uts.newcomershield.state_manual": "a házigazda jelölte",
+ "uts.newcomershield.state_known": "már játszott",
+ "uts.newcomershield.btn_protect": "Védelem",
+ "uts.newcomershield.btn_unprotect": "Levétel"
 }

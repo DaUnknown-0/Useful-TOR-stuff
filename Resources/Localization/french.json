@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "lien de téléchargement refusé",
  "uts.modsync.error_download": "échec du téléchargement",
  "uts.modsync.error_write": "impossible d'écrire le fichier",
- "uts.modsync.rejoin_button": "Retour au salon {0}"
+ "uts.modsync.rejoin_button": "Retour au salon {0}",
+ "uts.newcomershield.option_name": "Protéger les joueurs nouveaux de cette session",
+ "uts.newcomershield.option_notify": "Dire au tueur pourquoi le meurtre a échoué",
+ "uts.newcomershield.kill_blocked": "Ce joueur est nouveau ici et ne peut pas être tué avant la première réunion.",
+ "uts.newcomershield.lobby_button": "Protection des nouveaux ({0})",
+ "uts.newcomershield.title": "Protection des nouveaux",
+ "uts.newcomershield.subtitle": "Les joueurs protégés ne peuvent pas être tués avant la première réunion. Les marques valent pour le tour suivant.",
+ "uts.newcomershield.close": "Fermer",
+ "uts.newcomershield.state_new": "nouveau - protégé",
+ "uts.newcomershield.state_manual": "marqué par l'hôte",
+ "uts.newcomershield.state_known": "a déjà joué",
+ "uts.newcomershield.btn_protect": "Protéger",
+ "uts.newcomershield.btn_unprotect": "Retirer"
 }

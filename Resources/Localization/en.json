@@ -1055,5 +1055,17 @@
  "uts.modsync.error_untrusted_url": "download link rejected",
  "uts.modsync.error_download": "download failed",
  "uts.modsync.error_write": "could not write the file",
- "uts.modsync.rejoin_button": "Back to lobby {0}"
+ "uts.modsync.rejoin_button": "Back to lobby {0}",
+ "uts.newcomershield.option_name": "Protect Players New To This Session",
+ "uts.newcomershield.option_notify": "Tell The Killer Why The Kill Failed",
+ "uts.newcomershield.kill_blocked": "This player is new here and cannot be killed before the first meeting.",
+ "uts.newcomershield.lobby_button": "Newcomer shield ({0})",
+ "uts.newcomershield.title": "Newcomer shield",
+ "uts.newcomershield.subtitle": "Protected players cannot be killed before the first meeting. Marks reset when the round starts.",
+ "uts.newcomershield.close": "Close",
+ "uts.newcomershield.state_new": "new - protected",
+ "uts.newcomershield.state_manual": "marked by host",
+ "uts.newcomershield.state_known": "already played",
+ "uts.newcomershield.btn_protect": "Protect",
+ "uts.newcomershield.btn_unprotect": "Remove"
 }

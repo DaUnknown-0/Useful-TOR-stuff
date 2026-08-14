@@ -1055,5 +1055,17 @@
  "uts.modsync.error_untrusted_url": "Download-Link abgelehnt",
  "uts.modsync.error_download": "Download fehlgeschlagen",
  "uts.modsync.error_write": "Datei konnte nicht geschrieben werden",
- "uts.modsync.rejoin_button": "Zurück zur Lobby {0}"
+ "uts.modsync.rejoin_button": "Zurück zur Lobby {0}",
+ "uts.newcomershield.option_name": "Neue Spieler dieser Sitzung schützen",
+ "uts.newcomershield.option_notify": "Dem Killer sagen, warum der Kill fehlschlug",
+ "uts.newcomershield.kill_blocked": "Dieser Spieler ist neu hier und kann vor dem ersten Meeting nicht getötet werden.",
+ "uts.newcomershield.lobby_button": "Neulingsschutz ({0})",
+ "uts.newcomershield.title": "Neulingsschutz",
+ "uts.newcomershield.subtitle": "Geschützte Spieler können vor dem ersten Meeting nicht getötet werden. Markierungen gelten für die nächste Runde.",
+ "uts.newcomershield.close": "Schließen",
+ "uts.newcomershield.state_new": "neu - geschützt",
+ "uts.newcomershield.state_manual": "vom Host markiert",
+ "uts.newcomershield.state_known": "schon dabei gewesen",
+ "uts.newcomershield.btn_protect": "Schützen",
+ "uts.newcomershield.btn_unprotect": "Aufheben"
 }

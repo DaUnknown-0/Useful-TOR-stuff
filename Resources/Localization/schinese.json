@@ -1054,5 +1054,17 @@
  "uts.modsync.error_untrusted_url": "下载链接被拒绝",
  "uts.modsync.error_download": "下载失败",
  "uts.modsync.error_write": "无法写入文件",
- "uts.modsync.rejoin_button": "返回房间 {0}"
+ "uts.modsync.rejoin_button": "返回房间 {0}",
+ "uts.newcomershield.option_name": "保护本次游戏首次参与的玩家",
+ "uts.newcomershield.option_notify": "告诉击杀者击杀失败的原因",
+ "uts.newcomershield.kill_blocked": "这名玩家是首次参与，第一次会议前无法被击杀。",
+ "uts.newcomershield.lobby_button": "新人保护 ({0})",
+ "uts.newcomershield.title": "新人保护",
+ "uts.newcomershield.subtitle": "受保护的玩家在第一次会议前无法被击杀。标记在下一回合生效。",
+ "uts.newcomershield.close": "关闭",
+ "uts.newcomershield.state_new": "新人 - 受保护",
+ "uts.newcomershield.state_manual": "房主已标记",
+ "uts.newcomershield.state_known": "已经玩过",
+ "uts.newcomershield.btn_protect": "保护",
+ "uts.newcomershield.btn_unprotect": "取消"
 }
