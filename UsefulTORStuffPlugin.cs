@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.16";
+    public const string PluginVersion = "1.3.3.17";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -310,6 +310,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // are attribute-based and picked up by PatchAll below.
         NewcomerShield.CreateOptions();
         NewcomerShield.TryPatch(harmony);
+
+        // Trapper log crash: a trap holding the id of a player who has left freezes the meeting for
+        // the Trapper and for every ghost (TOR's StartMeeting prefix dereferences a null player).
+        // TryPatch only resolves the reflection handles; both patches are attribute-based.
+        TrapperMeetingCrash.TryPatch(harmony);
 
         // Close the bracket opened above: every option this mod owns is now known to UTSGate.
         UTSGate.EndOptionCapture();
