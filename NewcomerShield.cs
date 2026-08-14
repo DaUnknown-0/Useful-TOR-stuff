@@ -36,6 +36,13 @@
  * Either way the AUTHORITY over the list stays with the host: he decides who is shielded and hands
  * the ids out over RPC. No client can shield itself.
  *
+ * WHAT THE SHIELD DELIBERATELY DOES NOT COVER
+ * A shielded newcomer who is a LOVER still dies when their partner dies. TOR's lover cascade calls
+ * MurderPlayer directly (PlayerControlPatch.cs:1226) and bypasses every check, and that is left
+ * alone on purpose (decision 2026-08-14): the shield protects against being killed, not against the
+ * bond itself. Suppressing it would mean a lover pair cannot die together in the first round, which
+ * quietly guts the lovers' own rule for everybody else at the table.
+ *
  * Options 1380-1381, module byte 242 on UTSRpc.CallId = 240. See ID-Registry.md.
  */
 
@@ -63,6 +70,10 @@ namespace UsefulTORStuff {
         private static readonly HashSet<string> seenFriendCodes = new HashSet<string>();
         // Friend codes the host marked by hand in the lobby; they get the same one-round shield.
         private static readonly HashSet<string> manualNewcomers = new HashSet<string>();
+        // ...and the opposite: people the host took the shield away from. Without this second set the
+        // lobby button could not undo an AUTOMATIC detection at all - toggling a player the rule
+        // already found would just add them to the manual set and leave them protected either way.
+        private static readonly HashSet<string> manualExcluded = new HashSet<string>();
 
         // ---- Everyone: who is shielded in THIS round (player ids, valid until the first meeting) ----
         private static readonly HashSet<byte> shielded = new HashSet<byte>();
@@ -116,10 +127,13 @@ namespace UsefulTORStuff {
             p != null && p.Data != null && !p.Data.IsDead && !p.Data.Disconnected;
 
         // Host-side view for the lobby panel: is this player currently going to be shielded next round?
+        // The host's word beats the rule in both directions: an explicit exclusion wins over
+        // everything, an explicit mark wins over "already seen".
         public static bool WouldShield(PlayerControl p) {
             if (Enabled == null || !Enabled.getBool()) return false;
             string code = CodeOf(p);
             if (string.IsNullOrEmpty(code)) return false;
+            if (manualExcluded.Contains(code)) return false;
             return manualNewcomers.Contains(code) || !seenFriendCodes.Contains(code);
         }
 
@@ -129,10 +143,18 @@ namespace UsefulTORStuff {
         }
 
         // Toggled from the lobby panel (host only).
+        // Flips whatever the player's CURRENT state is, however it came about. Protected becomes
+        // excluded, unprotected becomes marked - so the button always does what its label says.
         public static void ToggleManual(PlayerControl p) {
             string code = CodeOf(p);
             if (string.IsNullOrEmpty(code)) return;
-            if (!manualNewcomers.Remove(code)) manualNewcomers.Add(code);
+            if (WouldShield(p)) {
+                manualNewcomers.Remove(code);
+                manualExcluded.Add(code);
+            } else {
+                manualExcluded.Remove(code);
+                manualNewcomers.Add(code);
+            }
         }
 
         // ---- RPC ----
@@ -216,6 +238,7 @@ namespace UsefulTORStuff {
                         // THIS round, not forever.
                         seenFriendCodes.Add(code);
                         manualNewcomers.Remove(code);
+                        manualExcluded.Remove(code);
                     }
 
                     if (ids.Count > 0) SendSetShields(ids);
@@ -289,6 +312,58 @@ namespace UsefulTORStuff {
                                 UTSLocalization.Tr("uts.newcomershield.kill_blocked"));
                     }
                 } catch { }
+            }
+        }
+
+        // ====================================================================
+        // Enforcement 0: a shielded player cannot even be TARGETED
+        //
+        // Refusing the kill afterwards is not enough for every role, and the Thief is the proof: TOR
+        // runs his suicide BEFORE it looks at the result (Buttons.cs, thiefKillButton - only
+        // BlankKill returns early), so a Thief clicking a shielded newcomer would kill himself for a
+        // kill that never happens. The same hole would cost an impostor his cooldown for nothing.
+        //
+        // TOR's own targeting helper takes an "untargetable" list, so the cleanest fix is to put
+        // shielded players on it: no highlight, no click, for every role at once. The checks further
+        // down stay as the safety net for roles that kill without targeting (the Guesser).
+        // ====================================================================
+        // TOR's PlayerControlPatch is internal, so this one cannot be an attribute patch and is
+        // wired up by reflection in TryPatch below - the same defensive pattern the rest of this
+        // plugin uses against TOR internals: if a future TOR renames it, the patch quietly does not
+        // exist and the two checks further down still hold the line.
+        private static void SetTargetPrefix(ref List<PlayerControl> untargetablePlayers) {
+            try {
+                if (shielded.Count == 0) return;
+                var list = untargetablePlayers != null
+                    ? new List<PlayerControl>(untargetablePlayers) : new List<PlayerControl>();
+                foreach (byte id in shielded) {
+                    var p = Helpers.playerById(id);
+                    if (p != null && !list.Contains(p)) list.Add(p);
+                }
+                untargetablePlayers = list;
+            } catch { }
+        }
+
+        public static void TryPatch(Harmony harmony) {
+            try {
+                var tor = UsefulTORStuffPlugin.TORAssembly
+                          ?? AppDomain.CurrentDomain.GetAssemblies()
+                             .FirstOrDefault(a => a.GetName().Name == "TheOtherRoles");
+                var type = tor?.GetType("TheOtherRoles.Patches.PlayerControlPatch");
+                var target = type?.GetMethod("setTarget",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (target == null) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        "[NewcomerShield] PlayerControlPatch.setTarget not found - shielded players stay "
+                        + "targetable (the kill itself is still refused).");
+                    return;
+                }
+                var prefix = typeof(NewcomerShield).GetMethod(nameof(SetTargetPrefix),
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                harmony.Patch(target, prefix: new HarmonyMethod(prefix));
+                UsefulTORStuffPlugin.Logger?.LogInfo("[NewcomerShield] targeting guard installed.");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[NewcomerShield] TryPatch failed: {e.Message}");
             }
         }
 

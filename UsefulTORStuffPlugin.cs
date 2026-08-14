@@ -309,6 +309,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // host-side (vanilla CheckMurder) and on each client (TOR's checkMuderAttempt). All patches
         // are attribute-based and picked up by PatchAll below.
         NewcomerShield.CreateOptions();
+        NewcomerShield.TryPatch(harmony);
 
         // Close the bracket opened above: every option this mod owns is now known to UTSGate.
         UTSGate.EndOptionCapture();
