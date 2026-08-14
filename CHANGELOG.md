@@ -52,6 +52,28 @@
   stacking Mini+Armored on the same player) is gone.
 
 ### Features
+- **Mod sync: join a lobby, get the mods the host is actually running.** Until now a missing mod was
+  invisible: an uninstalled mod sends no handshake, so nothing distinguished "this player doesn't
+  have Unknown's Collection" from "Unknown's Collection hasn't spoken up yet". Every client with this
+  mod now broadcasts a mod INVENTORY once per lobby (module byte 255 on channel 240): which
+  catalogued mods it runs, in which version, and how many mods it runs that the catalog cannot name.
+  A client whose set differs from the host's gets a lobby button listing exactly what is missing,
+  outdated or switched off, and can fetch it in one click.
+  The whole design turns on one rule: **the host sends a catalog ID and nothing else.** Repository,
+  asset file name and target path all come from a table compiled into this mod (`UTSModCatalog`), so
+  nothing received over the network can steer a URL, a path or a file name - and since mod NAMES are
+  looked up locally too, a host cannot inject TMP rich-text into the lobby board either. A mod the
+  local catalog does not know can only be counted, never downloaded; the fix for that is to update
+  this mod, which is itself in the catalog. Download URLs are additionally parsed and matched against
+  the catalog entry's own release path before a byte is fetched, and only the HOST's inventory
+  produces suggestions - any other player's is display material.
+  Downgrades (host on an older build) and prerelease targets on a client that hides test versions are
+  deliberately kept OUT of the bulk button and need their own click: a host on an old build must not
+  be able to drag every client back to an arbitrarily old release, and the catalog whitelist does not
+  protect against that on its own.
+  Because a downloaded DLL only takes effect after a restart, the lobby code, its region and a
+  timestamp are persisted before the player quits, and the main menu then offers one button back into
+  that lobby (expires after 30 minutes). Client-side throughout, switchable in the Mod Manager.
 - **Settings-based features stand down when the HOST doesn't have the mod.** TOR's option sync is
   host-driven: the host broadcasts `(option id, selection)` for every option **it** owns, and an
   option the host does not have is simply never sent. So a client running this mod in a lobby whose

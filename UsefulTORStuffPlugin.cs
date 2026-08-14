@@ -51,13 +51,18 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.8";
+    public const string PluginVersion = "1.3.3.13";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
     // consolidation this is BOTH the module byte on UTSRpc.CallId = 240 and - for as long as the
     // legacy dual-send exists - the standalone callId older builds still listen on. See UTSRpc.cs.
     public const byte VersionHandshakeRpcId = 253;
+
+    // Module byte for the mod inventory broadcast (UTSModInventory). 255 is the only free byte left
+    // in the UTS block (244-254 are taken). New feature, so it exists ONLY on channel 240 - no
+    // legacy callId, and older builds ignore it by design (UTSRpc.HandleRpcPatch).
+    public const byte ModInventoryRpcId = 255;
 
     public static ManualLogSource Logger { get; private set; }
 
@@ -70,6 +75,10 @@ public class UsefulTORStuffPlugin : BasePlugin
     internal static ConfigEntry<int> WebConfigPort;
     internal static ConfigEntry<float> ModManagerButtonX;
     internal static ConfigEntry<float> ModManagerButtonY;
+    // Mod sync (UTSModInventory/UTSModSync/UTSModDownloader). Client-side by nature - which mods
+    // THIS installation is missing is nobody else's business, so it is a config entry and
+    // deliberately not a host-synced CustomOption.
+    public static ConfigEntry<bool> ModSyncEnabled;
 
     // True only when the version handshake confirms every connected player runs the same
     // Useful TOR Stuff build. Gates the client-side Snitch fix and is read by HostFixPlugin
@@ -108,6 +117,16 @@ public class UsefulTORStuffPlugin : BasePlugin
             "lines. Stable builds (vX.Y.Z) are unaffected. Toggleable in the Mod Manager.");
         VersionDisplay.SetShowTestVersions(ShowTestVersionsConfig.Value);
 
+        // Mod sync: compare this client's mod set against the host's and offer the missing pieces.
+        // Downloads always take an explicit click; this switch only decides whether the comparison
+        // happens and the lobby button appears at all.
+        ModSyncEnabled = Config.Bind("ModSync", "Enabled", true,
+            "In a lobby, compare your installed mods with the host's and offer to download what is "
+            + "missing or mismatched. Download links come from a catalog compiled into this mod - the "
+            + "host only sends which mod it runs, never where to get it. Nothing is ever downloaded "
+            + "without an explicit click.");
+        UTSRejoin.Bind(Config);
+
         MinDropDistance = Config.Bind(
             "Bloody", "MinDropDistance", 0.35f,
             "Minimum distance (in world units) a bloody player must travel before a new blood " +
@@ -132,6 +151,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Mod-presence handshake receiver on the consolidated channel. It has no other load-time
         // entry point (all its patches are attribute-based), so it is registered here.
         UsefulVersionHandshake.RegisterRpc();
+
+        // Mod inventory receiver (module byte 255). Like the handshake above it has no other
+        // load-time entry point - all its patches are attribute-based.
+        UTSModInventory.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -304,6 +327,13 @@ public class UsefulTORStuffPlugin : BasePlugin
         AddComponent<ModManagerButton>();
         AddComponent<ModManagerUI>();
 
+        // Mod sync: the download queue and the "back to the lobby" main-menu button. The lobby
+        // panel itself is created on demand (UTSModSyncUI), the inventory patches are
+        // attribute-based and were picked up by PatchAll above.
+        AddComponent<UTSModDownloader>();
+        AddComponent<UTSRejoinButton>();
+        AddComponent<UTSModSyncUI>();
+
         // Registriere diese Mod in der Mod-Manager-Registry.
         try {
             var modData = new System.Collections.Generic.Dictionary<string, object> {
@@ -314,7 +344,11 @@ public class UsefulTORStuffPlugin : BasePlugin
                 { "RepositoryName", UsefulTORStuffUpdater.RepositoryName },
                 { "ButtonColor", Color.green },
                 { "Enabled", enabled },
-                { "RuntimeEnabled", true }
+                { "RuntimeEnabled", true },
+                // Live toggle in the Mod Manager: the mod sync only ever reads this at lobby time,
+                // so flipping it takes effect immediately - no restart needed.
+                { "ExtraToggle", ModSyncEnabled },
+                { "ExtraToggleLabel", UTSLocalization.Tr("uts.modsync.title") }
             };
             ModManagerRegistry.RegisterMod(PluginGuid, modData);
         } catch (Exception ex) {
