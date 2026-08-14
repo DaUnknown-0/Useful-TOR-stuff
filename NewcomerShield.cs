@@ -327,10 +327,17 @@ namespace UsefulTORStuff {
         // shielded players on it: no highlight, no click, for every role at once. The checks further
         // down stay as the safety net for roles that kill without targeting (the Guesser).
         // ====================================================================
-        // TOR's PlayerControlPatch is internal, so this one cannot be an attribute patch and is
-        // wired up by reflection in TryPatch below - the same defensive pattern the rest of this
-        // plugin uses against TOR internals: if a future TOR renames it, the patch quietly does not
-        // exist and the two checks further down still hold the line.
+        // The helper lives in PlayerControlFixedUpdatePatch, NOT PlayerControlPatch - looking for the
+        // latter is why the first attempt logged "setTarget not found" and left shielded players
+        // targetable. The class is public, so this is a plain attribute patch; the reflection
+        // fallback below stays as a diagnostic for future TOR renames.
+        [HarmonyPatch(typeof(TheOtherRoles.Patches.PlayerControlFixedUpdatePatch),
+                      nameof(TheOtherRoles.Patches.PlayerControlFixedUpdatePatch.setTarget))]
+        static class SetTargetPatch {
+            public static void Prefix(ref List<PlayerControl> untargetablePlayers) =>
+                SetTargetPrefix(ref untargetablePlayers);
+        }
+
         private static void SetTargetPrefix(ref List<PlayerControl> untargetablePlayers) {
             try {
                 if (shielded.Count == 0) return;
@@ -342,29 +349,6 @@ namespace UsefulTORStuff {
                 }
                 untargetablePlayers = list;
             } catch { }
-        }
-
-        public static void TryPatch(Harmony harmony) {
-            try {
-                var tor = UsefulTORStuffPlugin.TORAssembly
-                          ?? AppDomain.CurrentDomain.GetAssemblies()
-                             .FirstOrDefault(a => a.GetName().Name == "TheOtherRoles");
-                var type = tor?.GetType("TheOtherRoles.Patches.PlayerControlPatch");
-                var target = type?.GetMethod("setTarget",
-                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                if (target == null) {
-                    UsefulTORStuffPlugin.Logger?.LogWarning(
-                        "[NewcomerShield] PlayerControlPatch.setTarget not found - shielded players stay "
-                        + "targetable (the kill itself is still refused).");
-                    return;
-                }
-                var prefix = typeof(NewcomerShield).GetMethod(nameof(SetTargetPrefix),
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
-                harmony.Patch(target, prefix: new HarmonyMethod(prefix));
-                UsefulTORStuffPlugin.Logger?.LogInfo("[NewcomerShield] targeting guard installed.");
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[NewcomerShield] TryPatch failed: {e.Message}");
-            }
         }
 
         // ====================================================================

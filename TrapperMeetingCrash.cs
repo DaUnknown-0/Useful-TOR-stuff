@@ -74,9 +74,35 @@ namespace UsefulTORStuff {
                         "[TrapperMeetingCrash] Trap fields not resolved - only the GetRolesString guard is active.");
                 else
                     UsefulTORStuffPlugin.Logger?.LogInfo("[TrapperMeetingCrash] trap cleanup armed.");
+
+                // THE ARMOUR. The trap scrub and the null guard cover the two holes we have SEEN;
+                // this covers the ones we have not. TOR's StartMeetingPatch.Prefix is itself patched
+                // with a finalizer: if any future null access throws inside it, the exception is
+                // swallowed AND LOGGED - and because the prefix then returns normally, Among Us' own
+                // StartMeeting still runs. A frozen client becomes a log line with the real cause.
+                // (An exception escaping the prefix skips the original - that IS the freeze.)
+                var torPrefix = tor?.GetType("TheOtherRoles.Patches.MeetingHudPatch+StartMeetingPatch")
+                    ?.GetMethod("Prefix", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                if (torPrefix != null) {
+                    var fin = typeof(TrapperMeetingCrash).GetMethod(nameof(SwallowPrefixException),
+                        BindingFlags.NonPublic | BindingFlags.Static);
+                    harmony.Patch(torPrefix, finalizer: new HarmonyMethod(fin));
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[TrapperMeetingCrash] meeting-start armour installed.");
+                } else {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        "[TrapperMeetingCrash] TOR's StartMeetingPatch.Prefix not found - no armour.");
+                }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[TrapperMeetingCrash] TryPatch failed: {e.Message}");
             }
+        }
+
+        private static Exception SwallowPrefixException(Exception __exception) {
+            if (__exception != null)
+                UsefulTORStuffPlugin.Logger?.LogError(
+                    "[TrapperMeetingCrash] TOR's StartMeeting prefix threw - suppressed so the meeting "
+                    + $"still starts. Root cause: {__exception}");
+            return null;
         }
 
         // True when this id still belongs to somebody in the game. Exactly the test TOR's own

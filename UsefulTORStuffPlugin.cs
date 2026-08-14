@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.17";
+    public const string PluginVersion = "1.3.3.18";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -309,7 +309,6 @@ public class UsefulTORStuffPlugin : BasePlugin
         // host-side (vanilla CheckMurder) and on each client (TOR's checkMuderAttempt). All patches
         // are attribute-based and picked up by PatchAll below.
         NewcomerShield.CreateOptions();
-        NewcomerShield.TryPatch(harmony);
 
         // Trapper log crash: a trap holding the id of a player who has left freezes the meeting for
         // the Trapper and for every ghost (TOR's StartMeeting prefix dereferences a null player).
