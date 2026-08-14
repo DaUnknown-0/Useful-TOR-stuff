@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.7";
+    public const string PluginVersion = "1.3.3.8";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -140,6 +140,12 @@ public class UsefulTORStuffPlugin : BasePlugin
         PatchBloodyKillerMap(harmony);
         PatchBloodyResetVariables(harmony);
         SnitchLogic.Initialize(harmony);
+
+        // Snapshot of TOR's option list BEFORE any of our own options exist. Everything added
+        // between here and EndOptionCapture() below belongs to this mod and is therefore subject to
+        // the "host does not have this mod" gate (UTSGate). Keep every CreateOptions() call inside
+        // this bracket - an option created outside it silently stays ungated.
+        UTSGate.BeginOptionCapture();
 
         // Sheriff "prevents killer parity win" option + win-check patches. CreateOptions must run
         // after TOR's CustomOptionHolder.Load() (guaranteed by the hard dependency on TOR).
@@ -255,6 +261,15 @@ public class UsefulTORStuffPlugin : BasePlugin
         // it reads their quantities and switches their own multiply postfixes off while active.
         TrueModifierChances.CreateOptions();
         TrueModifierChances.TryPatch(harmony);
+
+        // Multi-Jester (option 1376, Neutral tab): up to three Jesters, each of whom wins alone.
+        // The role-identity/win patches are attribute-based (PatchAll); TryPatch adds the manual
+        // postfix on TOR's internal ExileControllerWrapUpPatch.WrapUpPostfix (the win trigger).
+        MultiJester.CreateOptions();
+        MultiJester.TryPatch(harmony);
+
+        // Close the bracket opened above: every option this mod owns is now known to UTSGate.
+        UTSGate.EndOptionCapture();
 
         // Localization engine: loads the string tables and mutates TOR's role/option strings
         // in place (LocalizationTOR). Must run AFTER every CreateOptions above so first-pass
@@ -588,62 +603,25 @@ public class UsefulTORStuffPlugin : BasePlugin
     [HarmonyPriority(Priority.Low)] // run after TOR's own PingTracker postfix
     public static class VersionDisplayPatch
     {
-        // Shared with HostFixPlugin and the Chance Modifier — keep this string identical there.
-        private const string CreditKey = "TORMods.DaUnknownCreditVisible";
-        private const string LinkId = "usefulTORStuffCredits";
-
-        private static bool CreditVisible() =>
-            AppDomain.CurrentDomain.GetData(CreditKey) is bool b && b;
-
         public static void Postfix(PingTracker __instance)
         {
             if (__instance == null || __instance.text == null) return;
             string text = __instance.text.text;
             if (string.IsNullOrEmpty(text)) return;
 
-            // Click the mod name to toggle the shared credit line. PingTracker.text is a
-            // world-space TextMeshPro (no canvas), so the link raycast needs the rendering camera.
-            if (Input.GetMouseButtonDown(0))
-            {
-                Camera cam = Camera.main;
-                var canvas = __instance.text.canvas;
-                if (canvas != null)
-                    cam = canvas.renderMode == RenderMode.ScreenSpaceOverlay ? null
-                        : (canvas.worldCamera != null ? canvas.worldCamera : Camera.main);
-                int link = TMPro.TMP_TextUtilities.FindIntersectingLink(__instance.text, Input.mousePosition, cam);
-                if (link != -1 && __instance.text.textInfo.linkInfo[link].GetLinkID() == LinkId)
-                    AppDomain.CurrentDomain.SetData(CreditKey, !CreditVisible());
-            }
+            // The localized string still carries this mod's own old <link> wrapper (its click used
+            // to toggle the credit line by itself); UnknownsCollective.Render() now supplies its
+            // own wrapper and click handling, so strip the old one here rather than touching every
+            // locale file's uts.plugin.version_line entry.
+            string rawLine = UTSLocalization.Tr("uts.plugin.version_line", VersionDisplay.Format(Version));
+            const string linkOpen = "<link=\"usefulTORStuffCredits\">";
+            const string linkClose = "</link>";
+            string line = rawLine;
+            if (line.StartsWith(linkOpen) && line.EndsWith(linkClose))
+                line = line.Substring(linkOpen.Length, line.Length - linkOpen.Length - linkClose.Length);
 
-            // P2.3: Marker-Guard gegen frame-weises Stapeln, falls TOR den Text künftig nicht mehr
-            // jeden Frame neu aufbaut (normalerweise ist die Zeile abwesend und wird eingefügt).
-            if (!text.Contains(LinkId))
-            {
-                string line = UTSLocalization.Tr("uts.plugin.version_line", VersionDisplay.Format(Version));
-                int nl = text.IndexOf('\n');
-                text = nl >= 0
-                    ? text.Substring(0, nl + 1) + line + "\n" + text.Substring(nl + 1)
-                    : text + "\n" + line;
-            }
-
-            // Insert the shared credit under TOR's "Design by Bavari" line — but only if no other
-            // mod already added it this frame, so "Modded by DaUnknown" appears at most once.
-            if (CreditVisible() && !text.Contains("DaUnknown"))
-            {
-                string credit = UTSLocalization.Tr("uts.plugin.credit_line");
-                int anchor = text.IndexOf("Bavari");
-                if (anchor >= 0)
-                {
-                    int lineEnd = text.IndexOf('\n', anchor);
-                    text = lineEnd >= 0
-                        ? text.Substring(0, lineEnd) + credit + text.Substring(lineEnd)
-                        : text + credit;
-                }
-                else
-                {
-                    text += credit;
-                }
-            }
+            UnknownsCollective.Contribute(PluginGuid, line);
+            text = UnknownsCollective.Render(__instance.text, text);
 
             __instance.text.text = text;
         }
