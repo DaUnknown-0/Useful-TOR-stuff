@@ -354,31 +354,38 @@ namespace UsefulTORStuff {
         // ====================================================================
         // The shield you can SEE
         //
-        // Painted every frame on the player's own body sprite, exactly the way TOR paints the Medic
-        // shield (material properties _Outline / _OutlineColor). Two rules keep it out of TOR's way:
-        // we only ever paint players on OUR list, and we only ever clear an outline we painted
-        // ourselves - otherwise this would fight the Medic shield and the role highlights.
+        // Painted on the player's body sprite the way TOR paints the Medic shield (_Outline /
+        // _OutlineColor) - but in HUDMANAGER.UPDATE, not PlayerControl.FixedUpdate. TOR's
+        // setBasePlayerOutlines runs every physics tick and writes _Outline = 0 for everyone
+        // without a TOR shield (PlayerControlPatch.cs:90); a FixedUpdate-based painter was
+        // simply overwritten again each tick, and no gold ever reached the screen (playtest
+        // 2026-08-15, screenshot of an outline-less shielded player). Unity runs all
+        // FixedUpdates before Update, so painting here always lands AFTER TOR's wipe.
+        // We only paint players on OUR list and only clear what we painted ourselves.
         // ====================================================================
-        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.FixedUpdate))]
-        [HarmonyPriority(Priority.Low)]   // after TOR's own outline pass, so ours is the one that shows
+        [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
+        [HarmonyPriority(Priority.Low)]   // after TOR's own HudManager patches as well
         static class OutlinePatch {
-            public static void Postfix(PlayerControl __instance) {
+            public static void Postfix() {
                 try {
-                    if (__instance == null) return;
-                    var sprite = __instance.cosmetics?.currentBodySprite?.BodySprite;
-                    if (sprite == null || sprite.material == null) return;
+                    if (shielded.Count == 0 && outlined.Count == 0) return;
 
-                    byte id = __instance.PlayerId;
-                    bool shouldShow = shielded.Contains(id)
-                                      && __instance.Data != null && !__instance.Data.IsDead;
+                    foreach (var p in PlayerControl.AllPlayerControls) {
+                        if (p == null) continue;
+                        var sprite = p.cosmetics?.currentBodySprite?.BodySprite;
+                        if (sprite == null || sprite.material == null) continue;
 
-                    if (shouldShow) {
-                        sprite.material.SetFloat("_Outline", 1f);
-                        sprite.material.SetColor("_OutlineColor", ShieldColor);
-                        outlined.Add(id);
-                    } else if (outlined.Remove(id)) {
-                        // Ours to clear, and only ours. TOR repaints whatever it owns on its own pass.
-                        sprite.material.SetFloat("_Outline", 0f);
+                        byte id = p.PlayerId;
+                        bool shouldShow = shielded.Contains(id) && p.Data != null && !p.Data.IsDead;
+
+                        if (shouldShow) {
+                            sprite.material.SetFloat("_Outline", 1f);
+                            sprite.material.SetColor("_OutlineColor", ShieldColor);
+                            outlined.Add(id);
+                        } else if (outlined.Remove(id)) {
+                            // Ours to clear, and only ours - TOR repaints its own next tick anyway.
+                            sprite.material.SetFloat("_Outline", 0f);
+                        }
                     }
                 } catch { }
             }
