@@ -178,7 +178,7 @@ namespace UsefulTORStuff {
             unknownCount = 0;
             foreach (var guid in loaded.Keys) {
                 if (ByGuid(guid) != null) continue;
-                if (IsBaseInstall(guid)) continue;
+                if (IsNeverSyncable(guid)) continue;
                 unknownCount++;
             }
 
@@ -187,12 +187,27 @@ namespace UsefulTORStuff {
             return list;
         }
 
-        // Plugins that every TOR install has anyway - not "extra mods the host runs".
-        private static bool IsBaseInstall(string guid) {
-            return guid == "me.eisbison.theotherroles"
-                || guid == "gg.reactor.api"
-                || guid.StartsWith("com.bepinex", StringComparison.OrdinalIgnoreCase)
-                || guid.StartsWith("gg.reactor", StringComparison.OrdinalIgnoreCase);
+        // Plugins that must never be counted as "a mod the host runs that you are missing":
+        //  - the base install everybody has anyway (TOR, Reactor, BepInEx itself), and
+        //  - our own local tooling, which is deliberately not distributed and therefore can never
+        //    appear in any catalog. Counting those made the lobby button permanent for anyone whose
+        //    host runs Role Control or the Tracker export, because the number could never reach zero.
+        private static bool IsNeverSyncable(string guid) {
+            switch (guid) {
+                case "me.eisbison.theotherroles":       // TOR itself
+                case "gg.reactor.api":
+                case "com.trackerteam.forceimpostor":   // Role Control (host tooling)
+                case "tracker.export.plugin":           // Tracker export
+                case "com.tormod.bypasstest":           // Bypass test mod
+                case "com.tormod.debugunlock":
+                case "com.tormod.credits":
+                    return true;
+            }
+            return guid.StartsWith("com.bepinex", StringComparison.OrdinalIgnoreCase)
+                || guid.StartsWith("gg.reactor", StringComparison.OrdinalIgnoreCase)
+                // Mini.RegionInstall ships with practically every modded install and has nothing to
+                // do with the round; whatever exact id it uses, it is not something to offer.
+                || guid.IndexOf("regioninstall", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public static LocalModState StateOf(CatalogEntry e, out Version version) {

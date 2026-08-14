@@ -178,12 +178,15 @@ namespace UsefulTORStuff {
             return list;
         }
 
-        // Anything at all worth showing the player a button for.
-        public static bool HasAnythingToShow() {
-            foreach (var r in Rows())
-                if (r.Action != SyncAction.None) return true;
-            return HostUnknownCount > 0;
-        }
+        // Worth showing the player a button for. Deliberately ONLY things they can act on.
+        //
+        // This used to include "the host runs mods this catalog does not know" and the purely
+        // informational HostMissing rows, which made the button permanent for anyone joining a host
+        // who runs private tooling: Role Control, Tracker Export, Bypass, Credits and
+        // Mini.RegionInstall are all real plugins that will never be in a download catalog, so the
+        // count never drops to zero and the button never goes away. A button that is always there is
+        // not a notification, it is furniture.
+        public static bool HasAnythingToShow() => ActionableCount() > 0;
 
         // Count used on the lobby button label.
         public static int ActionableCount() {
