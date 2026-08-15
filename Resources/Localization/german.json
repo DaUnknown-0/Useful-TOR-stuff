@@ -1070,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Aufheben",
  "uts.antistartkill.option_name": "Anti-Startkill (Spawn ist eine Schutzzone)",
  "uts.antistartkill.option_notify": "Dem Killer sagen, warum der Kill fehlschlug",
+ "uts.antistartkill.option_endmode": "Schutz endet zusätzlich nach",
+ "uts.antistartkill.option_endseconds": "Zeitlimit des Schutzes",
+ "uts.antistartkill.option_endfixes": "Behobene Sabotagen bis Schutzende",
  "uts.antistartkill.kill_blocked": "Spawnschutz: Kills erst, wenn du und dein Ziel den Startbereich einmal verlassen habt.",
  "uts.antistartkill.sidekick_blocked": "Spawnschutz: Sidekick erst, wenn du und dein Ziel den Startbereich einmal verlassen habt."
 }

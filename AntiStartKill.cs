@@ -95,9 +95,15 @@ namespace UsefulTORStuff {
 
     public static class AntiStartKill {
 
-        // ---- Options (1390-1391) ----
+        // ---- Options (1390-1394) ----
         public static CustomOption Enabled;
         public static CustomOption NotifyKiller;
+        // Global cap on top of the per-player leave rule (the spawn-camper trade-off): protection
+        // can ALSO end for everyone after a time limit or after N fixed sabotages. A meeting ends
+        // it unconditionally either way (the design rule, independent of this mode).
+        public static CustomOption EndMode;      // Off / Time Limit / Sabotage Fixes
+        public static CustomOption EndSeconds;
+        public static CustomOption EndFixes;
 
         // ---- Everyone: who has NOT yet left the spawn area (player ids, host-authoritative) ----
         private static readonly HashSet<byte> protectedIds = new HashSet<byte>();
@@ -160,8 +166,17 @@ namespace UsefulTORStuff {
                     "Anti Start Kill (Spawn Is A Safe Zone)", false, null, true);
                 NotifyKiller = CustomOption.Create(1391, Types.General,
                     "Tell The Killer Why The Kill Failed", true, Enabled);
+                EndMode = CustomOption.Create(1392, Types.General,
+                    "Protection Also Ends After", new string[] { "Nothing Extra", "A Time Limit", "Sabotage Fixes" }, Enabled);
+                EndSeconds = CustomOption.Create(1393, Types.General,
+                    "Protection Time Limit", 30f, 10f, 120f, 5f, EndMode);
+                EndFixes = CustomOption.Create(1394, Types.General,
+                    "Fixed Sabotages Until Protection Ends", 1f, 1f, 5f, 1f, EndMode);
                 UTSLocalization.BindOptionTitle(Enabled, "uts.antistartkill.option_name");
                 UTSLocalization.BindOptionTitle(NotifyKiller, "uts.antistartkill.option_notify");
+                UTSLocalization.BindOptionTitle(EndMode, "uts.antistartkill.option_endmode");
+                UTSLocalization.BindOptionTitle(EndSeconds, "uts.antistartkill.option_endseconds");
+                UTSLocalization.BindOptionTitle(EndFixes, "uts.antistartkill.option_endfixes");
                 UsefulTORStuffPlugin.Logger?.LogInfo("[AntiStartKill] Options created.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[AntiStartKill] CreateOptions failed: {e}");
@@ -379,6 +394,7 @@ namespace UsefulTORStuff {
                     return;
                 }
 
+                LimitTick();
                 LeaveTick();
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[AntiStartKill] tick failed: {e}");
@@ -427,6 +443,44 @@ namespace UsefulTORStuff {
                 if (ids.Count > 0) SendSetProtected(ids);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[AntiStartKill] assign failed: {e}");
+            }
+        }
+
+        // ====================================================================
+        // Host: the optional global cap (option 1392) - time limit or fixed-sabotage count.
+        // The spawn-camper answer: even somebody who never leaves the zone loses protection
+        // when the cap fires. Sabotage fixes are counted as falling edges of TOR's
+        // Helpers.sabotageActive() (the shared SabotageSystemType - doors excluded on purpose).
+        // ====================================================================
+        private static bool sabWasActive;
+        private static int sabFixCount;
+
+        private static void LimitTick() {
+            if (protectedIds.Count == 0) return;
+            try {
+                int mode = UTSGate.Sel(EndMode);
+                if (mode == 1) {
+                    if (Time.realtimeSinceStartup - assignedAt < UTSGate.Num(EndSeconds)) return;
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        "[AntiStartKill] time limit reached - protection ends for everyone.");
+                    SendClear();
+                } else if (mode == 2) {
+                    bool now = false;
+                    try { now = ShipStatus.Instance != null && Helpers.sabotageActive(); } catch { }
+                    if (sabWasActive && !now) {
+                        sabFixCount++;
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[AntiStartKill] sabotage fixed ({sabFixCount}/{Mathf.RoundToInt(UTSGate.Num(EndFixes))}).");
+                        if (sabFixCount >= Mathf.RoundToInt(UTSGate.Num(EndFixes))) {
+                            UsefulTORStuffPlugin.Logger?.LogInfo(
+                                "[AntiStartKill] sabotage-fix limit reached - protection ends for everyone.");
+                            SendClear();
+                        }
+                    }
+                    sabWasActive = now;
+                }
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[AntiStartKill] limit tick failed: {e}");
             }
         }
 
@@ -663,6 +717,8 @@ namespace UsefulTORStuff {
             assignedThisRound = false;
             sawAssignment = false;
             meetingSeen = false;
+            sabWasActive = false;
+            sabFixCount = 0;
         }
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]

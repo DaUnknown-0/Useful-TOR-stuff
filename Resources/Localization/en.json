@@ -1070,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Remove",
  "uts.antistartkill.option_name": "Anti Start Kill (Spawn Is A Safe Zone)",
  "uts.antistartkill.option_notify": "Tell The Killer Why The Kill Failed",
+ "uts.antistartkill.option_endmode": "Protection Also Ends After",
+ "uts.antistartkill.option_endseconds": "Protection Time Limit",
+ "uts.antistartkill.option_endfixes": "Fixed Sabotages Until Protection Ends",
  "uts.antistartkill.kill_blocked": "Spawn protection: no kills until you and your target have both left the start area once.",
  "uts.antistartkill.sidekick_blocked": "Spawn protection: no sidekick until you and your target have both left the start area once."
 }
