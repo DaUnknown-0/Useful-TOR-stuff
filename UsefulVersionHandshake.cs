@@ -117,7 +117,10 @@ namespace UsefulTORStuff {
                                 writer.Write((byte)v.Minor);
                                 writer.Write((byte)v.Build);
                                 writer.WritePacked(clientId);
-                                writer.Write((byte)(v.Revision < 0 ? 0xFF : v.Revision));
+                                // AUDIT-2026-08-15: 0xFF is the "no revision" sentinel. Clamp a real
+                                // revision to 254 so a genuine .255 build can't collide with it and get
+                                // misread as a stable build on receive.
+                                writer.Write((byte)(v.Revision < 0 ? 0xFF : Math.Min(v.Revision, 254)));
                                 writer.Write(guidBytes);
                             });
 

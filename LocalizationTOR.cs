@@ -139,6 +139,19 @@ namespace UsefulTORStuff {
             public static void Postfix() => UTSLocalization.Reapply("vanilla SetLanguage");
         }
 
+        // AUDIT-2026-08-15: IDs that TOR's own ExileControllerMessagePatch postfix fills in
+        // dynamically (per-exiled-player role text, Jester-win impostor-count hiding, the
+        // tiebreaker suffix). Because of the BepInDependency on TOR, this postfix always runs
+        // AFTER that one and would otherwise clobber the composed text with the static
+        // vanilla.<code>.json template - losing the role reveal / impostor-count hiding /
+        // tiebreaker note whenever a tier-B language is active. Leave these untouched here;
+        // ExileControllerMessagePatch already produced the correct (English) text and tier-B
+        // players get the same dynamic composition as everyone else.
+        private static readonly HashSet<StringNames> DynamicVanillaIds = new() {
+            StringNames.ExileTextPN, StringNames.ExileTextSN, StringNames.ExileTextPP, StringNames.ExileTextSP,
+            StringNames.ImpostorsRemainP, StringNames.ImpostorsRemainS,
+        };
+
         // Tier-B vanilla text override. Postfix on the same overload TOR's GetStringPatch
         // prefixes (see file header for the prefix/postfix reasoning).
         [HarmonyPatch(typeof(TranslationController), nameof(TranslationController.GetString),
@@ -146,6 +159,7 @@ namespace UsefulTORStuff {
         private static class GetStringPatch {
             public static void Postfix(StringNames id, Il2CppReferenceArray<Il2CppSystem.Object> parts, ref string __result) {
                 if ((int)id >= 6000) return; // TOR's fake IDs: already-translated option names
+                if (DynamicVanillaIds.Contains(id)) return; // dynamically composed by TOR, see above
                 if (!UTSLocalization.TierBActive) return;
                 var t = UTSLocalization.VanillaOrNull(id.ToString());
                 if (t == null) return;

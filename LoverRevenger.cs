@@ -537,10 +537,13 @@ namespace UsefulTORStuff {
         // ====================================================================
         // RPC receiver
         // ====================================================================
+        // Own, standalone callId (247, not migrated to UTSRpc - see the header). Each subtype is
+        // authored by a different party, so each gets its own guard (AUDIT-2026-08-15): the payload
+        // is always read in full first (reader-cursor rule), the guard only gates applying it.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId != RpcId) return true;
                 try {
                     byte subtype = reader.ReadByte();
@@ -550,23 +553,43 @@ namespace UsefulTORStuff {
                             bool become = reader.ReadByte() != 0;
                             byte k = reader.ReadByte();
                             byte mode = reader.ReadByte();
-                            ApplyDecision(loverId, become, k, mode);
+                            // Host-authoritative: only OnMeetingEnd (host-only) ever sends this.
+                            if (UTSRpc.RequireHost(__instance, "LoverRevenger.Decision"))
+                                ApplyDecision(loverId, become, k, mode);
                             break;
                         }
-                        case SubRageArmed: ApplyRageArmed(reader.ReadByte()); break;
+                        case SubRageArmed: {
+                            byte revId = reader.ReadByte();
+                            // Owner-authored: only the Revenger themselves (or the host) may arm the
+                            // Blind-Rage follow-up death.
+                            if (UTSRpc.RequireOwnerOrHost(__instance, revenger, "LoverRevenger.RageArmed"))
+                                ApplyRageArmed(revId);
+                            break;
+                        }
                         case SubRageDeath: {
                             byte revId = reader.ReadByte();
                             byte idx = reader.ReadByte();
-                            ApplyRageDeath(revId, idx);
+                            // Host-authoritative: only OnMeetingEnd (host-only) ever sends this.
+                            if (UTSRpc.RequireHost(__instance, "LoverRevenger.RageDeath"))
+                                ApplyRageDeath(revId, idx);
                             break;
                         }
                         case SubDeniedDeath: {
                             byte revId = reader.ReadByte();
                             byte idx = reader.ReadByte();
-                            ApplyDeniedDeath(revId, idx);
+                            // Host-authoritative: only OnMeetingEnd (host-only) ever sends this.
+                            if (UTSRpc.RequireHost(__instance, "LoverRevenger.DeniedDeath"))
+                                ApplyDeniedDeath(revId, idx);
                             break;
                         }
-                        case SubWin: ApplyWin(reader.ReadByte()); break;
+                        case SubWin: {
+                            byte revId = reader.ReadByte();
+                            // Owner-authored: only the Revenger themselves (or the host) may claim
+                            // the win - without this any client could end the game as a Lovers win.
+                            if (UTSRpc.RequireOwnerOrHost(__instance, revenger, "LoverRevenger.Win"))
+                                ApplyWin(revId);
+                            break;
+                        }
                     }
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] HandleRpc failed: {e}");

@@ -114,15 +114,22 @@ namespace UsefulTORStuff {
         }
 
         // Receiver on the consolidated channel (module byte 249). Registered from CreateOptions.
-        private static void HandleModuleRpc(MessageReader reader) => ApplyReset();
+        // Owner-authored: only the Medic (or the host) may reset the shield state - without this
+        // guard any client could strip the medic's shield right before a kill (AUDIT-2026-08-15).
+        private static void HandleModuleRpc(MessageReader reader) {
+            if (UTSRpc.RequireOwnerOrHost(Medic.medic, "MedicReshield.Reset")) ApplyReset();
+        }
 
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 249 from pre-240 builds.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId == ReshieldRpcId) {
-                    ApplyReset();
+                    // Same owner-or-host guard on the LEGACY path: __instance is the sender here,
+                    // UTSRpc.Sender is only set for the consolidated-channel dispatch (AUDIT-2026-08-15).
+                    if (UTSRpc.RequireOwnerOrHost(__instance, Medic.medic, "MedicReshield.Reset(legacy)"))
+                        ApplyReset();
                     return false;
                 }
                 return true;

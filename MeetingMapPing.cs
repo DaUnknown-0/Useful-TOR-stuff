@@ -92,7 +92,12 @@ namespace UsefulTORStuff {
             try {
                 float x = reader.ReadSingle();
                 float y = reader.ReadSingle();
-                if (Enabled && sender != null) {
+                // AUDIT-2026-08-15: alive-check only existed on the send side (HandleClick);
+                // a modified client could call the RPC directly while dead and leak ghost-only
+                // knowledge to the living via SyncMarkers. Re-check here on both receivers
+                // (module channel + legacy dual-send), after the payload is fully read so the
+                // reader cursor stays correct regardless of the outcome.
+                if (Enabled && sender != null && sender.Data != null && !sender.Data.IsDead) {
                     byte id = sender.PlayerId;
                     if (!placedAt.TryGetValue(id, out var last)
                         || Time.unscaledTime - last >= ReceiveCooldownSeconds) {

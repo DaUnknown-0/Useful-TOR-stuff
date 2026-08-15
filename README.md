@@ -30,6 +30,16 @@ property of Innersloth LLC. © Innersloth LLC.
   played the round with its own stored values for them. The host now sends TOR's options and each
   mod's options in separate blocks, so an abort can only ever drop options the receiver doesn't have
   anyway. Incoming unknown ids are skipped instead of aborting, too.
+- **`/role` no longer freezes the client** — TOR's `GetRoleDescription` spins on
+  `while (ReadmePage == "") { }` with no yield and no timeout. If the README download fails or has
+  not finished, the first `/role` locks the Unity main thread for good. The description is now
+  produced without spinning, the download is retried in the background, and a role missing from the
+  README no longer throws (TOR's `Substring(-1)`).
+- **Delayed Bait report no longer throws** — `RPCProcedure.uncheckedCmdReportDeadBody` dereferences
+  `Helpers.playerById(targetId).Data` unchecked. When a Bait victim leaves the lobby before the
+  delayed report fires, that RPC throws on every client processing it. The report is dropped instead.
+- **`stopStart` no longer throws on an unknown id** — same missing null check on the host's chat
+  line; everything the original does still happens, only the unresolvable name is replaced.
 - **Client-side Snitch reveal** — a reimplementation of the Snitch reveal that runs on every client,
   built on a persistent own room map (recorded from `ShareRoom` RPCs) instead of TOR's
   `playerRoomMap`, which the host loses on reset. Gated on *all players having this mod*

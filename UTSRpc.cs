@@ -144,6 +144,27 @@ namespace UsefulTORStuff {
             return false;
         }
 
+        // Guard for messages only the ROLE OWNER may send - abilities a role triggers on its own
+        // client (Medic unshield, Bomber cancel, Trapper self-limp, Trickster mixup). These cannot
+        // use RequireHost: they legitimately originate from the owner, not the host. Without this
+        // guard any client could unshield the Medic's target, defuse the Bomber's bomb, limp the
+        // Trapper or fire the mixup (AUDIT-2026-08-15). Mirrors UCRpc.RequireOwnerOrHost.
+        //
+        // The host is accepted as well, on purpose: host-side fallbacks act on the owner's behalf.
+        // A null owner means the role is not in play, so nothing legitimate can arrive for it.
+        public static bool RequireOwnerOrHost(PlayerControl owner, string what) =>
+            RequireOwnerOrHost(Sender, owner, what);
+
+        // Same guard for a LEGACY callId receiver (explicit sender), see the dual-send note above.
+        public static bool RequireOwnerOrHost(PlayerControl sender, PlayerControl owner, string what) {
+            if (IsHost(sender)) return true;
+            if (owner != null && sender != null && sender.PlayerId == owner.PlayerId) return true;
+            UsefulTORStuffPlugin.Logger?.LogWarning(
+                $"[UTSRpc] owner-only message '{what}' from player {sender?.PlayerId.ToString() ?? "?"} " +
+                $"(owner is {owner?.PlayerId.ToString() ?? "none"}) - ignored.");
+            return false;
+        }
+
         // Single dispatcher. Runs BEFORE TOR's own HandleRpc handler (Priority.High) and always
         // consumes callId 240 - the channel belongs to us, nobody else may parse it.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]

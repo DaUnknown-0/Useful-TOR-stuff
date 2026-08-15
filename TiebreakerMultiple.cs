@@ -20,8 +20,12 @@
  *  - Display: a postfix on RoleInfo.getRoleInfoForPlayer adds the Tiebreaker RoleInfo for EVERY
  *    player in our list, so all Tiebreakers are shown as such everywhere TOR renders roles (intro,
  *    name suffix, role tab, exile, end game). De-duped against the one TOR already adds.
- *  - Resolution (full reimplementation): a high-priority prefix on MeetingHud.CheckForEndVoting
- *    REPLACES TOR's vote-resolution prefix (returns false → TOR's prefix is skipped). It reuses TOR's
+ *  - Resolution (full reimplementation): a prefix on TOR's OWN vote-resolution prefix
+ *    (MeetingHudPatch+MeetingCalculateVotesPatch.Prefix), resolved by reflection. Returning false
+ *    there skips TOR's body deterministically, because we are the only patch on that method.
+ *    Deliberately NOT a second prefix on MeetingHud.CheckForEndVoting: HarmonyX runs ALL prefixes and
+ *    `false` only skips the ORIGINAL method, so TOR's prefix would still run and finish the vote a
+ *    second time with its single-Tiebreaker branch (AUDIT-2026-08-15). It reuses TOR's
  *    own CalculateVotes (Mayor double vote + Swapper swap) via reflection and only swaps the
  *    single-Tiebreaker block for the MAJORITY rule: among the tied options the one the most living
  *    Tiebreakers voted for wins. When Skip is part of the tie it counts as its own side, so a player
@@ -57,6 +61,7 @@ namespace UsefulTORStuff {
 
         // Reflection handles resolved in TryPatch.
         private static MethodInfo calculateVotes;   // MeetingHudPatch+MeetingCalculateVotesPatch.CalculateVotes
+        private static MethodInfo torResolvePrefix;  // MeetingHudPatch+MeetingCalculateVotesPatch.Prefix (the method we WRAP)
         private static FieldInfo swapped1Field;      // MeetingHudPatch.swapped1
         private static FieldInfo swapped2Field;      // MeetingHudPatch.swapped2
         private static FieldInfo targetField;        // MeetingHudPatch.target
@@ -107,6 +112,7 @@ namespace UsefulTORStuff {
                 // Resolve the vote-count helper + swapper/target fields used by the resolution prefix.
                 var mhp = torAsm.GetType("TheOtherRoles.Patches.MeetingHudPatch+MeetingCalculateVotesPatch");
                 calculateVotes = mhp?.GetMethod("CalculateVotes", BindingFlags.NonPublic | BindingFlags.Static);
+                torResolvePrefix = mhp?.GetMethod("Prefix", BindingFlags.NonPublic | BindingFlags.Static);
                 var outer = torAsm.GetType("TheOtherRoles.Patches.MeetingHudPatch");
                 swapped1Field = outer?.GetField("swapped1", BindingFlags.NonPublic | BindingFlags.Static);
                 swapped2Field = outer?.GetField("swapped2", BindingFlags.NonPublic | BindingFlags.Static);
@@ -124,11 +130,24 @@ namespace UsefulTORStuff {
 
                 // Register the full resolution reimplementation ONLY if we have what we need; otherwise
                 // TOR's original single-Tiebreaker resolution stays in effect.
-                resolutionReady = calculateVotes != null && customRpc != null && Enum.IsDefined(customRpc, "SetTiebreak");
+                resolutionReady = calculateVotes != null && torResolvePrefix != null
+                    && customRpc != null && Enum.IsDefined(customRpc, "SetTiebreak");
                 if (resolutionReady) {
-                    var checkForEndVoting = typeof(MeetingHud).GetMethod(nameof(MeetingHud.CheckForEndVoting));
-                    harmony.Patch(checkForEndVoting,
-                        prefix: new HarmonyMethod(typeof(TiebreakerMultiple), nameof(ResolvePrefix)) { priority = Priority.First });
+                    // WRAP TOR's own prefix, do NOT register a second prefix on CheckForEndVoting.
+                    //
+                    // The old registration sat on MeetingHud.CheckForEndVoting alongside TOR's
+                    // MeetingCalculateVotesPatch.Prefix and relied on `return false` to override it.
+                    // That is a Harmony misconception on BepInEx: HarmonyX runs ALL prefixes, and
+                    // `false` only skips the ORIGINAL method, never another plugin's prefix. So TOR's
+                    // prefix still ran after ours, recounted the votes with its single-Tiebreaker
+                    // branch and called RpcVotingComplete a SECOND time - overwriting our majority
+                    // result and double-finishing every meeting in every game (AUDIT-2026-08-15).
+                    //
+                    // Patching TOR's prefix METHOD instead makes the override deterministic: we are
+                    // the only prefix on that method, so returning false really does skip its body.
+                    // Same technique SnitchLogic uses on TOR's StartMeetingPatch.Prefix.
+                    harmony.Patch(torResolvePrefix,
+                        prefix: new HarmonyMethod(typeof(TiebreakerMultiple), nameof(TorResolveWrapPrefix)));
                 } else {
                     UsefulTORStuffPlugin.Logger?.LogWarning(
                         "[TiebreakerMultiple] resolution handles missing — multi-tiebreak resolution disabled (TOR's single-tiebreaker logic stays active).");
@@ -137,6 +156,7 @@ namespace UsefulTORStuff {
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[TiebreakerMultiple][DIAG] Reflection resolved: getSelectionForRoleId={(gsfr != null)}, " +
                     $"assignModifiers={(assignModifiers != null)}, CalculateVotes={(calculateVotes != null)}, " +
+                    $"TorPrefix={(torResolvePrefix != null)}, " +
                     $"swapped1={(swapped1Field != null)}, swapped2={(swapped2Field != null)}, target={(targetField != null)}, " +
                     $"SetTiebreak={setTiebreakRpcId}, resolutionReady={resolutionReady}.");
             } catch (Exception e) {
@@ -268,11 +288,32 @@ namespace UsefulTORStuff {
         private static bool IsRealVote(byte vote) => vote < 252; // 252/253(skip)/254/255 are not player votes
         private const byte SkipVote = 253;                       // the Skip "candidate" key (matches CalculateVotes)
 
+        // Prefix ON TOR's OWN PREFIX (MeetingHudPatch+MeetingCalculateVotesPatch.Prefix), installed in
+        // TryPatch. Returning false here skips TOR's prefix BODY - deterministically, because we are the
+        // only patch on that method. TOR's prefix always returns false itself (MeetingPatch.cs:135, it
+        // suppresses vanilla CheckForEndVoting in every case), so we mirror that in __result.
+        //
+        // No argument injection: TOR's prefix is a STATIC method whose first parameter happens to be
+        // named `__instance`, which Harmony would try to fill with an instance that does not exist.
+        // MeetingHud.Instance is the same object TOR receives there.
+        public static bool TorResolveWrapPrefix(ref bool __result) {
+            try {
+                if (Resolve(MeetingHud.Instance)) return true;  // not ours to handle - run TOR's body
+                __result = false;                               // handled: keep vanilla CheckForEndVoting suppressed
+                return false;
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] wrap prefix failed - falling back to TOR: {e}");
+                return true;
+            }
+        }
+
         // FULL REIMPLEMENTATION of TOR's MeetingHud.CheckForEndVoting prefix (MeetingPatch.cs:70-136),
-        // with the single-Tiebreaker block replaced by the MAJORITY rule across `tiebreakers`. Runs at
-        // Priority.First and returns false → TOR's own prefix is skipped. CalculateVotes (Mayor +
-        // Swapper) is reused via reflection so we never duplicate that logic.
-        public static bool ResolvePrefix(MeetingHud __instance) {
+        // with the single-Tiebreaker block replaced by the MAJORITY rule across `tiebreakers`.
+        // CalculateVotes (Mayor + Swapper) is reused via reflection so we never duplicate that logic.
+        //
+        // Returns TRUE when the caller should fall back to TOR's own resolution, FALSE when this method
+        // has fully resolved the vote (RpcVotingComplete already sent).
+        public static bool Resolve(MeetingHud __instance) {
             try {
                 if (!resolutionReady || __instance == null || __instance.playerStates == null) return true;
 
@@ -374,9 +415,9 @@ namespace UsefulTORStuff {
                 }
 
                 __instance.RpcVotingComplete(array, exiled, tie);
-                return false; // suppress TOR's original prefix
+                return false; // handled here - TOR's own resolution must NOT run on top of this
             } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] resolution prefix failed — falling back to TOR: {e}");
+                UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] resolution failed — falling back to TOR: {e}");
                 return true; // never block the meeting on our account
             }
         }

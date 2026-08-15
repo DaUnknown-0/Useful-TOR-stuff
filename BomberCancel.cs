@@ -77,8 +77,12 @@ namespace UsefulTORStuff {
         }
 
         // Receiver on the consolidated channel (module byte 252). Registered from CreateOptions.
+        // Owner-authored: only the Bomber (or the host) may cancel the bomb - without this guard any
+        // client could defuse the Bomber's own bomb for him (AUDIT-2026-08-15).
         private static void HandleModuleRpc(MessageReader reader) {
-            try { Bomber.clearBomb(); } catch { }
+            try {
+                if (UTSRpc.RequireOwnerOrHost(Bomber.bomber, "BomberCancel.Cancel")) Bomber.clearBomb();
+            } catch { }
         }
 
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 252 from pre-240 builds
@@ -87,9 +91,14 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId == CancelBombRpcId) {
-                    try { Bomber.clearBomb(); } catch { }
+                    // Same owner-or-host guard on the LEGACY path: __instance is the sender here,
+                    // UTSRpc.Sender is only set for the consolidated-channel dispatch (AUDIT-2026-08-15).
+                    try {
+                        if (UTSRpc.RequireOwnerOrHost(__instance, Bomber.bomber, "BomberCancel.Cancel(legacy)"))
+                            Bomber.clearBomb();
+                    } catch { }
                     return false;
                 }
                 return true;

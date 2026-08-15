@@ -55,6 +55,10 @@ namespace UsefulTORStuff {
             public Func<(int status, string ctype, string body)> Work;
             public (int status, string ctype, string body) Result;
             public readonly ManualResetEventSlim Done = new ManualResetEventSlim(false);
+            // AUDIT-2026-08-15: set by Marshal() on the HTTP thread once it gives up waiting;
+            // read by Pump() on the main thread before running Work(). A plain write-once/read-once
+            // flag, so volatile (not Interlocked) is enough to make the write visible across threads.
+            public volatile bool Cancelled;
         }
         private static readonly ConcurrentQueue<Job> queue = new ConcurrentQueue<Job>();
 
@@ -121,6 +125,13 @@ namespace UsefulTORStuff {
         private static void Pump() {
             int n = 0;
             while (n++ < 64 && queue.TryDequeue(out var job)) {
+                // AUDIT-2026-08-15: Marshal() may have already given up on this job (timeout) and
+                // answered the browser itself - discard it here instead of applying a stale write
+                // to whatever lobby happens to be ticking now.
+                if (job.Cancelled) {
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[WebConfig] dropping cancelled/timed-out job.");
+                    continue;
+                }
                 try { job.Result = job.Work(); }
                 catch (Exception e) {
                     job.Result = (500, "text/plain", "error: " + e.Message);
@@ -166,7 +177,13 @@ namespace UsefulTORStuff {
             var job = new Job { Work = work };
             queue.Enqueue(job);
             // Only resolves while HudManager.Update is ticking (a live lobby/game).
-            if (!job.Done.Wait(4000)) return (503, "text/plain", "Game not ready - open a lobby first.");
+            if (!job.Done.Wait(4000)) {
+                // AUDIT-2026-08-15: we're answering the browser now, but the job is still sitting in
+                // the queue - a later Pump() (possibly in a different lobby) would otherwise run it
+                // unconditionally. Mark it so Pump() drops it instead of applying a stale write.
+                job.Cancelled = true;
+                return (503, "text/plain", "Game not ready - open a lobby first.");
+            }
             return job.Result;
         }
 

@@ -174,6 +174,8 @@ namespace UsefulTORStuff {
             }
 
             if (www.isNetworkError || www.isHttpError) {
+                www.downloadHandler.Dispose();
+                www.Dispose();
                 _updateState = 3;
                 if (!managerMode) {
                     popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_failed");

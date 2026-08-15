@@ -162,17 +162,29 @@ namespace UsefulTORStuff {
         }
 
         // Receiver on the consolidated channel (module byte 248). Registered from CreateOptions.
+        // Owner-authored: only the Trapper (or the host) may toggle the self-limp - without this
+        // guard any client could make the real Trapper visibly limp (AUDIT-2026-08-15). The payload
+        // is read unconditionally first (see the reader-cursor rule), the guard only gates applying it.
         private static void HandleModuleRpc(MessageReader reader) {
-            try { selfLimping = reader.ReadByte() != 0; } catch { }
+            try {
+                bool state = reader.ReadByte() != 0;
+                if (UTSRpc.RequireOwnerOrHost(Trapper.trapper, "TrapperLimp.SelfLimp")) selfLimping = state;
+            } catch { }
         }
 
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 248 from pre-240 builds.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId == SelfLimpRpcId) {
-                    HandleModuleRpc(reader);
+                    // Same owner-or-host guard on the LEGACY path: __instance is the sender here,
+                    // UTSRpc.Sender is only set for the consolidated-channel dispatch (AUDIT-2026-08-15).
+                    try {
+                        bool state = reader.ReadByte() != 0;
+                        if (UTSRpc.RequireOwnerOrHost(__instance, Trapper.trapper, "TrapperLimp.SelfLimp(legacy)"))
+                            selfLimping = state;
+                    } catch { }
                     return false;
                 }
                 return true;

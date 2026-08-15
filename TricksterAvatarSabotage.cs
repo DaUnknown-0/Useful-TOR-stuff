@@ -181,7 +181,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId == MixupRpcId) {
                     try {
                         int count = reader.ReadByte();
@@ -192,7 +192,11 @@ namespace UsefulTORStuff {
                             map[pid] = src;
                         }
                         float dur = reader.ReadSingle();
-                        ApplyMixup(map, dur);
+                        // Owner-authored: only the Trickster (or the host) may trigger the mixup -
+                        // without this guard any client could fire the global avatar shuffle at will
+                        // with an arbitrary duration (AUDIT-2026-08-15). __instance is the sender.
+                        if (UTSRpc.RequireOwnerOrHost(__instance, Trickster.trickster, "TricksterAvatarSabotage.Mixup"))
+                            ApplyMixup(map, dur);
                     } catch { }
                     return false;
                 }

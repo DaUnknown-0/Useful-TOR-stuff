@@ -11,8 +11,10 @@ using System;
 
 namespace UsefulTORStuff {
     public static class VersionDisplay {
+        // Shared across ALL DaUnknown mods - keep this string identical everywhere.
         public const string ShowTestVersionsKey = "TORMods.ShowTestVersions";
 
+        // Default FALSE: test builds are opt-in - the test-version suffix only shows when explicitly enabled.
         public static bool ShowTestVersions() {
             try { return AppDomain.CurrentDomain.GetData(ShowTestVersionsKey) is bool b && b; }
             catch { return false; }
@@ -28,6 +30,24 @@ namespace UsefulTORStuff {
             bool isTest = v.Revision > 0;
             if (isTest && ShowTestVersions())
                 return $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+            return $"{v.Major}.{v.Minor}.{v.Build}";
+        }
+
+        // Rich-text variant of Format(): on a shown test build, only the 4th (test-revision) component
+        // is colour-highlighted, same TMPro <color> tag style already used at every version-line call
+        // site in this project (e.g. UnknownsCollectionPlugin's credits line). Stable builds render
+        // identically to Format() - no tags at all, so there is nothing to strip for plain-text
+        // consumers that happen to call this instead. Callers still prepend "v" themselves.
+        //
+        // Intended for TMPro labels only (TMPro renders <color> tags by default). Plain-text consumers
+        // (logs, non-rich UI) must keep using Format() - FormatRich() is additive, not a replacement.
+        public const string TestVersionColor = "#FFA33F";
+
+        public static string FormatRich(Version v) {
+            if (v == null) return "?";
+            bool isTest = v.Revision > 0;
+            if (isTest && ShowTestVersions())
+                return $"{v.Major}.{v.Minor}.{v.Build}<color={TestVersionColor}>.{v.Revision}</color>";
             return $"{v.Major}.{v.Minor}.{v.Build}";
         }
     }
