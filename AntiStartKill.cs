@@ -16,10 +16,12 @@
  * At round start (after the intro, when players stand on their spawn) the HOST records each
  * player's ship room via ShipStatus.FastRooms - Dropship on Polus, Cafeteria on Skeld, Launchpad
  * on Mira - and their exact position as a fallback for positions outside any room collider.
- * "Left" = seen in a DIFFERENT room, or (when no room resolves) further than a few units from the
- * recorded spawn point. Teleport-style jumps in the opening seconds (Airship spawn select, a vent
- * hop) RE-RECORD the spawn instead of counting as leaving - walking can't jump, so a real exit on
- * foot is never misread, and a vent exit merely delays the impostor's own flag. Every "left" event
+ * "Left" = outside the spawn ROOM's collider by more than a small edge margin (the Polus dropship
+ * steps stay inside; the ground below does not - the zone is the room, not a radius). Only when
+ * the spawn resolved to no room at all does a plain distance fallback apply. Teleport-style jumps
+ * in the opening seconds (Airship spawn select, a vent hop) RE-RECORD the spawn instead of
+ * counting as leaving - walking can't jump, so a real exit on foot is never misread, and a vent
+ * exit merely delays the impostor's own flag. Every "left" event
  * is a one-shot host RPC, so all modded clients agree on the flags.
  *
  * WHEN IT ENDS
@@ -129,13 +131,28 @@ namespace UsefulTORStuff {
         // Teleport tolerance only in the opening seconds - later a jump IS a movement tool in use,
         // and whoever plays movement tools has long stopped being a spawn camper's victim.
         private const float TeleportGraceSeconds = 20f;
-        // Fallback when no ship room resolves for a position (corridor gaps): how far from the
-        // recorded spawn point counts as "left". 8, not 5: the Polus dropship interior spans more
-        // than 5 units from some spawn points, and whenever the room lookup momentarily returns
-        // null (collider edges, the exit ramp) the old 5u fallback flagged players as "left" while
-        // they were still standing in the spawn area (playtest 2026-08-15, both flags gone within
-        // 8 seconds of the round start). A real exit still crosses 8u within a few steps.
+        // The zone is the spawn ROOM's collider itself, plus this margin beyond its edge - enough
+        // for the Polus dropship steps/ramp right at the border, not enough for the open ground
+        // below (playtest 2026-08-15, screenshot: a player well outside the dropship still wore
+        // the shield under the previous spawn-point-radius rule).
+        private const float RoomEdgeMargin = 2f;
+        // Last-resort fallback for players whose spawn resolved to NO room at all (unknown maps):
+        // plain distance from the recorded spawn point.
         private const float LeaveDistance = 8f;
+
+        // Distance from `pos` to the edge of a ship room's collider (0 while inside it);
+        // float.MaxValue when the room cannot be resolved.
+        private static float DistanceToRoomEdge(SystemTypes roomId, Vector2 pos) {
+            try {
+                var ship = ShipStatus.Instance;
+                if (ship == null || ship.FastRooms == null) return float.MaxValue;
+                foreach (var r in ship.FastRooms.Values) {
+                    if (r == null || r.RoomId != roomId || r.roomArea == null) continue;
+                    return Vector2.Distance(r.roomArea.ClosestPoint(pos), pos);
+                }
+            } catch { }
+            return float.MaxValue;
+        }
 
         public static void CreateOptions() {
             try {
@@ -430,12 +447,23 @@ namespace UsefulTORStuff {
 
                     Vector2 pos = p.GetTruePosition();
                     SystemTypes? room = RoomAt(pos);
-                    // A room change also needs a real distance from the spawn POINT: overlapping
-                    // room colliders or lookup jitter right on the spawn tile must never flag a
-                    // player who has not actually moved (one unit is far below any doorway).
-                    bool hasLeft = (room.HasValue && spawn.hasRoom)
-                        ? room.Value != spawn.room && (pos - spawn.pos).magnitude > 1f
-                        : (pos - spawn.pos).magnitude > LeaveDistance;
+                    // The zone is the spawn ROOM: inside its collider (or within the small edge
+                    // margin for the Polus steps) = still protected; anywhere beyond = left. The
+                    // edge distance is measured against the room COLLIDER, not the personal spawn
+                    // point - a radius around the spawn point over-covered the ground below the
+                    // dropship (playtest screenshot 2026-08-15). Null-room flicker inside the room
+                    // is harmless here: the edge distance is 0 inside the collider either way.
+                    float edge = float.MinValue;
+                    bool hasLeft;
+                    if (spawn.hasRoom) {
+                        if (room.HasValue && room.Value == spawn.room) hasLeft = false;
+                        else {
+                            edge = DistanceToRoomEdge(spawn.room, pos);
+                            hasLeft = edge > RoomEdgeMargin;
+                        }
+                    } else {
+                        hasLeft = (pos - spawn.pos).magnitude > LeaveDistance;
+                    }
 
                     if (hasLeft
                         && Time.realtimeSinceStartup - assignedAt < TeleportGraceSeconds
@@ -451,11 +479,12 @@ namespace UsefulTORStuff {
 
                     if (hasLeft)
                         // The cause string turns the next playtest log into an oracle: a false
-                        // "left" shows up as "Dropship -> none" with a small distance.
+                        // "left" shows up as "Dropship -> none" with a tiny edge distance.
                         (left ??= new()).Add((id,
                             $"{(spawn.hasRoom ? spawn.room.ToString() : "none")} -> "
                             + $"{(room.HasValue ? room.Value.ToString() : "none")}, "
-                            + $"{(pos - spawn.pos).magnitude:F1}u from spawn"));
+                            + (edge > float.MinValue ? $"{edge:F1}u past the room edge" :
+                               $"{(pos - spawn.pos).magnitude:F1}u from spawn")));
                     else lastPos[id] = pos;
                 }
 
