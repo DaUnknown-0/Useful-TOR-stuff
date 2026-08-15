@@ -123,8 +123,12 @@ namespace UsefulTORStuff {
         // and whoever plays movement tools has long stopped being a spawn camper's victim.
         private const float TeleportGraceSeconds = 20f;
         // Fallback when no ship room resolves for a position (corridor gaps): how far from the
-        // recorded spawn point counts as "left".
-        private const float LeaveDistance = 5f;
+        // recorded spawn point counts as "left". 8, not 5: the Polus dropship interior spans more
+        // than 5 units from some spawn points, and whenever the room lookup momentarily returns
+        // null (collider edges, the exit ramp) the old 5u fallback flagged players as "left" while
+        // they were still standing in the spawn area (playtest 2026-08-15, both flags gone within
+        // 8 seconds of the round start). A real exit still crosses 8u within a few steps.
+        private const float LeaveDistance = 8f;
 
         public static void CreateOptions() {
             try {
@@ -408,12 +412,12 @@ namespace UsefulTORStuff {
         private static void LeaveTick() {
             if (protectedIds.Count == 0) return;
             try {
-                List<byte> left = null;
+                List<(byte id, string cause)> left = null;
                 foreach (byte id in protectedIds) {
                     var p = Helpers.playerById(id);
                     // Dead, gone, or never snapshotted: the flag has no job left to do.
                     if (!IsAlive(p) || !spawns.TryGetValue(id, out SpawnInfo spawn)) {
-                        (left ??= new List<byte>()).Add(id);
+                        (left ??= new()).Add((id, "dead/gone"));
                         continue;
                     }
 
@@ -438,16 +442,22 @@ namespace UsefulTORStuff {
                         continue;
                     }
 
-                    if (hasLeft) (left ??= new List<byte>()).Add(id);
+                    if (hasLeft)
+                        // The cause string turns the next playtest log into an oracle: a false
+                        // "left" shows up as "Dropship -> none" with a small distance.
+                        (left ??= new()).Add((id,
+                            $"{(spawn.hasRoom ? spawn.room.ToString() : "none")} -> "
+                            + $"{(room.HasValue ? room.Value.ToString() : "none")}, "
+                            + $"{(pos - spawn.pos).magnitude:F1}u from spawn"));
                     else lastPos[id] = pos;
                 }
 
                 if (left != null)
-                    foreach (byte id in left) {
+                    foreach (var (id, cause) in left) {
                         SendLeft(id);
                         UsefulTORStuffPlugin.Logger?.LogInfo(
-                            $"[AntiStartKill] player {id} left the spawn area - no longer protected "
-                            + $"({protectedIds.Count} remaining).");
+                            $"[AntiStartKill] player {id} left the spawn area ({cause}) - no longer "
+                            + $"protected ({protectedIds.Count} remaining).");
                     }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[AntiStartKill] leave tick failed: {e}");
@@ -517,6 +527,10 @@ namespace UsefulTORStuff {
                         && __result != MurderAttemptResult.DelayVampireKill) return;
 
                     __result = MurderAttemptResult.SuppressKill;
+                    // Logged so a WORKING block is visible in the playtest log - its absence on the
+                    // killer's log then proves the kill never reached a patched client (old build).
+                    UsefulTORStuffPlugin.Logger?.LogInfo(
+                        $"[AntiStartKill] blocked a role kill on {target.Data?.PlayerName} (spawn protection).");
                     NotifyLocal(killer, "uts.antistartkill.kill_blocked");
                 } catch { }
             }
