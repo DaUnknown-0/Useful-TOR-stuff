@@ -142,9 +142,13 @@ namespace UsefulTORStuff {
         // below (playtest 2026-08-15, screenshot: a player well outside the dropship still wore
         // the shield under the previous spawn-point-radius rule).
         private const float RoomEdgeMargin = 2f;
-        // Last-resort fallback for players whose spawn resolved to NO room at all (unknown maps):
-        // plain distance from the recorded spawn point.
-        private const float LeaveDistance = 8f;
+        // Fallback zone when the spawn resolves to NO room at all - in practice that is the FUNGLE
+        // beach (every other map resolves a spawn room, see the playtest logs): a compact circle
+        // around the CENTROID of all spawn positions. 5 units covers the beach cluster; the old
+        // 8u-around-your-own-point ball covered half the shore ("Bereich viel zu gross",
+        // playtest 2026-08-15).
+        private const float NoRoomZoneRadius = 5f;
+        private static Vector2 spawnCentroid;
 
         // Distance from `pos` to the edge of a ship room's collider (0 while inside it);
         // float.MaxValue when the room cannot be resolved.
@@ -432,6 +436,13 @@ namespace UsefulTORStuff {
                 }
                 assignedAt = Time.realtimeSinceStartup;
 
+                // Center of the spawn cluster - the anchor of the no-room fallback zone (Fungle).
+                if (ids.Count > 0) {
+                    Vector2 sum = Vector2.zero;
+                    foreach (var kv in spawns) sum += kv.Value.pos;
+                    spawnCentroid = sum / spawns.Count;
+                }
+
                 // Always logged: this line is the proof the assignment ran, and the room histogram
                 // answers whether the zone lookup found the actual spawn room on this map.
                 var parts = new List<string>();
@@ -516,7 +527,7 @@ namespace UsefulTORStuff {
                             hasLeft = edge > RoomEdgeMargin;
                         }
                     } else {
-                        hasLeft = (pos - spawn.pos).magnitude > LeaveDistance;
+                        hasLeft = (pos - spawnCentroid).magnitude > NoRoomZoneRadius;
                     }
 
                     if (hasLeft
@@ -538,7 +549,7 @@ namespace UsefulTORStuff {
                             $"{(spawn.hasRoom ? spawn.room.ToString() : "none")} -> "
                             + $"{(room.HasValue ? room.Value.ToString() : "none")}, "
                             + (edge > float.MinValue ? $"{edge:F1}u past the room edge" :
-                               $"{(pos - spawn.pos).magnitude:F1}u from spawn")));
+                               $"{(pos - spawnCentroid).magnitude:F1}u from the spawn zone center")));
                     else lastPos[id] = pos;
                 }
 
@@ -719,6 +730,7 @@ namespace UsefulTORStuff {
             meetingSeen = false;
             sabWasActive = false;
             sabFixCount = 0;
+            spawnCentroid = Vector2.zero;
         }
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
