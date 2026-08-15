@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "marcáilte ag an óstach",
  "uts.newcomershield.state_known": "d'imir cheana",
  "uts.newcomershield.btn_protect": "Cosain",
- "uts.newcomershield.btn_unprotect": "Bain"
+ "uts.newcomershield.btn_unprotect": "Bain",
+ "uts.antistartkill.option_name": "Frith-mharú tosaigh (is crios sábháilte an spawn)",
+ "uts.antistartkill.option_notify": "Inis don mharfóir cén fáth ar theip ar an marú",
+ "uts.antistartkill.kill_blocked": "Cosaint spawn: ní féidir marú go dtí go bhfágann tú féin agus do sprioc an limistéar tosaigh uair amháin.",
+ "uts.antistartkill.sidekick_blocked": "Cosaint spawn: ní féidir sidekick a dhéanamh go dtí go bhfágann tú féin agus do sprioc an limistéar tosaigh uair amháin."
 }

@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "door host gemarkeerd",
  "uts.newcomershield.state_known": "heeft al gespeeld",
  "uts.newcomershield.btn_protect": "Beschermen",
- "uts.newcomershield.btn_unprotect": "Opheffen"
+ "uts.newcomershield.btn_unprotect": "Opheffen",
+ "uts.antistartkill.option_name": "Anti-startkill (spawn is een veilige zone)",
+ "uts.antistartkill.option_notify": "De killer vertellen waarom de kill mislukte",
+ "uts.antistartkill.kill_blocked": "Spawnbescherming: geen kills totdat jij en je doelwit het startgebied één keer hebben verlaten.",
+ "uts.antistartkill.sidekick_blocked": "Spawnbescherming: geen sidekick totdat jij en je doelwit het startgebied één keer hebben verlaten."
 }

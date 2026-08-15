@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "marcat de gazdă",
  "uts.newcomershield.state_known": "a jucat deja",
  "uts.newcomershield.btn_protect": "Protejează",
- "uts.newcomershield.btn_unprotect": "Elimină"
+ "uts.newcomershield.btn_unprotect": "Elimină",
+ "uts.antistartkill.option_name": "Anti kill la start (zona de spawn este sigură)",
+ "uts.antistartkill.option_notify": "Spune-i ucigașului de ce a eșuat kill-ul",
+ "uts.antistartkill.kill_blocked": "Protecție la spawn: fără kill-uri până când tu și ținta ta nu ați părăsit zona de start o dată.",
+ "uts.antistartkill.sidekick_blocked": "Protecție la spawn: fără sidekick până când tu și ținta ta nu ați părăsit zona de start o dată."
 }

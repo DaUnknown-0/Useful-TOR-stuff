@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "ditandai host",
  "uts.newcomershield.state_known": "sudah pernah main",
  "uts.newcomershield.btn_protect": "Lindungi",
- "uts.newcomershield.btn_unprotect": "Hapus"
+ "uts.newcomershield.btn_unprotect": "Hapus",
+ "uts.antistartkill.option_name": "Anti kill awal (area spawn adalah zona aman)",
+ "uts.antistartkill.option_notify": "Beri tahu pembunuh mengapa kill gagal",
+ "uts.antistartkill.kill_blocked": "Perlindungan spawn: tidak ada kill sampai kamu dan targetmu sudah meninggalkan area awal satu kali.",
+ "uts.antistartkill.sidekick_blocked": "Perlindungan spawn: tidak ada sidekick sampai kamu dan targetmu sudah meninggalkan area awal satu kali."
 }

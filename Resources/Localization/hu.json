@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "a házigazda jelölte",
  "uts.newcomershield.state_known": "már játszott",
  "uts.newcomershield.btn_protect": "Védelem",
- "uts.newcomershield.btn_unprotect": "Levétel"
+ "uts.newcomershield.btn_unprotect": "Levétel",
+ "uts.antistartkill.option_name": "Kezdőgyilkolás tiltása (a spawn biztonságos zóna)",
+ "uts.antistartkill.option_notify": "A gyilkos megtudja, miért hiúsult meg a gyilkosság",
+ "uts.antistartkill.kill_blocked": "Spawnvédelem: nincs gyilkolás, amíg te és a célpontod egyszer el nem hagytátok a kezdőterületet.",
+ "uts.antistartkill.sidekick_blocked": "Spawnvédelem: nincs sidekick, amíg te és a célpontod egyszer el nem hagytátok a kezdőterületet."
 }

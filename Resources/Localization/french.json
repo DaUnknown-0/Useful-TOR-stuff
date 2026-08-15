@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "marqué par l'hôte",
  "uts.newcomershield.state_known": "a déjà joué",
  "uts.newcomershield.btn_protect": "Protéger",
- "uts.newcomershield.btn_unprotect": "Retirer"
+ "uts.newcomershield.btn_unprotect": "Retirer",
+ "uts.antistartkill.option_name": "Anti kill au spawn (zone de départ protégée)",
+ "uts.antistartkill.option_notify": "Dire au tueur pourquoi le kill a échoué",
+ "uts.antistartkill.kill_blocked": "Protection du spawn : pas de kill tant que vous et votre cible n'avez pas quitté la zone de départ une fois.",
+ "uts.antistartkill.sidekick_blocked": "Protection du spawn : pas de sidekick tant que vous et votre cible n'avez pas quitté la zone de départ une fois."
 }

@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "sunucu işaretledi",
  "uts.newcomershield.state_known": "zaten oynadı",
  "uts.newcomershield.btn_protect": "Koru",
- "uts.newcomershield.btn_unprotect": "Kaldır"
+ "uts.newcomershield.btn_unprotect": "Kaldır",
+ "uts.antistartkill.option_name": "Başlangıç killini engelle (spawn güvenli bölgedir)",
+ "uts.antistartkill.option_notify": "Katile killin neden başarısız olduğunu söyle",
+ "uts.antistartkill.kill_blocked": "Spawn koruması: sen ve hedefin başlangıç bölgesinden bir kez ayrılana kadar kill yapılamaz.",
+ "uts.antistartkill.sidekick_blocked": "Spawn koruması: sen ve hedefin başlangıç bölgesinden bir kez ayrılana kadar sidekick alınamaz."
 }

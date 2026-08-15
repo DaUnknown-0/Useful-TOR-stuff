@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "호스트가 지정",
  "uts.newcomershield.state_known": "이미 참여함",
  "uts.newcomershield.btn_protect": "보호",
- "uts.newcomershield.btn_unprotect": "해제"
+ "uts.newcomershield.btn_unprotect": "해제",
+ "uts.antistartkill.option_name": "스타트 킬 방지 (스폰 구역은 안전지대)",
+ "uts.antistartkill.option_notify": "킬이 실패한 이유를 킬러에게 알림",
+ "uts.antistartkill.kill_blocked": "스폰 보호: 나와 대상이 시작 구역을 한 번 벗어나기 전에는 킬할 수 없습니다.",
+ "uts.antistartkill.sidekick_blocked": "스폰 보호: 나와 대상이 시작 구역을 한 번 벗어나기 전에는 사이드킥을 만들 수 없습니다."
 }

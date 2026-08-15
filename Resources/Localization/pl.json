@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "oznaczony przez hosta",
  "uts.newcomershield.state_known": "już grał",
  "uts.newcomershield.btn_protect": "Chroń",
- "uts.newcomershield.btn_unprotect": "Usuń"
+ "uts.newcomershield.btn_unprotect": "Usuń",
+ "uts.antistartkill.option_name": "Anty start kill (strefa startowa jest bezpieczna)",
+ "uts.antistartkill.option_notify": "Powiedz zabójcy, dlaczego zabójstwo się nie udało",
+ "uts.antistartkill.kill_blocked": "Ochrona spawnu: brak zabójstw, dopóki ty i twój cel nie opuścicie raz strefy startowej.",
+ "uts.antistartkill.sidekick_blocked": "Ochrona spawnu: brak sidekicka, dopóki ty i twój cel nie opuścicie raz strefy startowej."
 }

@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.3.3.21";
+    public const string PluginVersion = "1.4.0.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -67,6 +67,10 @@ public class UsefulTORStuffPlugin : BasePlugin
     // Module byte for the newcomer kill shield (NewcomerShield). 242 sits just below MultiJester's
     // 243; like the inventory above it is a new feature and exists ONLY on channel 240.
     public const byte NewcomerShieldRpcId = 242;
+
+    // Module byte for the spawn-area kill protection (AntiStartKill). 241 was the last free byte
+    // below the newcomer shield's 242; new feature, so it exists ONLY on channel 240.
+    public const byte AntiStartKillRpcId = 241;
 
     public static ManualLogSource Logger { get; private set; }
 
@@ -171,6 +175,9 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Newcomer kill shield receiver (module byte 242). Same reason as the two above: its patches
         // are attribute-based, so the RPC registration has no other home.
         NewcomerShield.RegisterRpc();
+
+        // Spawn-area kill protection receiver (module byte 241). Same pattern.
+        AntiStartKill.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -313,6 +320,15 @@ public class UsefulTORStuffPlugin : BasePlugin
         // host-side (vanilla CheckMurder) and on each client (TOR's checkMuderAttempt). All patches
         // are attribute-based and picked up by PatchAll below.
         NewcomerShield.CreateOptions();
+
+        // Anti Start Kill (options 1390-1391, General tab): the spawn area is a safe zone - no
+        // kills or sidekicks until killer AND victim have each left it once; any meeting ends all
+        // remaining protection. Host records spawns and broadcasts "left" events over module 241;
+        // enforcement mirrors the newcomer shield (host CheckMurder + client checkMuderAttempt,
+        // plus the jackalCreatesSidekick procedure). The shared painter UTSShieldOutlines shows
+        // the green outline and cycles when a player stacks several shields. All patches are
+        // attribute-based and picked up by PatchAll below.
+        AntiStartKill.CreateOptions();
 
         // Trapper log crash: a trap holding the id of a player who has left freezes the meeting for
         // the Trapper and for every ghost (TOR's StartMeeting prefix dereferences a null player).

@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "marcado por el anfitrión",
  "uts.newcomershield.state_known": "ya ha jugado",
  "uts.newcomershield.btn_protect": "Proteger",
- "uts.newcomershield.btn_unprotect": "Quitar"
+ "uts.newcomershield.btn_unprotect": "Quitar",
+ "uts.antistartkill.option_name": "Anti kill inicial (la zona de aparición es segura)",
+ "uts.antistartkill.option_notify": "Decirle al asesino por qué falló el asesinato",
+ "uts.antistartkill.kill_blocked": "Protección de aparición: no se puede matar hasta que tú y tu objetivo hayáis salido de la zona inicial una vez.",
+ "uts.antistartkill.sidekick_blocked": "Protección de aparición: no se puede reclutar hasta que tú y tu objetivo hayáis salido de la zona inicial una vez."
 }

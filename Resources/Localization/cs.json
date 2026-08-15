@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "označen hostitelem",
  "uts.newcomershield.state_known": "už hrál",
  "uts.newcomershield.btn_protect": "Chránit",
- "uts.newcomershield.btn_unprotect": "Zrušit"
+ "uts.newcomershield.btn_unprotect": "Zrušit",
+ "uts.antistartkill.option_name": "Anti start kill (zóna spawnu je bezpečná)",
+ "uts.antistartkill.option_notify": "Sdělit vrahovi, proč zabití selhalo",
+ "uts.antistartkill.kill_blocked": "Ochrana spawnu: žádná zabití, dokud ty i tvůj cíl jednou neopustíte startovní zónu.",
+ "uts.antistartkill.sidekick_blocked": "Ochrana spawnu: žádný sidekick, dokud ty i tvůj cíl jednou neopustíte startovní zónu."
 }

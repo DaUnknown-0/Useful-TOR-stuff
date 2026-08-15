@@ -1067,5 +1067,9 @@
  "uts.newcomershield.state_manual": "vom Host markiert",
  "uts.newcomershield.state_known": "schon dabei gewesen",
  "uts.newcomershield.btn_protect": "Schützen",
- "uts.newcomershield.btn_unprotect": "Aufheben"
+ "uts.newcomershield.btn_unprotect": "Aufheben",
+ "uts.antistartkill.option_name": "Anti-Startkill (Spawn ist eine Schutzzone)",
+ "uts.antistartkill.option_notify": "Dem Killer sagen, warum der Kill fehlschlug",
+ "uts.antistartkill.kill_blocked": "Spawnschutz: Kills erst, wenn du und dein Ziel den Startbereich einmal verlassen habt.",
+ "uts.antistartkill.sidekick_blocked": "Spawnschutz: Sidekick erst, wenn du und dein Ziel den Startbereich einmal verlassen habt."
 }

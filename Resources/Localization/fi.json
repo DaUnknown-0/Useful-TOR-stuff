@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "isännän merkitsemä",
  "uts.newcomershield.state_known": "on jo pelannut",
  "uts.newcomershield.btn_protect": "Suojaa",
- "uts.newcomershield.btn_unprotect": "Poista"
+ "uts.newcomershield.btn_unprotect": "Poista",
+ "uts.antistartkill.option_name": "Aloitustappojen esto (spawn on turva-alue)",
+ "uts.antistartkill.option_notify": "Kerro tappajalle, miksi tappo epäonnistui",
+ "uts.antistartkill.kill_blocked": "Spawn-suoja: ei tappoja ennen kuin sinä ja kohteesi olette poistuneet aloitusalueelta kerran.",
+ "uts.antistartkill.sidekick_blocked": "Spawn-suoja: ei sidekickiä ennen kuin sinä ja kohteesi olette poistuneet aloitusalueelta kerran."
 }

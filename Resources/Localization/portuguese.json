@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "marcado pelo anfitrião",
  "uts.newcomershield.state_known": "já jogou",
  "uts.newcomershield.btn_protect": "Proteger",
- "uts.newcomershield.btn_unprotect": "Remover"
+ "uts.newcomershield.btn_unprotect": "Remover",
+ "uts.antistartkill.option_name": "Anti kill inicial (a zona de spawn é segura)",
+ "uts.antistartkill.option_notify": "Dizer ao assassino porque falhou o kill",
+ "uts.antistartkill.kill_blocked": "Proteção de spawn: sem kills até que tu e o teu alvo tenham saído da zona inicial uma vez.",
+ "uts.antistartkill.sidekick_blocked": "Proteção de spawn: sem sidekick até que tu e o teu alvo tenham saído da zona inicial uma vez."
 }

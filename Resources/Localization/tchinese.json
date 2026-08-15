@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "房主已標記",
  "uts.newcomershield.state_known": "已經玩過",
  "uts.newcomershield.btn_protect": "保護",
- "uts.newcomershield.btn_unprotect": "取消"
+ "uts.newcomershield.btn_unprotect": "取消",
+ "uts.antistartkill.option_name": "禁止開局殺（出生區域為安全區）",
+ "uts.antistartkill.option_notify": "告知擊殺者擊殺失敗的原因",
+ "uts.antistartkill.kill_blocked": "出生點保護：你和目標都離開過出生區域之前無法擊殺。",
+ "uts.antistartkill.sidekick_blocked": "出生點保護：你和目標都離開過出生區域之前無法招募跟班。"
 }

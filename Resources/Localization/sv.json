@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "markerad av värden",
  "uts.newcomershield.state_known": "har redan spelat",
  "uts.newcomershield.btn_protect": "Skydda",
- "uts.newcomershield.btn_unprotect": "Ta bort"
+ "uts.newcomershield.btn_unprotect": "Ta bort",
+ "uts.antistartkill.option_name": "Anti startkill (spawnzonen är en säker zon)",
+ "uts.antistartkill.option_notify": "Berätta för mördaren varför dödandet misslyckades",
+ "uts.antistartkill.kill_blocked": "Spawnskydd: inga kills förrän du och ditt mål har lämnat startområdet en gång.",
+ "uts.antistartkill.sidekick_blocked": "Spawnskydd: ingen sidekick förrän du och ditt mål har lämnat startområdet en gång."
 }

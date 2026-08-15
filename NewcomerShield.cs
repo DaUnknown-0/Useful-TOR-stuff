@@ -128,10 +128,6 @@ namespace UsefulTORStuff {
         // rather than "healed".
         public static readonly Color ShieldColor = new Color32(255, 205, 40, byte.MaxValue);
 
-        // Players we painted ourselves, so the outline can be taken back off again when the shield
-        // ends. Never touch anyone else's outline - TOR owns those.
-        private static readonly HashSet<byte> outlined = new HashSet<byte>();
-
         public static void CreateOptions() {
             try {
                 Enabled = CustomOption.Create(1380, Types.General,
@@ -586,44 +582,12 @@ namespace UsefulTORStuff {
         }
 
         // ====================================================================
-        // The shield you can SEE
-        //
-        // Painted on the player's body sprite the way TOR paints the Medic shield (_Outline /
-        // _OutlineColor) - but in HUDMANAGER.UPDATE, not PlayerControl.FixedUpdate. TOR's
-        // setBasePlayerOutlines runs every physics tick and writes _Outline = 0 for everyone
-        // without a TOR shield (PlayerControlPatch.cs:90); a FixedUpdate-based painter was
-        // simply overwritten again each tick, and no gold ever reached the screen (playtest
-        // 2026-08-15, screenshot of an outline-less shielded player). Unity runs all
-        // FixedUpdates before Update, so painting here always lands AFTER TOR's wipe.
-        // We only paint players on OUR list and only clear what we painted ourselves.
+        // The shield you can SEE - painted by UTSShieldOutlines, the shared painter, which reads
+        // this feature's Shielded list. Shared because a player can hold several shields at once
+        // (Medic, first kill, newcomer, spawn protection) and the single outline slot then CYCLES
+        // through the colours; the painter file carries the whole story, including the
+        // HudManager.Update-not-FixedUpdate autopsy that used to live here.
         // ====================================================================
-        [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
-        [HarmonyPriority(Priority.Low)]   // after TOR's own HudManager patches as well
-        static class OutlinePatch {
-            public static void Postfix() {
-                try {
-                    if (shielded.Count == 0 && outlined.Count == 0) return;
-
-                    foreach (var p in PlayerControl.AllPlayerControls) {
-                        if (p == null) continue;
-                        var sprite = p.cosmetics?.currentBodySprite?.BodySprite;
-                        if (sprite == null || sprite.material == null) continue;
-
-                        byte id = p.PlayerId;
-                        bool shouldShow = shielded.Contains(id) && p.Data != null && !p.Data.IsDead;
-
-                        if (shouldShow) {
-                            sprite.material.SetFloat("_Outline", 1f);
-                            sprite.material.SetColor("_OutlineColor", ShieldColor);
-                            outlined.Add(id);
-                        } else if (outlined.Remove(id)) {
-                            // Ours to clear, and only ours - TOR repaints its own next tick anyway.
-                            sprite.material.SetFloat("_Outline", 0f);
-                        }
-                    }
-                } catch { }
-            }
-        }
 
         // ====================================================================
         // Lobby preview
@@ -670,7 +634,6 @@ namespace UsefulTORStuff {
             // Only the per-round shield: the seen set is the whole point and must survive.
             public static void Postfix() {
                 shielded.Clear();
-                outlined.Clear();
                 lastPreviewKey = "";
             }
         }
@@ -681,7 +644,6 @@ namespace UsefulTORStuff {
             // seenFriendCodes deliberately does: the same person in a new lobby is not new again.
             public static void Postfix() {
                 shielded.Clear();
-                outlined.Clear();
                 manualNewcomers.Clear();   // a hand-picked mark belongs to the lobby it was made in
                 lastPreviewKey = "";
             }

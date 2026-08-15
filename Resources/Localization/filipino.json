@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "minarkahan ng host",
  "uts.newcomershield.state_known": "naglaro na",
  "uts.newcomershield.btn_protect": "Protektahan",
- "uts.newcomershield.btn_unprotect": "Alisin"
+ "uts.newcomershield.btn_unprotect": "Alisin",
+ "uts.antistartkill.option_name": "Anti start kill (ligtas na zone ang spawn)",
+ "uts.antistartkill.option_notify": "Sabihin sa killer kung bakit nabigo ang kill",
+ "uts.antistartkill.kill_blocked": "Proteksyon sa spawn: walang kill hangga't hindi pa kayo ng target mo nakakaalis nang isang beses sa start area.",
+ "uts.antistartkill.sidekick_blocked": "Proteksyon sa spawn: walang sidekick hangga't hindi pa kayo ng target mo nakakaalis nang isang beses sa start area."
 }

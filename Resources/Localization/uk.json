@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "позначений хостом",
  "uts.newcomershield.state_known": "вже грав",
  "uts.newcomershield.btn_protect": "Захистити",
- "uts.newcomershield.btn_unprotect": "Зняти"
+ "uts.newcomershield.btn_unprotect": "Зняти",
+ "uts.antistartkill.option_name": "Анти-кіл на старті (зона спавну безпечна)",
+ "uts.antistartkill.option_notify": "Повідомляти вбивці, чому вбивство не вдалося",
+ "uts.antistartkill.kill_blocked": "Захист спавну: вбивства неможливі, поки ви і ваша ціль хоча б раз не покинете стартову зону.",
+ "uts.antistartkill.sidekick_blocked": "Захист спавну: не можна завербувати помічника, поки ви і ваша ціль хоча б раз не покинете стартову зону."
 }

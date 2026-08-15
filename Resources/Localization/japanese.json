@@ -1066,5 +1066,9 @@
  "uts.newcomershield.state_manual": "ホストが指定",
  "uts.newcomershield.state_known": "参加済み",
  "uts.newcomershield.btn_protect": "保護する",
- "uts.newcomershield.btn_unprotect": "解除"
+ "uts.newcomershield.btn_unprotect": "解除",
+ "uts.antistartkill.option_name": "スタートキル防止（スポーン地点はセーフゾーン）",
+ "uts.antistartkill.option_notify": "キルが失敗した理由をキラーに伝える",
+ "uts.antistartkill.kill_blocked": "スポーン保護：自分と相手が開始エリアを一度離れるまでキルできません。",
+ "uts.antistartkill.sidekick_blocked": "スポーン保護：自分と相手が開始エリアを一度離れるまでサイドキックにできません。"
 }
