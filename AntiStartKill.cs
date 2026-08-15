@@ -41,12 +41,19 @@
  *     neither TOR nor any of our mods patch this procedure (checked 2026-08-15), so there is no
  *     foreign prefix whose side effects could run anyway (the HarmonyX all-prefixes pitfall).
  *
- * Deliberately NOT touched: setTarget's untargetable list. NewcomerShield uses it, but there it
- * protects a HANDFUL of players - here EVERYBODY is protected at round start, and untargetable-
- * everyone would break every benign start-zone targeting there is (the Medic shielding somebody in
- * the Dropship being the canonical case). Cost of that trade: a Thief who attacks a valid target
- * in the spawn zone keeps his suicide wart (TOR sets suicideFlag before the result is read), and a
- * blocked killer eats his cooldown - the notify option below exists so he at least learns why.
+ *  4. setTarget's untargetable list - the SAME gate the newcomer shield uses, added after the
+ *     2026-08-15 playtest (a protected player died to a role kill the funnel never stopped on the
+ *     killer's client; the gold shield, which carries this gate, blocked fine). Two-sided, per
+ *     the design owner's call: while the LOCAL player has not left the spawn area, nobody is
+ *     targetable for him at all; and a player who has not left is untargetable for everyone.
+ *     ACCEPTED COST: benign start-zone targeting (the Medic shielding somebody in the Dropship,
+ *     a Shifter shifting at spawn) is blocked too, until the participants have left once -
+ *     protection usually lasts seconds. The Thief's suicide wart disappears with this gate (no
+ *     target, no attack).
+ *
+ * ALL of these run on the KILLER's client (only vanilla CheckMurder is host-side) - a lobby
+ * member on a build without this feature is not slowed down by ANY of it. The lobby mod board
+ * / mod sync is the tool that closes that gap, not more host-side code.
  *
  * EDGE CASES THIS FILE DEFENDS AGAINST (each at its own code site):
  *  - Host migration mid-round: the promoted host must neither RE-assign protection (sawAssignment
@@ -474,6 +481,41 @@ namespace UsefulTORStuff {
                     if (protectedIds.Count == 0) return;
                     if (AmHost()) SendClear();
                     else ApplyClear();   // clients drop it locally too, in case the RPC is lost
+                } catch { }
+            }
+        }
+
+        // ====================================================================
+        // Enforcement 0: a spawn-protected exchange cannot even be TARGETED
+        //
+        // The newcomer shield's gate (see its Thief rationale), two-sided: a local player who has
+        // not left the spawn area targets NOBODY, and a player who has not left is targetable by
+        // NOBODY. This is the layer that demonstrably works in the field for the gold shield -
+        // the kill button never acquires a target, so no role's bespoke kill path matters.
+        // ====================================================================
+        [HarmonyPatch(typeof(TheOtherRoles.Patches.PlayerControlFixedUpdatePatch),
+                      nameof(TheOtherRoles.Patches.PlayerControlFixedUpdatePatch.setTarget))]
+        static class SetTargetPatch {
+            public static void Prefix(ref List<PlayerControl> untargetablePlayers) {
+                try {
+                    if (protectedIds.Count == 0) return;
+                    var local = PlayerControl.LocalPlayer;
+                    if (local == null) return;
+                    var list = untargetablePlayers != null
+                        ? new List<PlayerControl>(untargetablePlayers) : new List<PlayerControl>();
+                    if (protectedIds.Contains(local.PlayerId)) {
+                        // The local player has not left the spawn area: nobody is targetable.
+                        foreach (var p in PlayerControl.AllPlayerControls) {
+                            if (p == null || p.PlayerId == local.PlayerId) continue;
+                            if (!list.Contains(p)) list.Add(p);
+                        }
+                    } else {
+                        foreach (byte id in protectedIds) {
+                            var p = Helpers.playerById(id);
+                            if (p != null && !list.Contains(p)) list.Add(p);
+                        }
+                    }
+                    untargetablePlayers = list;
                 } catch { }
             }
         }
