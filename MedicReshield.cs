@@ -48,6 +48,14 @@ namespace UsefulTORStuff {
         public static CustomOption OptionShieldCharges; // total shield placements per game (0 = ∞, shown as "∞")
         private static CustomButton unshieldButton;     // recreated each HudManager.Start
 
+        // AUDIT-2026-08-16 (L-4): cached instead of a per-frame LINQ FirstOrDefault over
+        // CustomButton.buttons. Survives a single HudManager rebuild via the == null check below;
+        // if a rebuild destroys it, the next tick just re-resolves it once.
+        private static CustomButton shieldBtn;
+        // AUDIT-2026-08-16 (L-4): last text actually pushed to shieldBtn, so OverrideText (which
+        // triggers a TMP mesh rebuild) only runs when the displayed count changes, not every frame.
+        private static string lastChargeText;
+
         // Index 0 = "∞" (unlimited), indices 1–10 map directly to the charge count.
         private static readonly string[] ShieldChargeSelections =
             { "∞", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
@@ -139,7 +147,25 @@ namespace UsefulTORStuff {
         // Reset the charge state on round reset (new game / round start).
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
-            public static void Postfix() { placementsUsed = 0; prevUsedShield = false; lastDeadShieldedId = null; }
+            public static void Postfix() {
+                placementsUsed = 0; prevUsedShield = false; lastDeadShieldedId = null;
+                // AUDIT-2026-08-16: shieldBtn is re-resolved lazily (== null check), but lastChargeText
+                // must be cleared so the first tick of the new round always pushes a fresh OverrideText
+                // even if the displayed count happens to match the stale cached string.
+                lastChargeText = null;
+            }
+        }
+
+        // AUDIT-2026-08-16: clear the cached shield-button reference and its remembered text on lobby
+        // change, so a stale reference from the previous lobby's HudManager can never be reused (even
+        // though the actionButton == null check above would normally catch a destroyed one, it should
+        // not be the only line of defense for state that carries a value across frames/lobbies).
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class OnGameJoinedPatch {
+            public static void Postfix() {
+                shieldBtn = null;
+                lastChargeText = null;
+            }
         }
 
         // Build the unshield button after the HUD is set up (recreated each HudManager.Start, like
@@ -215,13 +241,26 @@ namespace UsefulTORStuff {
 
                     // 3) Draw "remaining/max" (or "∞") on TOR's shield button, which is always visible to
                     //    the medic. Excludes our own unshield button (shares the same sprite).
-                    var shieldBtn = CustomButton.buttons.FirstOrDefault(
-                        b => b != null && b != unshieldButton && b.Sprite == Medic.getButtonSprite());
+                    // AUDIT-2026-08-16 (L-4): shieldBtn is cached instead of re-run every frame (the LINQ
+                    // FirstOrDefault boxes the List<CustomButton> enumerator via the IEnumerable interface
+                    // dispatch, which is GC pressure for no reason once we already know the button). A
+                    // HudManager rebuild destroys the underlying ActionButton, which the == null check
+                    // below (Unity's overridden equality) catches so we re-resolve exactly once per rebuild.
+                    if (shieldBtn == null || shieldBtn.actionButton == null) {
+                        shieldBtn = CustomButton.buttons.FirstOrDefault(
+                            b => b != null && b != unshieldButton && b.Sprite == Medic.getButtonSprite());
+                        lastChargeText = null; // force a text push on the freshly (re)resolved button
+                    }
                     if (shieldBtn != null && shieldBtn.actionButton != null) {
                         string txt = unlimited
                             ? UTSLocalization.Tr("uts.medicreshield.charges_infinite")
                             : UTSLocalization.Tr("uts.medicreshield.charge_counter", Math.Max(0, max - placementsUsed), max);
-                        shieldBtn.actionButton.OverrideText(txt);
+                        // AUDIT-2026-08-16 (L-4): OverrideText triggers a TMP mesh rebuild every call, so
+                        // only push it when the displayed string actually changed since the last tick.
+                        if (txt != lastChargeText) {
+                            shieldBtn.actionButton.OverrideText(txt);
+                            lastChargeText = txt;
+                        }
                         if (shieldBtn.actionButtonLabelText != null)
                             shieldBtn.actionButtonLabelText.enabled = true;
                     }

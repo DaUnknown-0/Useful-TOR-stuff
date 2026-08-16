@@ -45,6 +45,20 @@ property of Innersloth LLC. © Innersloth LLC.
   `playerRoomMap`, which the host loses on reset. Gated on *all players having this mod*
   (`SnitchClientFixActive`); when active, the host-only TOR - Hostfix re-broadcast stands down.
   Surfaced via lobby messages and a one-time chat confirmation.
+- **Sunglasses now actually lost on Sidekick promotion** — TOR's own README promises the Sunglasses
+  Modifier is lost when its holder gets sidekicked, but `jackalCreatesSidekick` erases the promoted
+  player's roles with `ignoreModifier: true`, so the Sunglasses-removal branch is never reached. The
+  freshly promoted Sidekick is now removed from `Sunglasses.sunglasses` right after the promotion.
+- **TOR's mod-version handshake no longer leaks between lobbies** — `GameStartManagerPatch.playerVersions`
+  is keyed by clientId but never cleared by TOR, and clientIds get reused between lobbies in the same
+  session. A player could briefly inherit their predecessor's stale entry before their own handshake
+  RPC arrived, making the host's mismatch check misread "everyone has the mod" for a few frames. The
+  dictionary is now cleared on every `AmongUsClient.OnGameJoined`.
+- **End screen no longer shows disconnected players as alive** — TOR's `OnGameEndPatch.Postfix` sets
+  `IsAlive = !playerControl.Data.IsDead`, which ignores `Disconnected` entirely even though TOR treats
+  the two as distinct everywhere else (e.g. its own `PlayerStatistics.GetPlayerCounts`). A player who
+  disconnects or rage-quits mid-round showed up in white on the end screen as if they had survived.
+  Disconnected players are now flipped to not-alive after TOR's own end-of-game processing runs.
 
 ## New role options
 
@@ -89,6 +103,7 @@ Options appear in TOR's own settings tabs, directly under the relevant role.
 | Option | Default | Notes |
 |---|---|---|
 | Bomber Can Cancel Bomb | Off | Cancel button (**G**) removes the live bomb at any time (RPC 252 to all clients) |
+| Trickster Box Count | 3 | 1–5; how many Jack-in-the-Boxes must be placed before they turn into a connected vent network (TOR hardcodes 3). Requires **all** players to have the mod, otherwise it falls back to 3 with a host warning: the limit is checked locally, so a mismatch would show some clients an active vent network while others still wait |
 | Trickster Avatar Mixup Sabotage | Off | Button (**C**) swaps every living player's skin for a configured time; shares the Lights-Out cooldown; works on all maps |
 | ↳ Avatar Mixup Sabotage Cooldown | 30 s | 10–60 s |
 | ↳ Avatar Mixup Sabotage Duration | 10 s | 3–30 s |
@@ -135,6 +150,7 @@ Sabotage tuning (master toggle defaults off → vanilla):
 | Option | Default | Notes |
 |---|---|---|
 | Sabotage Tuning | Off | Master toggle. Replaces the shared sabotage cooldown with an independent timer per type; all timers reset to their max when a sabotage ends |
+| ↳ Show Sabotage Cooldown Seconds | Off | Shows the remaining seconds next to each sabotage icon. With five independent timers the proportional fill alone no longer tells you which type is closest to ready |
 | ↳ Minimum Cooldown (Reduction Floor) | 10 s | 0–30 s; global floor the per-use reduction can't go below |
 | ↳ Reactor/Meltdown · Oxygen · Communications · Lights · Airship Crash — Cooldown | 30 s | 10–60 s; independent cooldown per type |
 | ↳ ↳ …Cooldown Reduction per Use | 0 s | 0–15 s; each use lowers that type's cooldown by X (floored at the minimum, reset every meeting; counted globally for all impostors) |

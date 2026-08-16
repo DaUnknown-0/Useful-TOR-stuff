@@ -2,13 +2,20 @@
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
- * UTSRejoin - the way back into the lobby after a mod sync.
+ * UTSRejoin - the way back into the lobby after a mod sync, or after any other reason the game is
+ * suddenly gone.
  *
  * A downloaded DLL only takes effect after a restart (BepInEx loads plugins once, at startup), so
- * the whole feature ends with the player having to quit the game. Without this, "sync the mods"
+ * the mod-sync feature ends with the player having to quit the game. Without this, "sync the mods"
  * really means "leave, hunt for the lobby code you never wrote down, and hope the round has not
  * started". So before the restart we persist code + region + a timestamp, and the main menu offers
  * one button to walk straight back in.
+ *
+ * The same problem exists for a REAL crash - an Il2Cpp exception, Alt-F4, a dropped connection mid
+ * round - and since 2026-08-16 it is covered by the same mechanism: a Harmony postfix below calls
+ * RememberCurrentLobby() on every AmongUsClient.OnGameJoined, i.e. on every lobby join or create,
+ * not only after a sync. So whatever kills the process afterwards - the restart, or the crash it
+ * was trying to avoid - the main menu still finds a fresh entry to offer.
  *
  * TOR already has a related helper (LobbyScreenPatch.LobbyJoinBind: remember the last GameId,
  * rejoin on LShift), but it keeps the id in a static field that dies with the process, which is
@@ -22,6 +29,7 @@
 using System;
 using System.Globalization;
 using BepInEx.Configuration;
+using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
@@ -45,7 +53,9 @@ namespace UsefulTORStuff {
                 "UTC timestamp of the remembered lobby (round-trip format). Entries expire after 30 minutes.");
         }
 
-        // Called after a successful sync, while we are still in the lobby and still know where we are.
+        // Called after a successful sync (UTSModDownloader, right before the restart) and, since
+        // 2026-08-16, on every AmongUsClient.OnGameJoined (see LobbyJoinPatch below) - so a real
+        // crash mid-round leaves the same rejoin entry behind that a mod sync would have.
         public static void RememberCurrentLobby() {
             try {
                 if (SavedCode == null || AmongUsClient.Instance == null) return;
@@ -137,6 +147,15 @@ namespace UsefulTORStuff {
             } catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[ModSync] rejoin failed: {ex}");
             }
+        }
+
+        // Fires on every join - a normal join, a rejoin, and creating a lobby as host - so the
+        // remembered entry is refreshed continuously and a real crash (Il2Cpp exception, Alt-F4, a
+        // dropped connection) leaves the same rejoin entry a mod sync would have. Runs once per
+        // join, so unlike the tick-driven features in this mod no throttling is needed here.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class LobbyJoinPatch {
+            public static void Postfix() => RememberCurrentLobby();
         }
     }
 

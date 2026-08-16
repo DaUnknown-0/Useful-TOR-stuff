@@ -253,6 +253,12 @@ public class UsefulTORStuffPlugin : BasePlugin
         TricksterAvatarSabotage.CreateOptions();
         TricksterAvatarSabotage.TryPatch();
 
+        // Trickster "Box Count" option (1-5, default 3): how many placed Jack-in-the-Boxes convert
+        // into a connected vent network, replacing TOR's hardcoded 3. The clearAndReload postfix is
+        // attribute-based (PatchAll); only the option needs explicit creation here. Gated on
+        // "everyone has the mod" (falls back to TOR's own 3, with a host warning otherwise).
+        TricksterBoxCount.CreateOptions();
+
         // Lawyer/Lover "knows target/partner position on map" options. MapBehaviour / HudManager
         // patches are attribute-based (PatchAll); only the options need explicit creation.
         LawyerLoverTracker.CreateOptions();

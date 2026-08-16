@@ -2,6 +2,97 @@
 
 ## Unreleased
 
+### Crash guards for TOR (new, `TorNullGuards.cs` items 7–12)
+All six share one root cause: TOR calls `Helpers.playerById(...)` and dereferences the result without
+a null check, so any player leaving between the send and the processing of an RPC takes the handler
+down.
+- **The Bloody trail no longer throws on every tick after its killer leaves.** `bloodyUpdate` reads
+  the killer's `PlayerId` *before* the line that would remove the entry, so a disconnected killer is
+  never cleaned up and the exception repeats every FixedUpdate for the rest of the round. Because
+  `Bloody.active` is broadcast, this hit every client at once. Stale entries are now swept out of
+  `Bloody.active` and `Bloody.bloodyKillerMap` before TOR walks them.
+- **`overrideDeathReasonAndKiller`**: the null check exists but sits six lines *after* the
+  dereference. Reached through `ShareGhostInfo` on Witch exile, Lawyer suicide and Lover suicide.
+- **`EventUtility.handleKick`**, **`Portal.startTeleport`**: both dereference a player the caller
+  resolved without checking.
+- **`guesserShoot`** and **`guesserOnClick`**: guarded with finalizers rather than rebuilt. The crash
+  sits mid-loop inside much larger methods, so this contains the damage (the rest of the meeting
+  still resolves) without reimplementing TOR's logic. Documented as such in the source.
+
+### Performance patches for TOR (new, `TorPerfFixes.cs`)
+- **The F1 settings overlay stops rebuilding every frame.** It rebuilt the entire visible options page
+  (LINQ over every registered option, `StringBuilder`, then up to four `TextMeshPro.text` assignments,
+  each a full mesh rebuild) on every rendered frame while open, in the lobby *and* in a running round,
+  with no change detection. Worse, `buildAllOptions()` triggers a second pass through `ToHudString()`,
+  so it ran twice. Now throttled to four rebuilds a second, with an immediate rebuild on page change
+  so paging stays instant.
+- **`Helpers.MushroomSabotageActive()` is cached per frame.** It copied the local player's whole task
+  list on every call, and it is called inside per-player loops, which added up to roughly 2400
+  needless allocations a second in a full lobby.
+- **`RoleInfo.GetRolesString` gets a 0.25 s cache.** `updatePlayerInfo` rebuilt it twice per player per
+  fixed tick, and once the local player is dead it does that for *every* player. Each rebuild
+  allocated a list and ran about nine LINQ predicates.
+- **The meeting host label** is only rewritten when the host actually changes.
+- Deliberately left alone: TOR's lobby client-list copy and `CustomButton.Update()`. Both sit
+  inextricably inside larger methods that must keep running; an outside patch would mean rebuilding
+  them wholesale. Reasoning is recorded in the file header.
+
+### Performance (this plugin)
+- **Medic reshield** no longer runs a LINQ search over every custom button and an unconditional
+  `OverrideText` on every frame (audit finding L-4 from 2026-08-11, open until now). The button is
+  cached and the text is only pushed when the charge count changes.
+- **Sabotage cooldown seconds** only repaint when the displayed second changes.
+
+### New options
+- **Trickster Box Count** (1–5, default 3). TOR hardcodes `JackInTheBox.JackInTheBoxLimit = 3`, the
+  number of placed boxes needed before they turn into a connected vent network. Every other Trickster
+  value is configurable, this one never was, and its impact swings wildly with lobby size: a 3-box net
+  covers a large share of a 6-player round and is nearly irrelevant on Airship with 15. Applied via a
+  postfix on `Trickster.clearAndReload()`. Requires **all** players to have the mod (otherwise it falls
+  back to TOR's 3, with a host warning) — `AllJackInTheBoxes.Count` grows identically everywhere, but
+  `hasJackInTheBoxLimitReached()` compares against the local limit, so a mismatched value would let
+  some clients see an active vent network while others still wait.
+- **Show Sabotage Cooldown Seconds** (default off, sub-option of Sabotage Tuning). Sabotage Tuning
+  gives each sabotage type its own independent cooldown, but the icon only shows a proportional fill
+  (`SetSpecialActive`), so with five timers running you cannot tell lights from reactor. Adds the
+  remaining seconds as a small label per icon. A feedback gap this mod's own feature created: before
+  Sabotage Tuning there was only one shared cooldown.
+
+### Fixes
+- **A lone surviving Sidekick no longer crashes the end of the round.** "Sidekick Gets Promoted To
+  Jackal On Jackal Death" defaults to off, so a dead Jackal leaves `Jackal.jackal` null while
+  `Sidekick.sidekick` survives. `PlayerStatistics.GetPlayerCounts` counts the two separately, so the
+  lone Sidekick still reaches parity and TeamJackalWin fires — and TOR then reads `Jackal.jackal.Data`
+  unconditionally, throwing a NullReferenceException in its own `OnGameEnd` postfix on *every* client.
+  Our own "Sidekick Can Kill Jackal" makes the scenario more likely. The Sidekick is now promoted into
+  the Jackal slot for the duration of that postfix.
+- **BountyHunter no longer throws every tick on an empty target pool.** Its filter (impostors, Spy,
+  team-red Sidekick/Jackal, immature Mini, own Lover) can legitimately empty the candidate list, and
+  TOR indexes straight into it with no `Count == 0` guard — unlike the structurally identical spot it
+  guards itself in `RoleAssignmentPatch.cs`. Because the retry timer resets after every meeting, the
+  exception repeated on every tick and took every role update after it in the same sequence (Vulture,
+  Medium, Morphling/Camouflager, Lawyer, Pursuer) down with it.
+- **A cancelled or meeting-interrupted bomb no longer throws on detonation.** The fuse coroutine keeps
+  running on the persistent HudManager after `clearBomb()` has destroyed the bomb's GameObjects, then
+  dereferences them anyway. The stale detonation is skipped; its cleanup tail only runs when
+  `Bomber.bomb` still points at that exact instance, so a fresh bomb planted in the meantime (the
+  cooldown can be shorter than the fuse) is never torn down by a stale coroutine.
+- **Sunglasses is now actually lost on Sidekick promotion.** TOR's own README promises it, but
+  `jackalCreatesSidekick` erases roles with `ignoreModifier: true`, so the removal branch is never
+  reached and the promoted player keeps reduced vision for the rest of the round.
+- **TOR's own version handshake no longer leaks between lobbies.** `GameStartManagerPatch.playerVersions`
+  is keyed by clientId and never cleared; clientIds are reused across lobbies in one session, so a
+  player could briefly inherit a predecessor's matching entry and be counted as compatible before
+  their own handshake arrived.
+- **The end screen no longer shows disconnected players as alive.** TOR sets `IsAlive` from `IsDead`
+  alone, ignoring `Disconnected` even though it separates the two everywhere else.
+- **The Lawyer keeps their bonus win when Jester Quantity is above 1.** This plugin's own winner
+  override replaced the winner list wholesale, discarding the Lawyer that TOR's postfix had added
+  moments earlier — in every round with that outcome, even when no extra Jester was involved.
+- **The rejoin button now survives a real crash.** `RememberCurrentLobby()` was only called after a
+  successful mod sync, so an Il2Cpp exception or Alt-F4 mid-round left no stored lobby. It now records
+  on every `OnGameJoined`, which also covers crashes during the lobby phase.
+
 ### Internal
 - **All custom RPCs moved onto a single channel (callId 240).** Custom RPCs share one byte-wide
   id space with TOR's own `CustomRPC` enum, which grows with every TOR release (100–183 today).

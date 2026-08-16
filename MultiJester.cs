@@ -90,6 +90,13 @@ namespace UsefulTORStuff {
         private static object winConditionJesterValue;
         private static bool winConditionResolved;
 
+        // Reflection handles for TOR's AdditionalTempData.additionalWinConditions (a List<WinCondition>,
+        // both internal), needed to re-add the Lawyer bonus win condition after we rebuild the winner
+        // list ourselves (see WinnerPatch / EnsureLawyerBonusWinCondition).
+        private static FieldInfo additionalWinConditionsField;
+        private static object winConditionLawyerBonusValue;
+        private static bool lawyerBonusResolved;
+
         // TOR's CustomGameOverReason.JesterWin. The enum is internal, so it is resolved by name once;
         // 13 is only the documented fallback (EndGamePatch.cs:19) for the case where TOR renames it.
         private static int jesterWinReason = -1;
@@ -549,6 +556,25 @@ namespace UsefulTORStuff {
                         EndGameResult.CachedWinners = new Il2CppSystem.Collections.Generic.List<CachedPlayerData>();
                         EndGameResult.CachedWinners.Add(new CachedPlayerData(winner.Data));
                         EnsureJesterWinCondition();
+
+                        // AUDIT-2026-08-15: TOR's own OnGameEnd postfix already ran the Lawyer bonus
+                        // check (EndGamePatch.cs:209) against the winner list it had just built - but
+                        // that list is exactly what we throw away above, taking any Lawyer it had
+                        // already added with it. Rebuild the same condition here against the ACTUAL
+                        // winner instead of TOR's hardcoded Jester.jester, so it also covers an extra
+                        // Jester who happens to be the Lawyer's target (Lawyer.target can currently
+                        // only ever become TOR's own Jester.jester, per the possibleTargets filter in
+                        // RoleAssignmentPatch.cs:395 - extra Jesters do not exist yet at that point in
+                        // the assignment order - but keying off the real winner is correct rather than
+                        // hardcoded, and covers the far more common case: TOR's own Jester winning
+                        // while an extra Jester also exists this round).
+                        if (Lawyer.lawyer != null && Lawyer.target != null && !Lawyer.isProsecutor
+                            && !Pursuer.notAckedExiled && Lawyer.target.PlayerId == winner.PlayerId
+                            && Lawyer.lawyer.PlayerId != winner.PlayerId) {
+                            EndGameResult.CachedWinners.Add(new CachedPlayerData(Lawyer.lawyer.Data));
+                            EnsureLawyerBonusWinCondition();
+                        }
+
                         UsefulTORStuffPlugin.Logger?.LogInfo(
                             $"[MultiJester] sole winner: {winner.Data.PlayerName}.");
                         return;
@@ -609,6 +635,35 @@ namespace UsefulTORStuff {
                 }
                 if (winConditionField != null && winConditionJesterValue != null)
                     winConditionField.SetValue(null, winConditionJesterValue);
+            } catch { }
+        }
+
+        // TOR names the Lawyer bonus on the end screen via
+        // AdditionalTempData.additionalWinConditions.Add(WinCondition.AdditionalLawyerBonusWin)
+        // (EndGamePatch.cs:218). additionalWinConditions is a List<WinCondition>, and both the list's
+        // declaring type and its element type are internal, so it can only be reached by name through
+        // reflection - but List<T> still implements the public, non-generic System.Collections.IList,
+        // whose Add(object) does not care that T itself is inaccessible to us.
+        private static void EnsureLawyerBonusWinCondition() {
+            try {
+                if (!lawyerBonusResolved) {
+                    lawyerBonusResolved = true;
+                    var asm = typeof(CustomOption).Assembly;
+                    var tempData = asm.GetType("TheOtherRoles.Patches.AdditionalTempData");
+                    additionalWinConditionsField = tempData?.GetField("additionalWinConditions",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    var winCondition = asm.GetType("TheOtherRoles.Patches.WinCondition");
+                    if (winCondition != null && Enum.IsDefined(winCondition, "AdditionalLawyerBonusWin"))
+                        winConditionLawyerBonusValue = Enum.Parse(winCondition, "AdditionalLawyerBonusWin");
+                    if (additionalWinConditionsField == null || winConditionLawyerBonusValue == null)
+                        UsefulTORStuffPlugin.Logger?.LogWarning(
+                            "[MultiJester] AdditionalTempData.additionalWinConditions not found - the "
+                            + "end screen may not name the Lawyer bonus for a multi-Jester win.");
+                }
+                if (additionalWinConditionsField != null && winConditionLawyerBonusValue != null) {
+                    var list = additionalWinConditionsField.GetValue(null) as System.Collections.IList;
+                    list?.Add(winConditionLawyerBonusValue);
+                }
             } catch { }
         }
 

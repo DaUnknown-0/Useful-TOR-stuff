@@ -32,6 +32,11 @@
  *     forced to 0 while idle because the host validates incoming sabotages against it.
  *   - Visuals: postfix on InfectedOverlay.Update greys each room's special icon per its per-type timer
  *     via MapRoom.SetSpecialActive(perc).  [perc semantics: cooldown fraction; verify look in-game]
+ *     Optional per-icon seconds readout ("Show Sabotage Cooldown Seconds", off by default): the
+ *     proportional greying alone doesn't say how many seconds a given type still needs once several
+ *     independent timers are running at once, so a small TMP label is created once per room (child of
+ *     MapRoom.special) and shown/hidden/updated straight off the same timer[] array the tick postfix
+ *     already maintains.
  *   - Reductions reset: postfix on MeetingHud.Start.
  *   - Game reset: postfix on AmongUsClient.OnGameEnd.
  *
@@ -54,7 +59,7 @@
  * Map differences are automatic: ShipStatus.Systems only contains the systems present on the map,
  * and the menu only shows rooms that exist, so unused types simply never fire.
  *
- * IDs 1330-1343 (free; 1320-1323 are SpyExtras). Keep plugin-wide unique.
+ * IDs 1330-1345 used here (1320-1323 are SpyExtras). Keep plugin-wide unique.
  */
 
 using System;
@@ -74,6 +79,7 @@ namespace UsefulTORStuff {
         // three deadly types.
         public static CustomOption Enabled;
         private static CustomOption minCooldownOpt;                           // reduction floor (global)
+        private static CustomOption showSecondsOpt;                           // per-icon cooldown seconds readout
         private static readonly CustomOption[] cdOpt = new CustomOption[N];   // base cooldown
         private static readonly CustomOption[] redOpt = new CustomOption[N];  // reduction per use
         private static CustomOption reactorDur, oxygenDur, heliDur;           // deadly durations
@@ -83,6 +89,20 @@ namespace UsefulTORStuff {
         private static readonly int[] usage = new int[N];
         private static bool prevActive;
         private static bool gameInit;
+
+        // Cooldown-seconds labels (one per logical type, lazily created next to MapRoom.special).
+        // See OverlayUpdatePatch / UpdateCooldownText.
+        private static readonly TMPro.TextMeshPro[] cdText = new TMPro.TextMeshPro[N];
+
+        // AUDIT-2026-08-16: last Mathf.CeilToInt(remaining) actually written to cdText[i], per type.
+        // -1 means "nothing shown yet / currently hidden", which never collides with a real second
+        // count and so always forces a fresh text push the next time that type's label is shown.
+        private static readonly int[] lastShownSecs = InitLastShownSecs();
+        private static int[] InitLastShownSecs() {
+            var a = new int[N];
+            for (int i = 0; i < N; i++) a[i] = -1;
+            return a;
+        }
 
         // Non-public Countdown setters for the deadly sabotages whose duration we override (resolved
         // once via reflection; LifeSupp.Countdown is a public field and needs none).
@@ -105,6 +125,9 @@ namespace UsefulTORStuff {
 
                 minCooldownOpt = CustomOption.Create(1344, Types.General, "Minimum Cooldown (Reduction Floor)", 10f, 0f, 30f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(minCooldownOpt, "uts.sabotagetuning.min_cooldown");
+
+                showSecondsOpt = CustomOption.Create(1345, Types.General, "Show Sabotage Cooldown Seconds", false, Enabled);
+                UTSLocalization.BindOptionTitle(showSecondsOpt, "uts.sabotagetuning.show_cooldown_seconds");
 
                 cdOpt[(int)SabType.Reactor] = CustomOption.Create(1331, Types.General, "Reactor/Meltdown Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Reactor], "uts.sabotagetuning.reactor_cooldown");
@@ -315,6 +338,51 @@ namespace UsefulTORStuff {
             } catch { }
         }
 
+        // Optional numeric readout next to a room's icon (Show Sabotage Cooldown Seconds). Created
+        // lazily, once per SabType, as a child of that type's MapRoom.special icon so it inherits the
+        // icon's position/layer/sorting automatically; reused afterwards (only text/visibility change
+        // per frame). Unity's overloaded == null also catches a destroyed object, which is what makes
+        // the cached reference safe across a HudManager/scene change - a stale entry is simply
+        // rebuilt under the new icon instead of being dereferenced.
+        private static void UpdateCooldownText(SabType t, MapRoom r, bool show) {
+            int i = (int)t;
+            float remaining = timer[i];
+            if (!show || remaining <= 0f) {
+                if (cdText[i] != null) cdText[i].gameObject.SetActive(false);
+                // AUDIT-2026-08-16: hidden -> next time this type is shown it must repaint unconditionally,
+                // even if the displayed second count happens to match whatever was last drawn.
+                lastShownSecs[i] = -1;
+                return;
+            }
+
+            if (cdText[i] == null) {
+                var icon = r.special;
+                var go = new GameObject("UTSSabCooldownText") { layer = icon.gameObject.layer };
+                go.transform.SetParent(icon.transform, false);
+                go.transform.localPosition = new Vector3(0f, -0.5f, -0.02f); // just under the icon
+                var txt = go.AddComponent<TMPro.TextMeshPro>();
+                txt.fontSize = 2.2f;
+                txt.alignment = TMPro.TextAlignmentOptions.Center;
+                txt.enableWordWrapping = false;
+                txt.color = Color.white;
+                var mr = go.GetComponent<MeshRenderer>();
+                if (mr != null) { mr.sortingLayerID = icon.sortingLayerID; mr.sortingOrder = icon.sortingOrder + 1; }
+                cdText[i] = txt;
+                lastShownSecs[i] = -1; // freshly (re)built label, force the first text push below
+            }
+
+            cdText[i].gameObject.SetActive(true);
+
+            // AUDIT-2026-08-16 (perf): the displayed, rounded-up second count only changes once per
+            // second, so only touch .text (string concat + TMP rebuild) when it actually changed.
+            int secs = Mathf.CeilToInt(remaining);
+            if (secs != lastShownSecs[i]) {
+                // ASCII only: digits plus "s" - the HUD TMP font has no glyphs beyond that (see CLAUDE.md).
+                cdText[i].text = secs.ToString() + "s";
+                lastShownSecs[i] = secs;
+            }
+        }
+
         // ---- Patches (attribute-based; picked up by harmony.PatchAll in UsefulTORStuffPlugin) ----
 
         [HarmonyPatch(typeof(MapRoom), nameof(MapRoom.SabotageReactor))]
@@ -409,6 +477,7 @@ namespace UsefulTORStuff {
                 try {
                     var rooms = __instance.rooms;
                     if (rooms == null) return;
+                    bool showSeconds = UTSGate.Bool(showSecondsOpt);
                     for (int i = 0; i < rooms.Length; i++) {
                         var r = rooms[i];
                         if (r == null || r.special == null) continue;
@@ -417,6 +486,7 @@ namespace UsefulTORStuff {
                         // perc = remaining cooldown fraction (0 = ready, 1 = full cooldown).
                         float perc = cm <= 0f ? 0f : Mathf.Clamp01(timer[(int)t] / cm);
                         r.SetSpecialActive(perc);
+                        UpdateCooldownText(t, r, showSeconds);
                     }
                 } catch { }
             }
@@ -450,6 +520,18 @@ namespace UsefulTORStuff {
                 gameInit = false;
                 prevActive = false;
                 warnedConflict = false;
+                // AUDIT-2026-08-16: clear the remembered cooldown-seconds cache so the first frame of
+                // the next round always repaints the label instead of trusting a stale prior value.
+                for (int i = 0; i < N; i++) lastShownSecs[i] = -1;
+            }
+        }
+
+        // AUDIT-2026-08-16: lobby change (rejoin/new lobby) also needs the cooldown-seconds cache
+        // cleared - OnGameEnd covers "round just ended" but not every path back into a fresh lobby.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        private static class GameJoinedPatch {
+            private static void Postfix() {
+                for (int i = 0; i < N; i++) lastShownSecs[i] = -1;
             }
         }
     }
