@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Số Kẻ Giả Mạo Tối Đa",
  "uts.impcount.refill_option": "Sidekick Chỉ Lấp Đầy Kẻ Giả Mạo Bị Thiếu",
  "uts.impcount.sidekick_chance_option": "Tỉ Lệ Jackal Có Thể Tạo Sidekick",
+ "uts.truemodifierchances.enabled": "Tỷ lệ modifier thực tế",
  "uts.mapping.option_name": "Ping bản đồ trong cuộc họp (nhấp vào bản đồ)",
  "uts.maplang.label": "Ngôn ngữ: {0}",
  "uts.modsync.title": "Đồng bộ mod",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Bỏ",
  "uts.antistartkill.option_name": "Chống giết lúc bắt đầu (khu xuất phát là vùng an toàn)",
  "uts.antistartkill.option_notify": "Cho kẻ giết biết vì sao cú giết thất bại",
+ "uts.antistartkill.option_endmode": "Bảo vệ cũng kết thúc sau",
+ "uts.antistartkill.option_endseconds": "Giới hạn thời gian bảo vệ",
+ "uts.antistartkill.option_endfixes": "Số lần sửa phá hoại trước khi hết bảo vệ",
  "uts.antistartkill.kill_blocked": "Bảo vệ điểm xuất phát: không thể giết cho đến khi bạn và mục tiêu đã rời khu xuất phát một lần.",
  "uts.antistartkill.sidekick_blocked": "Bảo vệ điểm xuất phát: không thể chiêu mộ sidekick cho đến khi bạn và mục tiêu đã rời khu xuất phát một lần."
 }

@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Impostori maximi",
  "uts.impcount.refill_option": "Sidekick completează doar un Impostor lipsă",
  "uts.impcount.sidekick_chance_option": "Șansa ca Jackal să poată crea un Sidekick",
+ "uts.truemodifierchances.enabled": "Șanse reale pentru modificatori",
  "uts.mapping.option_name": "Ping pe hartă în ședință (clic pe hartă)",
  "uts.maplang.label": "Limbă: {0}",
  "uts.modsync.title": "Sincronizare moduri",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Elimină",
  "uts.antistartkill.option_name": "Anti kill la start (zona de spawn este sigură)",
  "uts.antistartkill.option_notify": "Spune-i ucigașului de ce a eșuat kill-ul",
+ "uts.antistartkill.option_endmode": "Protecția se încheie și după",
+ "uts.antistartkill.option_endseconds": "Limita de timp a protecției",
+ "uts.antistartkill.option_endfixes": "Sabotaje reparate până la finalul protecției",
  "uts.antistartkill.kill_blocked": "Protecție la spawn: fără kill-uri până când tu și ținta ta nu ați părăsit zona de start o dată.",
  "uts.antistartkill.sidekick_blocked": "Protecție la spawn: fără sidekick până când tu și ținta ta nu ați părăsit zona de start o dată."
 }

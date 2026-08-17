@@ -157,6 +157,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // what each log line proves. The patch is attribute-based (PatchAll below).
         DeconDiag.Bind(Config);
 
+        // Repair path for Harmony patches that stop executing mid-session (see DetourWatchdog.cs for
+        // the measurements). Only the config entries are bound here; arming happens after PatchAll,
+        // because its canary has to be registered in the same wrapper as everything else first.
+        DetourWatchdog.Bind(Config);
+
         var harmony = new Harmony(PluginGuid);
 
         // Collision watchdog for our consolidated custom callId (see UTSRpc.cs). TOR's CustomRPC enum
@@ -354,6 +359,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.
         harmony.PatchAll(typeof(UsefulTORStuffPlugin).Assembly);
+
+        // Must follow PatchAll: the watchdog's canary postfix is attribute-based, so it only exists
+        // once the line above ran, and the surface scan it logs wants the full patch set in place.
+        DetourWatchdog.Initialize();
 
         // Local host-only web settings editor. Started after PatchAll so its HudManager.Update
         // pump patch is already installed. Loopback-only listener; host-gated writes.

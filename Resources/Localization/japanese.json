@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "インポスターの最大数",
  "uts.impcount.refill_option": "Sidekickは欠員インポスターのみ補充可能",
  "uts.impcount.sidekick_chance_option": "JackalがSidekickを作成できる確率",
+ "uts.truemodifierchances.enabled": "実際のモディファイア確率",
  "uts.mapping.option_name": "会議中のマップピン（マップをクリック）",
  "uts.maplang.label": "Language: {0}",
  "uts.modsync.title": "MOD同期",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "解除",
  "uts.antistartkill.option_name": "スタートキル防止（スポーン地点はセーフゾーン）",
  "uts.antistartkill.option_notify": "キルが失敗した理由をキラーに伝える",
+ "uts.antistartkill.option_endmode": "保護の終了条件を追加",
+ "uts.antistartkill.option_endseconds": "保護の制限時間",
+ "uts.antistartkill.option_endfixes": "保護終了までの修復サボタージュ数",
  "uts.antistartkill.kill_blocked": "スポーン保護：自分と相手が開始エリアを一度離れるまでキルできません。",
  "uts.antistartkill.sidekick_blocked": "スポーン保護：自分と相手が開始エリアを一度離れるまでサイドキックにできません。"
 }

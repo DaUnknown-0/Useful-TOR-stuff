@@ -606,7 +606,7 @@
  "tor.chat.medium.color_darker": "donkerdere",
  "tor.chat.medium.time_since_death": "Als ik goed geteld heb, stierf ik {0}s voordat de volgende vergadering begon.",
  "tor.chat.medium.killer_role": "Het lijkt erop dat mijn moordenaar de {0} is.",
- "tor.chat.medium.additional_info_suffix": "\nToen je het vroeg, waren er {0} nog in leven",
+ "tor.chat.medium.additional_info_suffix": "\nToen je het vroeg, waren er {0} {1} nog in leven",
  "tor.chat.medium.info_killer_singular": "moordenaar",
  "tor.chat.medium.info_killer_plural": "moordenaars",
  "tor.chat.medium.info_vents_singular": "speler die ventilatieschachten kan gebruiken",
@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Maximum Impostors",
  "uts.impcount.refill_option": "Sidekick vult alleen een ontbrekende Impostor aan",
  "uts.impcount.sidekick_chance_option": "Kans dat de Jackal een Sidekick kan maken",
+ "uts.truemodifierchances.enabled": "Echte modifier-kansen",
  "uts.mapping.option_name": "Kaart-ping tijdens vergadering (klik op de kaart)",
  "uts.maplang.label": "Taal: {0}",
  "uts.modsync.title": "Mod-synchronisatie",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Opheffen",
  "uts.antistartkill.option_name": "Anti-startkill (spawn is een veilige zone)",
  "uts.antistartkill.option_notify": "De killer vertellen waarom de kill mislukte",
+ "uts.antistartkill.option_endmode": "Bescherming eindigt ook na",
+ "uts.antistartkill.option_endseconds": "Tijdslimiet van de bescherming",
+ "uts.antistartkill.option_endfixes": "Herstelde sabotages tot de bescherming eindigt",
  "uts.antistartkill.kill_blocked": "Spawnbescherming: geen kills totdat jij en je doelwit het startgebied één keer hebben verlaten.",
  "uts.antistartkill.sidekick_blocked": "Spawnbescherming: geen sidekick totdat jij en je doelwit het startgebied één keer hebben verlaten."
 }

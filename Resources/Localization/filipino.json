@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Maximum Impostors",
  "uts.impcount.refill_option": "Nagpupuno Lang ang Sidekick ng Nawawalang Impostor",
  "uts.impcount.sidekick_chance_option": "Chance That The Jackal Can Create A Sidekick",
+ "uts.truemodifierchances.enabled": "Tunay na Tsansa ng Modifier",
  "uts.mapping.option_name": "Map Ping sa Miting (I-click ang Mapa)",
  "uts.maplang.label": "Wika: {0}",
  "uts.modsync.title": "Mod Sync",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Alisin",
  "uts.antistartkill.option_name": "Anti start kill (ligtas na zone ang spawn)",
  "uts.antistartkill.option_notify": "Sabihin sa killer kung bakit nabigo ang kill",
+ "uts.antistartkill.option_endmode": "Nagtatapos din ang proteksyon pagkatapos ng",
+ "uts.antistartkill.option_endseconds": "Hangganan ng oras ng proteksyon",
+ "uts.antistartkill.option_endfixes": "Naayos na sabotahe bago matapos ang proteksyon",
  "uts.antistartkill.kill_blocked": "Proteksyon sa spawn: walang kill hangga't hindi pa kayo ng target mo nakakaalis nang isang beses sa start area.",
  "uts.antistartkill.sidekick_blocked": "Proteksyon sa spawn: walang sidekick hangga't hindi pa kayo ng target mo nakakaalis nang isang beses sa start area."
 }

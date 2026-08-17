@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "最大冒名者數",
  "uts.impcount.refill_option": "Sidekick 僅補充缺少的冒名者",
  "uts.impcount.sidekick_chance_option": "Jackal能創建Sidekick的機率",
+ "uts.truemodifierchances.enabled": "真實輔助技能機率",
  "uts.mapping.option_name": "會議地圖標記（點擊地圖）",
  "uts.maplang.label": "Language: {0}",
  "uts.modsync.title": "模組同步",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "取消",
  "uts.antistartkill.option_name": "禁止開局殺（出生區域為安全區）",
  "uts.antistartkill.option_notify": "告知擊殺者擊殺失敗的原因",
+ "uts.antistartkill.option_endmode": "保護也將在此之後結束",
+ "uts.antistartkill.option_endseconds": "保護時間上限",
+ "uts.antistartkill.option_endfixes": "保護結束前需修復的破壞次數",
  "uts.antistartkill.kill_blocked": "出生點保護：你和目標都離開過出生區域之前無法擊殺。",
  "uts.antistartkill.sidekick_blocked": "出生點保護：你和目標都離開過出生區域之前無法招募跟班。"
 }

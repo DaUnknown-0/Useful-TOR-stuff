@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Impostores máximos",
  "uts.impcount.refill_option": "El Sidekick solo rellena un Impostor faltante",
  "uts.impcount.sidekick_chance_option": "Probabilidad de que el Jackal pueda crear un Sidekick",
+ "uts.truemodifierchances.enabled": "Probabilidades reales de modificadores",
  "uts.mapping.option_name": "Ping en el mapa durante la reunión (clic en el mapa)",
  "uts.maplang.label": "Idioma: {0}",
  "uts.modsync.title": "Sincronización de mods",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Quitar",
  "uts.antistartkill.option_name": "Anti kill inicial (la zona de aparición es segura)",
  "uts.antistartkill.option_notify": "Decirle al asesino por qué falló el asesinato",
+ "uts.antistartkill.option_endmode": "La protección también termina tras",
+ "uts.antistartkill.option_endseconds": "Límite de tiempo de la protección",
+ "uts.antistartkill.option_endfixes": "Sabotajes reparados hasta que acabe la protección",
  "uts.antistartkill.kill_blocked": "Protección de aparición: no se puede matar hasta que tú y tu objetivo hayan salido de la zona inicial una vez.",
  "uts.antistartkill.sidekick_blocked": "Protección de aparición: no se puede reclutar hasta que tú y tu objetivo hayan salido de la zona inicial una vez."
 }

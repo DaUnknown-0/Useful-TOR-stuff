@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "最大内鬼数",
  "uts.impcount.refill_option": "Sidekick 仅补充缺失的内鬼",
  "uts.impcount.sidekick_chance_option": "Jackal能创建Sidekick的概率",
+ "uts.truemodifierchances.enabled": "真实辅助技能概率",
  "uts.mapping.option_name": "会议地图标记（点击地图）",
  "uts.maplang.label": "Language: {0}",
  "uts.modsync.title": "模组同步",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "取消",
  "uts.antistartkill.option_name": "禁止开局杀（出生区域为安全区）",
  "uts.antistartkill.option_notify": "告知击杀者击杀失败的原因",
+ "uts.antistartkill.option_endmode": "保护也将在此之后结束",
+ "uts.antistartkill.option_endseconds": "保护时间上限",
+ "uts.antistartkill.option_endfixes": "保护结束前需修复的破坏次数",
  "uts.antistartkill.kill_blocked": "出生点保护：你和目标都离开过出生区域之前无法击杀。",
  "uts.antistartkill.sidekick_blocked": "出生点保护：你和目标都离开过出生区域之前无法招募跟班。"
 }

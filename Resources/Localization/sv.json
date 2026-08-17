@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Högsta antal Impostors",
  "uts.impcount.refill_option": "Sidekick fyller bara i en saknad Impostor",
  "uts.impcount.sidekick_chance_option": "Chans att Jackal kan skapa en Sidekick",
+ "uts.truemodifierchances.enabled": "Verkliga modifierarchanser",
  "uts.mapping.option_name": "Kartping under möte (klicka på kartan)",
  "uts.maplang.label": "Språk: {0}",
  "uts.modsync.title": "Mod-synk",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Ta bort",
  "uts.antistartkill.option_name": "Anti startkill (spawnzonen är en säker zon)",
  "uts.antistartkill.option_notify": "Berätta för mördaren varför dödandet misslyckades",
+ "uts.antistartkill.option_endmode": "Skyddet upphör också efter",
+ "uts.antistartkill.option_endseconds": "Skyddets tidsgräns",
+ "uts.antistartkill.option_endfixes": "Reparerade sabotage tills skyddet upphör",
  "uts.antistartkill.kill_blocked": "Spawnskydd: inga kills förrän du och ditt mål har lämnat startområdet en gång.",
  "uts.antistartkill.sidekick_blocked": "Spawnskydd: ingen sidekick förrän du och ditt mål har lämnat startområdet en gång."
 }

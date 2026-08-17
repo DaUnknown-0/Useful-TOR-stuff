@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Maximální počet Impostorů",
  "uts.impcount.refill_option": "Sidekick pouze doplní chybějícího Impostora",
  "uts.impcount.sidekick_chance_option": "Šance, že Jackal může vytvořit Sidekicka",
+ "uts.truemodifierchances.enabled": "Skutečné šance modifikátorů",
  "uts.mapping.option_name": "Ping na mapě během schůze (klikni na mapu)",
  "uts.maplang.label": "Jazyk: {0}",
  "uts.modsync.title": "Synchronizace módů",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Zrušit",
  "uts.antistartkill.option_name": "Anti start kill (zóna spawnu je bezpečná)",
  "uts.antistartkill.option_notify": "Sdělit vrahovi, proč zabití selhalo",
+ "uts.antistartkill.option_endmode": "Ochrana končí také po",
+ "uts.antistartkill.option_endseconds": "Časový limit ochrany",
+ "uts.antistartkill.option_endfixes": "Opravené sabotáže do konce ochrany",
  "uts.antistartkill.kill_blocked": "Ochrana spawnu: žádná zabití, dokud ty i tvůj cíl jednou neopustíte startovní zónu.",
  "uts.antistartkill.sidekick_blocked": "Ochrana spawnu: žádný sidekick, dokud ty i tvůj cíl jednou neopustíte startovní zónu."
 }

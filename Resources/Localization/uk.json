@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Максимум Зрадників",
  "uts.impcount.refill_option": "Sidekick лише заповнює відсутнього Зрадника",
  "uts.impcount.sidekick_chance_option": "Шанс, що Jackal може створити Sidekick",
+ "uts.truemodifierchances.enabled": "Справжні шанси модифікаторів",
  "uts.mapping.option_name": "Мітка на мапі під час зборів (клік по мапі)",
  "uts.maplang.label": "Мова: {0}",
  "uts.modsync.title": "Синхронізація модів",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Зняти",
  "uts.antistartkill.option_name": "Анти-кіл на старті (зона спавну безпечна)",
  "uts.antistartkill.option_notify": "Повідомляти вбивці, чому вбивство не вдалося",
+ "uts.antistartkill.option_endmode": "Захист також закінчується через",
+ "uts.antistartkill.option_endseconds": "Обмеження часу захисту",
+ "uts.antistartkill.option_endfixes": "Виправлених саботажів до кінця захисту",
  "uts.antistartkill.kill_blocked": "Захист спавну: вбивства неможливі, поки ви і ваша ціль хоча б раз не покинете стартову зону.",
  "uts.antistartkill.sidekick_blocked": "Захист спавну: не можна завербувати помічника, поки ви і ваша ціль хоча б раз не покинете стартову зону."
 }

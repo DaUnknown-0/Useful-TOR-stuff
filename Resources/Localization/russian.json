@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Максимум Impostor",
  "uts.impcount.refill_option": "Sidekick только восполняет недостающего Impostor",
  "uts.impcount.sidekick_chance_option": "Шанс, что Jackal может создать Sidekick",
+ "uts.truemodifierchances.enabled": "Настоящие шансы модификаторов",
  "uts.mapping.option_name": "Метка на карте во время собрания (клик по карте)",
  "uts.maplang.label": "Язык: {0}",
  "uts.modsync.title": "Синхронизация модов",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Снять",
  "uts.antistartkill.option_name": "Анти-килл на старте (зона спавна безопасна)",
  "uts.antistartkill.option_notify": "Сообщать убийце, почему убийство не удалось",
+ "uts.antistartkill.option_endmode": "Защита также заканчивается через",
+ "uts.antistartkill.option_endseconds": "Ограничение времени защиты",
+ "uts.antistartkill.option_endfixes": "Исправленных саботажей до конца защиты",
  "uts.antistartkill.kill_blocked": "Защита спавна: убийства невозможны, пока вы и ваша цель хотя бы раз не покинете стартовую зону.",
  "uts.antistartkill.sidekick_blocked": "Защита спавна: нельзя завербовать помощника, пока вы и ваша цель хотя бы раз не покинете стартовую зону."
 }

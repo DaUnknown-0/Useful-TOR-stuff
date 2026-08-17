@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "최대 임포스터 수",
  "uts.impcount.refill_option": "Sidekick는 부족한 임포스터만 채울 수 있음",
  "uts.impcount.sidekick_chance_option": "Jackal가 Sidekick을 생성할 수 있는 확률",
+ "uts.truemodifierchances.enabled": "실제 모디파이어 확률",
  "uts.mapping.option_name": "회의 중 지도 핑 (지도 클릭)",
  "uts.maplang.label": "Language: {0}",
  "uts.modsync.title": "모드 동기화",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "해제",
  "uts.antistartkill.option_name": "스타트 킬 방지 (스폰 구역은 안전지대)",
  "uts.antistartkill.option_notify": "킬이 실패한 이유를 킬러에게 알림",
+ "uts.antistartkill.option_endmode": "보호 종료 조건 추가",
+ "uts.antistartkill.option_endseconds": "보호 제한 시간",
+ "uts.antistartkill.option_endfixes": "보호 종료까지 수리한 사보타지 수",
  "uts.antistartkill.kill_blocked": "스폰 보호: 나와 대상이 시작 구역을 한 번 벗어나기 전에는 킬할 수 없습니다.",
  "uts.antistartkill.sidekick_blocked": "스폰 보호: 나와 대상이 시작 구역을 한 번 벗어나기 전에는 사이드킥을 만들 수 없습니다."
 }

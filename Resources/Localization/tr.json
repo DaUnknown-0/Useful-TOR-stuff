@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Maksimum İmpostor",
  "uts.impcount.refill_option": "Sidekick Sadece Eksik Bir İmpostoru Doldurur",
  "uts.impcount.sidekick_chance_option": "Jackal'ın Sidekick Oluşturabilme Şansı",
+ "uts.truemodifierchances.enabled": "Gerçek Modifiye Şansları",
  "uts.mapping.option_name": "Toplantıda Harita İşareti (Haritaya Tıkla)",
  "uts.maplang.label": "Dil: {0}",
  "uts.modsync.title": "Mod Eşitleme",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Kaldır",
  "uts.antistartkill.option_name": "Başlangıç killini engelle (spawn güvenli bölgedir)",
  "uts.antistartkill.option_notify": "Katile killin neden başarısız olduğunu söyle",
+ "uts.antistartkill.option_endmode": "Koruma şunun ardından da sona erer",
+ "uts.antistartkill.option_endseconds": "Koruma süre sınırı",
+ "uts.antistartkill.option_endfixes": "Koruma bitene kadar onarılan sabotajlar",
  "uts.antistartkill.kill_blocked": "Spawn koruması: sen ve hedefin başlangıç bölgesinden bir kez ayrılana kadar kill yapılamaz.",
  "uts.antistartkill.sidekick_blocked": "Spawn koruması: sen ve hedefin başlangıç bölgesinden bir kez ayrılana kadar sidekick alınamaz."
 }

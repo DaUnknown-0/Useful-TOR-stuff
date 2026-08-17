@@ -606,7 +606,7 @@
  "tor.chat.medium.color_darker": "níos dorcha",
  "tor.chat.medium.time_since_death": "Má chomhairigh mé i gceart, fuair mé bás {0} soicind sula thosaigh an chéad chruinniú eile.",
  "tor.chat.medium.killer_role": "Dealraíonn sé gurb é an {0} mo mharfóir.",
- "tor.chat.medium.additional_info_suffix": "\nNuair a d'fhiafraigh tú, bhí {0} fós beo",
+ "tor.chat.medium.additional_info_suffix": "\nNuair a d'fhiafraigh tú, bhí {0} {1} fós beo",
  "tor.chat.medium.info_killer_singular": "marfóir",
  "tor.chat.medium.info_killer_plural": "marfóirí",
  "tor.chat.medium.info_vents_singular": "imreoir atá in ann vents a úsáid",
@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Uasmhéid Impostors",
  "uts.impcount.refill_option": "Ní líonann an Sidekick ach Impostor atá in easnamh",
  "uts.impcount.sidekick_chance_option": "An Seans gur Féidir le Jackal Sidekick a Chruthú",
+ "uts.truemodifierchances.enabled": "Fíorsheansanna Modhnóra",
  "uts.mapping.option_name": "Pingeáil Léarscáile sa Chruinniú (Cliceáil ar an Léarscáil)",
  "uts.maplang.label": "Teanga: {0}",
  "uts.modsync.title": "Sioncrónú mod",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Bain",
  "uts.antistartkill.option_name": "Frith-mharú tosaigh (is crios sábháilte an spawn)",
  "uts.antistartkill.option_notify": "Inis don mharfóir cén fáth ar theip ar an marú",
+ "uts.antistartkill.option_endmode": "Críochnaíonn an chosaint freisin tar éis",
+ "uts.antistartkill.option_endseconds": "Teorainn ama na cosanta",
+ "uts.antistartkill.option_endfixes": "Sabaitéiseanna deisithe go dtí deireadh na cosanta",
  "uts.antistartkill.kill_blocked": "Cosaint spawn: ní féidir marú go dtí go bhfágann tú féin agus do sprioc an limistéar tosaigh uair amháin.",
  "uts.antistartkill.sidekick_blocked": "Cosaint spawn: ní féidir sidekick a dhéanamh go dtí go bhfágann tú féin agus do sprioc an limistéar tosaigh uair amháin."
 }

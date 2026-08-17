@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Huijareiden enimmäismäärä",
  "uts.impcount.refill_option": "Sidekick täyttää vain puuttuvan huijarin",
  "uts.impcount.sidekick_chance_option": "Todennäköisyys, että Jackal voi luoda Sidekickin",
+ "uts.truemodifierchances.enabled": "Todelliset modifioijien todennäköisyydet",
  "uts.mapping.option_name": "Karttamerkki kokouksessa (klikkaa karttaa)",
  "uts.maplang.label": "Kieli: {0}",
  "uts.modsync.title": "Modien synkronointi",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Poista",
  "uts.antistartkill.option_name": "Aloitustappojen esto (spawn on turva-alue)",
  "uts.antistartkill.option_notify": "Kerro tappajalle, miksi tappo epäonnistui",
+ "uts.antistartkill.option_endmode": "Suojaus päättyy myös tämän jälkeen",
+ "uts.antistartkill.option_endseconds": "Suojauksen aikaraja",
+ "uts.antistartkill.option_endfixes": "Korjatut sabotaasit suojauksen loppuun asti",
  "uts.antistartkill.kill_blocked": "Spawn-suoja: ei tappoja ennen kuin sinä ja kohteesi olette poistuneet aloitusalueelta kerran.",
  "uts.antistartkill.sidekick_blocked": "Spawn-suoja: ei sidekickiä ennen kuin sinä ja kohteesi olette poistuneet aloitusalueelta kerran."
 }

@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Maksymalna liczba Impostorów",
  "uts.impcount.refill_option": "Sidekick tylko uzupełnia brakującego Impostora",
  "uts.impcount.sidekick_chance_option": "Szansa, że Jackal może stworzyć Sidekicka",
+ "uts.truemodifierchances.enabled": "Prawdziwe szanse modyfikatorów",
  "uts.mapping.option_name": "Ping na mapie podczas zebrania (kliknij mapę)",
  "uts.maplang.label": "Język: {0}",
  "uts.modsync.title": "Synchronizacja modów",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Usuń",
  "uts.antistartkill.option_name": "Anty start kill (strefa startowa jest bezpieczna)",
  "uts.antistartkill.option_notify": "Powiedz zabójcy, dlaczego zabójstwo się nie udało",
+ "uts.antistartkill.option_endmode": "Ochrona kończy się także po",
+ "uts.antistartkill.option_endseconds": "Limit czasu ochrony",
+ "uts.antistartkill.option_endfixes": "Naprawione sabotaże do końca ochrony",
  "uts.antistartkill.kill_blocked": "Ochrona spawnu: brak zabójstw, dopóki ty i twój cel nie opuścicie raz strefy startowej.",
  "uts.antistartkill.sidekick_blocked": "Ochrona spawnu: brak sidekicka, dopóki ty i twój cel nie opuścicie raz strefy startowej."
 }

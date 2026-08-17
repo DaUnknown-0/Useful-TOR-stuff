@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Impostor Maksimum",
  "uts.impcount.refill_option": "Sidekick Hanya Mengisi Impostor yang Hilang",
  "uts.impcount.sidekick_chance_option": "Peluang Jackal Bisa Membuat Sidekick",
+ "uts.truemodifierchances.enabled": "Peluang Modifier Sebenarnya",
  "uts.mapping.option_name": "Ping Peta Saat Rapat (Klik Peta)",
  "uts.maplang.label": "Bahasa: {0}",
  "uts.modsync.title": "Sinkronisasi Mod",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Hapus",
  "uts.antistartkill.option_name": "Anti kill awal (area spawn adalah zona aman)",
  "uts.antistartkill.option_notify": "Beri tahu pembunuh mengapa kill gagal",
+ "uts.antistartkill.option_endmode": "Perlindungan juga berakhir setelah",
+ "uts.antistartkill.option_endseconds": "Batas waktu perlindungan",
+ "uts.antistartkill.option_endfixes": "Sabotase yang diperbaiki hingga perlindungan berakhir",
  "uts.antistartkill.kill_blocked": "Perlindungan spawn: tidak ada kill sampai kamu dan targetmu sudah meninggalkan area awal satu kali.",
  "uts.antistartkill.sidekick_blocked": "Perlindungan spawn: tidak ada sidekick sampai kamu dan targetmu sudah meninggalkan area awal satu kali."
 }

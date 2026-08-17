@@ -689,7 +689,13 @@ namespace UsefulTORStuff {
                 // any of them is missing the draft simply keeps TOR's single-Jester behaviour and
                 // says so once in the log, while the normal (non-draft) assignment stays fully
                 // functional.
-                var draft = typeof(CustomOption).Assembly.GetType("TheOtherRoles.RoleDraft");
+                // AUDIT-2026-08-16: the type name was "TheOtherRoles.RoleDraft", but RoleDraft lives
+                // in TheOtherRoles.Modules (Modules/RoleDraft.cs:14). GetType returned null, every
+                // handle below stayed null, and draft support silently switched itself off - so
+                // "Jester Quantity" was capped at one in draft mode while the option still advertised
+                // up to three. Exactly the silent-no-op that the degrade-gracefully design makes
+                // invisible; the self-test's reflection-handle check is what surfaced it.
+                var draft = typeof(CustomOption).Assembly.GetType("TheOtherRoles.Modules.RoleDraft");
                 draftIsRunningField = draft?.GetField("isRunning",
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
                 draftAlreadyPickedField = draft?.GetField("alreadyPicked",

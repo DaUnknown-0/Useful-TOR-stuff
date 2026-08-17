@@ -1023,6 +1023,7 @@
  "uts.impcount.max_option": "Maximum Impostorok",
  "uts.impcount.refill_option": "A Sidekick csak egy hiányzó Impostort tölt be",
  "uts.impcount.sidekick_chance_option": "Az esély, hogy a Jackal létrehozhat egy Sidekicket",
+ "uts.truemodifierchances.enabled": "Valódi módosító esélyek",
  "uts.mapping.option_name": "Térkép-jelölés gyűlés alatt (kattints a térképre)",
  "uts.maplang.label": "Nyelv: {0}",
  "uts.modsync.title": "Mod-szinkron",
@@ -1069,6 +1070,9 @@
  "uts.newcomershield.btn_unprotect": "Levétel",
  "uts.antistartkill.option_name": "Kezdőgyilkolás tiltása (a spawn biztonságos zóna)",
  "uts.antistartkill.option_notify": "A gyilkos megtudja, miért hiúsult meg a gyilkosság",
+ "uts.antistartkill.option_endmode": "A védelem ezután is véget ér",
+ "uts.antistartkill.option_endseconds": "A védelem időkorlátja",
+ "uts.antistartkill.option_endfixes": "Javított szabotázsok a védelem végéig",
  "uts.antistartkill.kill_blocked": "Spawnvédelem: nincs gyilkolás, amíg te és a célpontod egyszer el nem hagytátok a kezdőterületet.",
  "uts.antistartkill.sidekick_blocked": "Spawnvédelem: nincs sidekick, amíg te és a célpontod egyszer el nem hagytátok a kezdőterületet."
 }
