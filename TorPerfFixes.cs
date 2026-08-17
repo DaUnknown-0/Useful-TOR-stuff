@@ -260,6 +260,13 @@ namespace UsefulTORStuff {
 
             public static bool Prefix() {
                 try {
+                    // AUDIT-2026-08-17 (A11): outside online games TOR's own Setup returns before
+                    // activating the ProceedButton, so GetComponentInChildren finds no TextMeshPro,
+                    // Text stays null and TOR's Postfix throws `Text.text` on EVERY meeting Update
+                    // in Freeplay/local games. Mirror Setup's own gate and skip the Postfix there.
+                    if (AmongUsClient.Instance != null && AmongUsClient.Instance.NetworkMode != NetworkModes.OnlineGame)
+                        return false;
+
                     var host = GameData.Instance?.GetHost();
                     if (host == null) return true; // TOR's own null-check path, nothing to throttle
 
