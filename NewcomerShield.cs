@@ -571,6 +571,10 @@ namespace UsefulTORStuff {
         private static void SetTargetPrefix(ref List<PlayerControl> untargetablePlayers) {
             try {
                 if (shielded.Count == 0) return;
+                // A peaceful ability is asking (Medic, Shifter, Morphling, Tracker, Deputy, Eraser,
+                // Arsonist, Pursuer, Silencer): the shield stops kills, not the rest of the game.
+                // See ShieldPeaceGate.cs for how the caller is identified.
+                if (ShieldPeaceGate.Peaceful) return;
                 var list = untargetablePlayers != null
                     ? new List<PlayerControl>(untargetablePlayers) : new List<PlayerControl>();
                 foreach (byte id in shielded) {

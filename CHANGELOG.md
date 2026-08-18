@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### The kill shields stop attacks, not the rest of the game (new, `ShieldPeaceGate.cs`)
+Both of our kill shields (newcomer, spawn zone) drop protected players from TOR's shared targeting
+helper so no role's bespoke kill path can reach them. That helper is shared with every *peaceful*
+ability too, so the Medic could not shield a protected player, the Shifter could not shift, and the
+Tracker, Deputy, Eraser, Arsonist, Morphling and Pursuer were equally locked out.
+- The peaceful callers now **announce themselves**: a prefix raises a depth counter and a finalizer
+  lowers it again (a finalizer survives an exception in the original, so the window cannot stick).
+  Both shields skip their gate while it is open.
+- Marked is the peaceful side, never the kill side: an unknown or future role stays protected by
+  default, and a TOR rename restores the old behaviour instead of opening a hole. Unresolvable method
+  names are logged once at load, and that single ability stays gated.
+- Attacks are untouched: impostor kill button, Sheriff, Vampire, Jackal, Sidekick, Warlock, Witch,
+  Ninja and Thief targeting all stay blocked, as does planting the Maniac's bomb.
+- Sibling mods reach the same two facts through an AppDomain contract instead of an assembly
+  reference: `UTS.Shield.SetPeaceful` (`Action<bool>`) and `UTS.Shield.IsKillProtected`
+  (`Func<byte,bool>`). Unknown's Collection uses both.
+
 ### Crash guards for TOR (new, `TorNullGuards.cs` items 7–12)
 All six share one root cause: TOR calls `Helpers.playerById(...)` and dereferences the result without
 a null check, so any player leaving between the send and the processing of an RPC takes the handler

@@ -48,10 +48,11 @@
  *     killer's client; the gold shield, which carries this gate, blocked fine). Two-sided, per
  *     the design owner's call: while the LOCAL player has not left the spawn area, nobody is
  *     targetable for him at all; and a player who has not left is untargetable for everyone.
- *     ACCEPTED COST: benign start-zone targeting (the Medic shielding somebody in the Dropship,
- *     a Shifter shifting at spawn) is blocked too, until the participants have left once -
- *     protection usually lasts seconds. The Thief's suicide wart disappears with this gate (no
- *     target, no attack).
+ *     Since 2026-08-18 this gate only closes for ATTACKS: peaceful abilities (the Medic shielding
+ *     somebody in the Dropship, a Shifter shifting at spawn, Morphling, Tracker, Deputy, Eraser,
+ *     Arsonist, Pursuer, the UC Silencer) announce themselves through ShieldPeaceGate and pass
+ *     through untouched - the cost this gate used to charge is paid off there. The Thief's suicide
+ *     wart still disappears with the gate (no target, no attack).
  *
  * ALL of these run on the KILLER's client (only vanilla CheckMurder is host-side) - a lobby
  * member on a build without this feature is not slowed down by ANY of it. The lobby mod board
@@ -593,6 +594,10 @@ namespace UsefulTORStuff {
             public static void Prefix(ref List<PlayerControl> untargetablePlayers) {
                 try {
                     if (protectedIds.Count == 0) return;
+                    // A peaceful ability is asking: the safe zone stops kills, not the Medic shielding
+                    // somebody in the Dropship. This is the "ACCEPTED COST" in the header above being
+                    // paid off - see ShieldPeaceGate.cs.
+                    if (ShieldPeaceGate.Peaceful) return;
                     var local = PlayerControl.LocalPlayer;
                     if (local == null) return;
                     var list = untargetablePlayers != null

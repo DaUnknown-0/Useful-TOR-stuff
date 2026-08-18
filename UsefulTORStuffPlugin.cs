@@ -341,6 +341,13 @@ public class UsefulTORStuffPlugin : BasePlugin
         // attribute-based and picked up by PatchAll below.
         AntiStartKill.CreateOptions();
 
+        // Both kill shields above gate TOR's targeting helper, which knows nothing about WHY a player
+        // is being targeted. This frees the peaceful abilities (Medic, Shifter, Morphling, Tracker,
+        // Deputy, Eraser, Arsonist, Pursuer) from both gates by marking their targeting methods, and
+        // publishes the AppDomain contract the sibling mods use for the same purpose.
+        ShieldPeaceGate.TryPatch(harmony);
+        ShieldPeaceGate.RegisterContract();
+
         // Trapper log crash: a trap holding the id of a player who has left freezes the meeting for
         // the Trapper and for every ghost (TOR's StartMeeting prefix dereferences a null player).
         // TryPatch only resolves the reflection handles; both patches are attribute-based.
