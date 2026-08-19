@@ -25,6 +25,20 @@ leaves English. The text is now rebuilt from the option list instead of being pa
   exception falls back to TOR's own text. Five switches in the `SettingsOverlay` config section turn
   the layout, the mod tags, the shades, the value column and the 0% handling on or off.
 
+### Players who leave mid-round keep their line in the end screen (new, `EndScreenLeavers.cs`)
+TOR builds the end-of-game role summary by walking `PlayerControl.AllPlayerControls`, and a player
+who disconnects is gone from that list — so the one person who crashed, the one everybody asks about
+afterwards, left no name, no role and no task count behind.
+- Name, role string, task progress and alive state are now written down every two seconds while the
+  round runs, because at game end there is nothing left to look up: the PlayerControl is destroyed
+  and TOR's role statics are cleared.
+- A postfix on TOR's own `OnGameEndPatch.Postfix` appends the missing players to its list before the
+  end screen reads it, marked `(left)` and greyed out like a dead player. Kill counts come from
+  `GameHistory.deadPlayers`, which survives the disconnect, so they are not guessed.
+- If TOR ever renames the internals this hangs off, it logs once and does nothing — the summary is
+  then exactly what TOR would have shown on its own. The snapshot is cleared on lobby join and on
+  the round reset, so no name can leak into the next round.
+
 ### The newcomer shield no longer blocks the Sidekick recruitment
 Being recruited is not being killed, but the shield's targeting gate made no distinction: a shielded
 newcomer could not be picked as a Sidekick either, because TOR sets the Jackal's kill target and his
