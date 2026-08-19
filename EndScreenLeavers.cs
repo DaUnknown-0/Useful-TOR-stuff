@@ -20,9 +20,16 @@
  *
  * WHAT IS RECORDED
  * Name, the fully formatted role string (TOR's own GetRolesString, so modifiers and colours match
- * the rest of the summary exactly), task progress and whether they were already dead. Kill counts
- * are NOT snapshotted: GameHistory.deadPlayers survives the disconnect, so they are counted at the
- * end from the same source TOR uses.
+ * the rest of the summary), task progress, whether they were already dead, and the kill count -
+ * everything, because everything this needs is gone by the time the summary is built (see the note
+ * on the kill count below).
+ *
+ * TWO LIMITS WORTH KNOWING
+ *   - Somebody who leaves DURING the intro is not covered: the snapshot is cleared when the intro
+ *     ends, and by then they are already out of AllPlayerControls.
+ *   - Modifiers TOR hides from the living (Bait, Bloody, Vip) are not in a mid-round reading, so a
+ *     leaver's line can lack them. Recreating that at game end is impossible - the PlayerControl it
+ *     would have to be read from no longer exists.
  *
  * HOW THE LINE GETS BACK IN
  * A postfix on TOR's own OnGameEndPatch.Postfix - so it runs after the list is built and long
@@ -59,6 +66,7 @@ namespace UsefulTORStuff {
             public int TasksCompleted;
             public int TasksTotal;
             public bool WasDead;
+            public int? Kills;
         }
 
         private static readonly Dictionary<byte, Snapshot> snapshots = new Dictionary<byte, Snapshot>();
@@ -90,19 +98,28 @@ namespace UsefulTORStuff {
                     var (completed, total) = TasksHandler.taskInfo(player.Data);
                     snapshots[player.PlayerId] = new Snapshot {
                         Name = player.Data.PlayerName,
-                        RoleNames = RoleInfo.GetRolesString(player, true, true, false),
+                        // suppressGhostInfo: true, unlike TOR's own call at game end. TOR reads the
+                        // string once the game is over, where the live decorations a ghost sees
+                        // ("(cursed)", "(bounty)", the cause of death) are no longer added. Reading
+                        // it mid-round with them enabled would bake whatever was true in that second
+                        // into the summary permanently.
+                        RoleNames = RoleInfo.GetRolesString(player, true, true, true),
                         TasksCompleted = completed,
                         TasksTotal = total,
                         WasDead = player.Data.IsDead,
+                        Kills = CountKills(player.PlayerId),
                     };
                 } catch { /* one unreadable player must not cost the others their snapshot */ }
             }
         }
 
         // ---- putting the missing lines back -------------------------------------------------------
-        // Patching TOR's own postfix (public static, so this needs no reflection) guarantees the
-        // ordering: its list is complete when we add to it.
-        [HarmonyPatch(typeof(OnGameEndPatch), nameof(OnGameEndPatch.Postfix))]
+        // Priority.Last: HarmonyX runs postfixes from highest priority down, so this one runs after
+        // TOR's (which has no priority and therefore sits at Normal). Its list is complete by then.
+        // The hook is the game's OnGameEnd rather than TOR's own postfix method, so a rename inside
+        // TOR cannot silently detach it.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
+        [HarmonyPriority(Priority.Last)]
         private static class AppendLeaversPatch {
             public static void Postfix() {
                 try { AppendMissing(); } catch (Exception e) {
@@ -134,10 +151,14 @@ namespace UsefulTORStuff {
         }
 
         private static void AppendMissing() {
-            if (snapshots.Count == 0 || !Resolve()) return;
-
+            // Logged unconditionally and with numbers: the first version of this file returned here
+            // in silence when the snapshot was empty, which made a wiped snapshot look exactly like
+            // a feature that was never installed.
+            if (!Resolve()) return;
             var list = playerRolesField.GetValue(null) as IList;
-            if (list == null) return;
+            UsefulTORStuffPlugin.Logger?.LogInfo(
+                $"[EndScreenLeavers] game end: {snapshots.Count} snapshot(s), {(list?.Count ?? -1)} player(s) in TOR's summary.");
+            if (snapshots.Count == 0 || list == null) return;
 
             // TOR's entry carries only the display name, so that is what "already in the list" is
             // decided on. Two players cannot share a name in a lobby, and the summary itself would
@@ -162,7 +183,7 @@ namespace UsefulTORStuff {
                 Set(entry, "TasksCompleted", snap.TasksCompleted);
                 Set(entry, "TasksTotal", snap.TasksTotal);
                 Set(entry, "IsGuesser", false);
-                Set(entry, "Kills", CountKills(pair.Key));
+                Set(entry, "Kills", snap.Kills);
                 Set(entry, "IsAlive", false);                // greys the line out, like a dead player
                 list.Add(entry);
                 added++;
@@ -177,10 +198,17 @@ namespace UsefulTORStuff {
             try { roleInfoEntryType.GetProperty(property)?.SetValue(entry, value); } catch { }
         }
 
-        // Same source TOR counts from (GameHistory.deadPlayers), which outlives the disconnect. null
-        // means "do not print a kill count", exactly as in TOR's own entry. GameHistory itself is
-        // internal to TOR, so the list is reached by reflection; DeadPlayer is public, so the entries
-        // need no further indirection.
+        // Counted DURING the round, into the snapshot - not at game end, which is where the first
+        // version put it and where it could only ever return null. Two independent reasons, both
+        // caused by TOR calling resetVariables() at the end of its own OnGameEnd postfix
+        // (EndGamePatch.cs:233), i.e. before this file's append runs:
+        //   - resetVariables -> clearGameHistory replaces GameHistory.deadPlayers with a fresh empty
+        //     list (RPC.cs:191, GameHistory.cs:42), so there is nothing left to count;
+        //   - DeadPlayer.killerIfExisting is a PlayerControl, and a leaver's PlayerControl has been
+        //     destroyed by then, which Unity's null operator reports as null - so precisely the
+        //     kills this feature wants would be filtered out even from an intact list.
+        // GameHistory itself is internal to TOR, so the list is reached by reflection; DeadPlayer is
+        // public, so its entries need no further indirection.
         private static bool deadPlayersResolved;
         private static FieldInfo deadPlayersField;
 
@@ -212,8 +240,13 @@ namespace UsefulTORStuff {
             nextSnapshot = float.NegativeInfinity;
         }
 
-        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
-        private static class RoundResetPatch {
+        // NOT RPCProcedure.resetVariables, which is the obvious choice and the one that broke this
+        // feature on its first outing: TOR calls resetVariables at the END of its own OnGameEnd
+        // postfix (EndGamePatch.cs:233), so clearing there wiped the snapshot a moment before the
+        // end screen wanted it. The round START is the correct moment, and the intro ending is the
+        // last point at which every player is guaranteed to be present.
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        private static class RoundStartResetPatch {
             public static void Postfix() => Clear();
         }
 
