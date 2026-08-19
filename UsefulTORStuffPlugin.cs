@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.1.5";
+    public const string PluginVersion = "1.4.2.6";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -355,6 +355,14 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Close the bracket opened above: every option this mod owns is now known to UTSGate.
         UTSGate.EndOptionCapture();
+
+        // Settings overlay (F1) and the lobby settings list: roles and modifiers in their own
+        // colour, values in a column, 0% roles collapsed. SnapshotColors must run BEFORE the
+        // localization below - the translated option names carry no <color> markup, so this is the
+        // last moment TOR's own role colours can still be read off them.
+        SettingsOverlayView.Bind(Config);
+        SettingsOverlayView.SnapshotColors();
+        SettingsOverlayView.TryPatch(harmony);
 
         // Localization engine: loads the string tables and mutates TOR's role/option strings
         // in place (LocalizationTOR). Must run AFTER every CreateOptions above so first-pass

@@ -420,6 +420,19 @@ namespace UsefulTORStuff {
 
                 var text = __instance.GameStartText;
 
+                // While the F1 settings overlay is up it owns the screen, and our lobby messages
+                // (mod check, gate and Snitch warnings) sit right on top of its first column. Clear
+                // what we drew and stop drawing until it closes. The per-marker guard is dropped with
+                // it, so every message is drawn again on the next frame after the overlay goes away
+                // - without that reset the guard would consider them "already shown" forever.
+                if (SettingsOverlayView.OverlayOpen()) {
+                    if (text != null && lastRenderedByMarker.Count > 0) {
+                        text.text = "";
+                        lastRenderedByMarker.Clear();
+                    }
+                    return;
+                }
+
                 // During the countdown TOR shows its own centred "Starting in X" on this shared
                 // element. Our lobby messages move the pivot to top-left, and TOR resets position/
                 // scale each frame but never the pivot — leaving it would displace the countdown.

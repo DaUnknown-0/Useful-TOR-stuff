@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### The settings list reads like a settings list (new, `SettingsOverlayView.cs`)
+The F1 overlay and the lobby settings text printed almost everything in white: TOR hard-codes
+sub-options to `Color.white`, and it colours a role only by baking a `<color>` tag into the option
+name — which sibling mods never did, and which our own localization strips the moment a player
+leaves English. The text is now rebuilt from the option list instead of being patched as a string.
+- **Every role and modifier in its own colour**, including the roles from Unknown's Collection and
+  ChanceMod. Sub-options take a dimmed mix of their role's colour, so a block reads as one unit.
+- **Colours survive translation.** They are snapshotted by option ID at load, before the language
+  layer rewrites the names, and sibling mods publish theirs through the AppDomain contract
+  `UTS.OptionColors` (`"id:1400" -> "FF1919"`), so nothing depends on a display string.
+- **Values sit in their own column**: numbers neutral, `On` green, `Off` and `0%` dimmed. Off is
+  deliberately not red — that is the impostor colour.
+- **Shorter pages**: the redundant role-name prefix is dropped from sub-options ("Tesla Charge
+  Countdown" becomes "Charge Countdown"), blocks are sorted by spawn chance, and roles at 0% collapse
+  into one dimmed `Off: ...` line.
+- **Roles carry their mod's tag** (`[UC]`, `[FF]`, `[Chance]`), read off the option-ID ranges the
+  mods already reserve.
+- Impostor roles all share `Palette.ImpostorRed` in code, so they get alternating shades of red for
+  display only — `Role.color` itself is never touched.
+- Page 1 (vanilla settings), Hide N Seek and Prop Hunt are left exactly as TOR built them, and any
+  exception falls back to TOR's own text. Five switches in the `SettingsOverlay` config section turn
+  the layout, the mod tags, the shades, the value column and the 0% handling on or off.
+
 ### The kill shields stop attacks, not the rest of the game (new, `ShieldPeaceGate.cs`)
 Both of our kill shields (newcomer, spawn zone) drop protected players from TOR's shared targeting
 helper so no role's bespoke kill path can reach them. That helper is shared with every *peaceful*

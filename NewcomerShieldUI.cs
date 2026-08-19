@@ -67,6 +67,14 @@ namespace UsefulTORStuff {
             // this component's own poll throttle; Tick throttles itself.
             NewcomerShield.Tick();
 
+            // The F1 settings overlay covers the whole screen and this button sits on top of its
+            // text. Checked before the poll throttle below so it steps aside in the same frame F1 is
+            // pressed instead of lingering for up to half a second.
+            if (lobbyButton != null && lobbyButton.activeSelf && SettingsOverlayView.OverlayOpen()) {
+                lobbyButton.SetActive(false);
+                return;
+            }
+
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
 
@@ -76,7 +84,7 @@ namespace UsefulTORStuff {
             // phantom that degraded every session since.
             if (panelRoot != null && !LobbyScreen.Exists) Close();
 
-            bool show = ShouldShow();
+            bool show = ShouldShow() && !SettingsOverlayView.OverlayOpen();
             if (show && lobbyButton == null) BuildLobbyButton();
             if (lobbyButton == null) return;
             if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);

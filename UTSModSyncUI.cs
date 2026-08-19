@@ -88,6 +88,14 @@ namespace UsefulTORStuff {
         // public, like every other Unity message in this plugin (LobbyPasswordGate): the Il2Cpp
         // class injector registers these by reflection and public is the shape that is known to work.
         public void Update() {
+            // The F1 settings overlay covers the whole screen and this button sits on top of its
+            // text. Checked before the poll throttle below so it steps aside in the same frame F1 is
+            // pressed instead of lingering for up to half a second.
+            if (lobbyButton != null && lobbyButton.activeSelf && SettingsOverlayView.OverlayOpen()) {
+                lobbyButton.SetActive(false);
+                return;
+            }
+
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
 
@@ -110,6 +118,7 @@ namespace UsefulTORStuff {
             try {
                 if (UsefulTORStuffPlugin.ModSyncEnabled != null && !UsefulTORStuffPlugin.ModSyncEnabled.Value)
                     return false;
+                if (SettingsOverlayView.OverlayOpen()) return false;       // F1 overlay owns the screen
                 if (!LobbyScreen.Exists) return false;                    // lobby screen only
                 if (AmongUsClient.Instance == null) return false;
                 if (AmongUsClient.Instance.AmHost) return false;          // the host syncs nothing
