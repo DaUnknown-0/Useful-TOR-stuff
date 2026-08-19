@@ -27,11 +27,13 @@
  *   - The redundant role-name prefix is stripped from children ("Tesla Charge Countdown (sec)"
  *     becomes "Charge Countdown (sec)").
  *   - Blocks are sorted by spawn chance, and roles at 0% collapse into one "Off: ..." line.
- *   - Roles from a sibling mod carry a short tag ([UC], [FF], [Chance]) derived from the option-ID
- *     ranges the mods already reserve (ChanceMod 11xx, UsefulTORStuff 12xx-13xx, UC 14xx+).
- *   - Impostor roles that all share Palette.ImpostorRed get alternating shades from a red family,
- *     for DISPLAY only. Role.color itself is never touched, and any role with its own colour keeps
- *     it. The shade follows display order, so it marks "next block", not identity.
+ *   - Roles from a sibling mod carry a short tag ([UC], [FF], [Chance], [NF]). The owner is read
+ *     from the assembly that holds the option in a static field, NOT from the option-ID ranges the
+ *     mods reserve: TOR itself creates ids inside those ranges (1100-1102 Shifter/Armored, 2001-2013
+ *     for the guesser gamemode), and a range check labelled TOR's own settings as somebody else's.
+ *   - Impostor roles that all share Palette.ImpostorRed alternate between two red tones for DISPLAY
+ *     only. Role.color itself is never touched, and any role with its own colour keeps it. The tone
+ *     follows display order, so it marks "next block", not identity.
  *
  * WHERE THE COLOURS COME FROM
  *   1. A snapshot of the <color> tags TOR bakes into its own option names, taken by option ID at
@@ -62,6 +64,11 @@
  *     lines than TOR's own, so it can only move away from that method's 4-column limit, never into it.
  *   - No option is gated through UTSGate: this changes nothing but the local text on the local
  *     screen, exactly like TorPerfFixes, so there is nothing a host could have to agree to.
+ *   - Nothing here reads a Unity object from a per-frame path. "Is the overlay open" is answered by
+ *     a timestamp this file sets itself, and the two lookup tables are built once on lobby join -
+ *     both deliberately, because comparing an Il2Cpp object against null while the game is tearing
+ *     down a scene, or running a foreign type's initializer at that moment, crashes the process
+ *     rather than throwing something catchable.
  */
 
 using System;
@@ -97,13 +104,13 @@ namespace UsefulTORStuff {
         private static readonly Color Category    = new Color(204f / 255f, 204f / 255f, 0f); // TOR's own
         private static readonly Color NeutralInk  = new Color(0.85f, 0.87f, 0.90f);
 
-        // Shades handed to roles that all carry Palette.ImpostorRed. Four is enough: the point is
-        // that two ADJACENT blocks never share a tone, not that a tone identifies a role.
+        // Shades handed to roles that all carry Palette.ImpostorRed. Two tones, both unmistakably
+        // red: adjacent blocks alternate between a bright and a deeper red. An earlier version
+        // cycled through four tones including an orange one, which read as a different faction
+        // rather than as "next block" - the hue has to stay impostor red, only the brightness moves.
         private static readonly Color[] ImpostorFamily = {
-            new Color(1.00f, 0.29f, 0.24f),
-            new Color(1.00f, 0.54f, 0.30f),
-            new Color(0.91f, 0.33f, 0.43f),
-            new Color(0.85f, 0.41f, 0.31f),
+            new Color(1.00f, 0.28f, 0.26f), // bright red
+            new Color(0.76f, 0.16f, 0.18f), // deep red
         };
 
         private const int MaxCollapsedLineChars = 42; // manual wrap: the TMPs have word wrap off
@@ -149,24 +156,23 @@ namespace UsefulTORStuff {
         }
 
         // ---- "is the F1 overlay open" ------------------------------------------------------------
-        // Read from TOR's own gate (`if (!settingsTMPs[0]) return;`, CustomOptions.cs:1357) so this
-        // never disagrees with what is actually on screen. Used by the lobby HUD elements of this mod
-        // to step out of the way while the overlay is up; if the field is ever renamed the lookup
-        // fails closed (always "not open") and nothing hides that should not.
-        private static bool overlayFieldResolved;
-        private static FieldInfo overlayTmpsField;
+        // A heartbeat, deliberately NOT a reflection read of TOR's `settingsTMPs` array. That array
+        // holds Il2Cpp objects, and comparing one against null runs native Unity code on a handle
+        // that may already have been freed - which is a crash, not an exception, and try/catch does
+        // not save you from it. This is called from three per-frame Update() methods, including
+        // during the lobby-to-game scene change, so it must not touch a game object at all.
+        //
+        // Instead: TOR's own HudManagerUpdate.Prefix2 rebuilds the overlay text through
+        // buildAllOptions(hideExtras: true) for as long as the overlay is open, and nothing else
+        // passes that flag. Our postfix stamps the time of each such call; if one arrived recently,
+        // the overlay is up. TorPerfFixes throttles those rebuilds to one per 0.25s, so the window
+        // below is comfortably longer. Worst case after closing F1: the HUD stays hidden for another
+        // half second, which nobody can see and nothing depends on.
+        private const float OverlayHeartbeatWindow = 0.6f;
+        private static float lastOverlayBuild = float.NegativeInfinity;
 
         public static bool OverlayOpen() {
-            try {
-                if (!overlayFieldResolved) {
-                    overlayFieldResolved = true;
-                    overlayTmpsField = AccessTools.Field(typeof(HudManagerUpdate), "settingsTMPs");
-                }
-                var tmps = overlayTmpsField?.GetValue(null) as TMPro.TextMeshPro[];
-                return tmps != null && tmps.Length > 0 && tmps[0] != null;
-            } catch {
-                return false;
-            }
+            return Time.realtimeSinceStartup - lastOverlayBuild < OverlayHeartbeatWindow;
         }
 
         private static bool loggedFailure;
@@ -176,6 +182,11 @@ namespace UsefulTORStuff {
         // the default false. Only the overlay is wide enough for a value column.
         public static void Postfix(ref string __result, bool hideExtras) {
             try {
+                // Heartbeat first, and outside the Enabled gate: only TOR's overlay prefix passes
+                // hideExtras, so this is the one reliable "the overlay is on screen" signal, and the
+                // HUD elements that read it must keep working even with the renderer switched off.
+                if (hideExtras) lastOverlayBuild = Time.realtimeSinceStartup;
+
                 if (Enabled == null || !Enabled.Value) return;
 
                 // Hide N Seek and Prop Hunt build their pages from other option types entirely; TOR's
@@ -185,10 +196,6 @@ namespace UsefulTORStuff {
 
                 int page = TheOtherRolesPlugin.optionsPage;
                 if (page <= 0 || page > 6) return; // page 0 is the vanilla settings block
-
-                // A mod that registered its options after our load-time snapshot (BepInEx load order
-                // is not ours to decide) gets picked up the first time its options are on screen.
-                if (CustomOption.options.Count != snapshotOptionCount) SnapshotColors();
 
                 string built = BuildPage(page, mode, hideExtras);
                 if (!string.IsNullOrEmpty(built)) __result = built;
@@ -644,11 +651,14 @@ namespace UsefulTORStuff {
             { "Nightfall",           " [NF]" },
         };
 
+        // Built ONCE, from the lobby-join hook - never lazily from the render path. Reading a static
+        // field runs that type's initializer if it has not run yet, and a mod's type initializer can
+        // load sprites or touch Unity objects; doing that in the middle of the lobby-to-game scene
+        // change is how you get a native crash with nothing in the log. On join, every plugin has
+        // long finished loading and the game is idle.
         private static Dictionary<int, string> ownerTagById;
-        private static int ownerScanOptionCount = -1;
 
-        private static void EnsureOwnerMap() {
-            if (ownerTagById != null && ownerScanOptionCount == CustomOption.options.Count) return;
+        public static void ScanOptionOwners() {
             var map = new Dictionary<int, string>();
             try {
                 foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) {
@@ -675,11 +685,13 @@ namespace UsefulTORStuff {
                             fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
                         } catch { continue; }
                         foreach (var field in fields) {
-                            // object is included for Nightfall, which holds its one TOR option
-                            // untyped so it can run without TOR installed at all.
+                            // Only fields that are already typed as an option. `object` fields were
+                            // read here at first (Nightfall keeps its option untyped so it can run
+                            // without TOR at all) - but every extra field read is another type
+                            // initializer that might run for the first time, so Nightfall is handled
+                            // by its published id constant below instead.
                             if (field.FieldType != typeof(CustomOption)
-                                && field.FieldType != typeof(CustomOption[])
-                                && field.FieldType != typeof(object)) continue;
+                                && field.FieldType != typeof(CustomOption[])) continue;
                             object value;
                             try { value = field.GetValue(null); } catch { continue; }
                             if (value is CustomOption single) map[single.id] = tag;
@@ -688,16 +700,27 @@ namespace UsefulTORStuff {
                         }
                     }
                 }
+
+                // Nightfall's one option (NightfallOptions.OptionId) - a plain int constant, so
+                // reading it cannot drag any Unity work along.
+                try {
+                    var nf = AppDomain.CurrentDomain.GetAssemblies()
+                        .FirstOrDefault(a => a.GetName().Name == "Nightfall")
+                        ?.GetType("Nightfall.NightfallOptions");
+                    var idField = nf?.GetField("OptionId", BindingFlags.Public | BindingFlags.Static);
+                    if (idField != null && idField.GetValue(null) is int nfId) map[nfId] = " [NF]";
+                } catch { /* Nightfall not installed, or renamed - it simply gets no tag */ }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[SettingsOverlayView] owner scan failed: {e}");
             }
             ownerTagById = map;
-            ownerScanOptionCount = CustomOption.options.Count;
+            UsefulTORStuffPlugin.Logger?.LogInfo(
+                $"[SettingsOverlayView] option owners resolved for {map.Count} option(s).");
         }
 
         private static string ModTagPlain(CustomOption option) {
             if (ShowModTags != null && !ShowModTags.Value) return "";
-            EnsureOwnerMap();
+            if (ownerTagById == null) return ""; // scan runs on lobby join; no guessing before that
             string tag;
             return ownerTagById.TryGetValue(option.id, out tag) ? tag : "";
         }
@@ -738,11 +761,10 @@ namespace UsefulTORStuff {
         // that registers its options after us is still picked up, and a translated name (no tag) can
         // never overwrite a colour that was read correctly earlier.
         private static readonly Dictionary<int, Color> snapshot = new Dictionary<int, Color>();
-        private static int snapshotOptionCount = -1;
 
         public static void SnapshotColors() {
             try {
-                snapshotOptionCount = CustomOption.options.Count;
+
                 foreach (var option in CustomOption.options) {
                     if (option == null || snapshot.ContainsKey(option.id)) continue;
                     Color parsed;
@@ -813,6 +835,18 @@ namespace UsefulTORStuff {
             if (!int.TryParse(hex.Substring(4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out b)) return false;
             color = new Color(r / 255f, g / 255f, b / 255f);
             return true;
+        }
+
+        // Both tables are refreshed here and nowhere else: on a lobby join every plugin has finished
+        // loading, the game is idle, and nothing is being torn down. The colour snapshot is additive
+        // (a name whose <color> tag the localization already stripped can never overwrite a colour
+        // that was read correctly at load), the owner scan is rebuilt from scratch.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        private static class LobbyJoinPatch {
+            public static void Postfix() {
+                SnapshotColors();
+                ScanOptionOwners();
+            }
         }
 
         // ---- TOR gamemode (internal type, resolved once) ------------------------------------------

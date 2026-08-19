@@ -575,6 +575,15 @@ namespace UsefulTORStuff {
                 // Arsonist, Pursuer, Silencer): the shield stops kills, not the rest of the game.
                 // See ShieldPeaceGate.cs for how the caller is identified.
                 if (ShieldPeaceGate.Peaceful) return;
+                // Being recruited is not being killed: a shielded newcomer may become the Sidekick.
+                // TOR sets the Jackal's kill target and his sidekick target through this one helper,
+                // so the gate cannot be lifted for the recruit alone - it is lifted for the Jackal
+                // while he can still create a sidekick at all. His KILL on that same player is
+                // refused anyway, twice over and independently of this list: CheckMurder on the host
+                // (enforcement 1) and the checkMuderAttempt postfix on his own client (enforcement 2,
+                // which also tells him why). Once the sidekick exists TOR clears canCreateSidekick
+                // (RPC.cs:719) and the gate closes again by itself.
+                if (JackalCanRecruitNow()) return;
                 var list = untargetablePlayers != null
                     ? new List<PlayerControl>(untargetablePlayers) : new List<PlayerControl>();
                 foreach (byte id in shielded) {
@@ -583,6 +592,21 @@ namespace UsefulTORStuff {
                 }
                 untargetablePlayers = list;
             } catch { }
+        }
+
+        // Mirrors TOR's own condition for showing the sidekick button (Buttons.cs:1036) rather than
+        // inventing a second rule: same flag, same owner check, same alive check. A Sidekick is
+        // deliberately NOT covered - he cannot recruit, so nothing about him is peaceful here.
+        private static bool JackalCanRecruitNow() {
+            try {
+                var local = PlayerControl.LocalPlayer;
+                return Jackal.canCreateSidekick
+                       && Jackal.jackal != null && local != null
+                       && Jackal.jackal.PlayerId == local.PlayerId
+                       && local.Data != null && !local.Data.IsDead;
+            } catch {
+                return false; // unknown state keeps the shield closed
+            }
         }
 
         // ====================================================================

@@ -25,6 +25,18 @@ leaves English. The text is now rebuilt from the option list instead of being pa
   exception falls back to TOR's own text. Five switches in the `SettingsOverlay` config section turn
   the layout, the mod tags, the shades, the value column and the 0% handling on or off.
 
+### The newcomer shield no longer blocks the Sidekick recruitment
+Being recruited is not being killed, but the shield's targeting gate made no distinction: a shielded
+newcomer could not be picked as a Sidekick either, because TOR sets the Jackal's kill target and his
+sidekick target through the same helper.
+- The gate now stands down for the Jackal **while he can still create a sidekick** (TOR's own
+  condition from `Buttons.cs`, including the alive check). Once the sidekick exists, TOR clears the
+  flag and the gate closes again on its own.
+- His kill on that same player is still refused twice and independently of the targeting list:
+  `CheckMurder` on the host, and the `checkMuderAttempt` postfix on his own client, which also tells
+  him why. A Sidekick is not covered - he cannot recruit, so nothing about him is peaceful here.
+- The spawn-zone shield (Anti Start Kill) is unchanged and still blocks sidekicking outright.
+
 ### The kill shields stop attacks, not the rest of the game (new, `ShieldPeaceGate.cs`)
 Both of our kill shields (newcomer, spawn zone) drop protected players from TOR's shared targeting
 helper so no role's bespoke kill path can reach them. That helper is shared with every *peaceful*
