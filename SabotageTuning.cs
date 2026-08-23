@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -528,10 +528,21 @@ namespace UsefulTORStuff {
 
         // AUDIT-2026-08-16: lobby change (rejoin/new lobby) also needs the cooldown-seconds cache
         // cleared - OnGameEnd covers "round just ended" but not every path back into a fresh lobby.
+        //
+        // AUDIT-2026-08-23 (L-13): the same is true of everything else this file remembers. Only
+        // the label cache was being cleared here, so a lobby left abnormally (crash, kick, straight
+        // into another lobby) carried its per-type reduction counters into the next game: the first
+        // sabotage of the fresh round came back with a cooldown already shortened by the PREVIOUS
+        // round's usage. gameInit is cleared too, so the first tick of the next round runs its own
+        // ResetAll instead of trusting a leftover "already initialised".
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
         private static class GameJoinedPatch {
             private static void Postfix() {
                 for (int i = 0; i < N; i++) lastShownSecs[i] = -1;
+                for (int i = 0; i < N; i++) usage[i] = 0;
+                gameInit = false;
+                prevActive = false;
+                warnedConflict = false;
             }
         }
     }

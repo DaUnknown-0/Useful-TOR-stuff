@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -57,7 +57,18 @@ namespace UsefulTORStuff {
             }
         }
 
+        // EVERYONE NEEDS THE MOD (AUDIT M-16)
+        // The guesserShoot prefix below runs inside a TOR RPC handler, i.e. on every client in the
+        // lobby - but only clients carrying THIS mod would refuse the shot. That splits the lobby
+        // over whether a player is alive: the Time Master keeps standing here and lies dead there,
+        // and everything downstream (vote counting, task progress, the win check) reads that split.
+        // A rule about who may die has to hold everywhere or nowhere, so it is bound to the
+        // handshake, exactly like TricksterBoxCount's value is. The list-hide in the guesser UI is
+        // NOT gated: it is purely local presentation on this client and cannot desync anything.
         private static bool Active() => Option != null && UTSGate.Bool(Option) && shieldSavedThisGame;
+
+        // The rule as it is ACTUALLY enforced - see the block above.
+        private static bool ActiveForEveryone() => Active() && UsefulVersionHandshake.EveryoneHasMod();
 
         // Hide the Time Master from the guesser role list — exactly like TOR hides the Spy from the
         // evil guesser (MeetingPatch.cs:417/429). guesserOnClick builds the role buttons by iterating
@@ -146,7 +157,7 @@ namespace UsefulTORStuff {
         static class GuesserShootPatch {
             public static bool Prefix(byte killerId, byte dyingTargetId, byte guessedTargetId, byte guessedRoleId) {
                 try {
-                    if (!Active()) return true;
+                    if (!ActiveForEveryone()) return true;
                     if (TimeMaster.timeMaster == null) return true;
                     // Only suppress a CORRECT guess of the Time Master (the dying target is him).
                     if (guessedRoleId == (byte)RoleId.TimeMaster

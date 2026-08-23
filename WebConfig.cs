@@ -149,9 +149,52 @@ namespace UsefulTORStuff {
         }
 
         // ====================================================================
+        // Origin/Host validation (AUDIT-2026-08-23, M-8)
+        // ====================================================================
+        // Binding to loopback alone is not enough: a POST with
+        // Content-Type: application/x-www-form-urlencoded is a CORS "simple request" and never
+        // triggers a preflight, so ANY website the host has open in a browser tab can blindly POST
+        // to this server and rewrite mod/vanilla options (the attacker page cannot read the
+        // response, but the write itself is already the attack). DNS rebinding (an
+        // attacker-controlled domain resolved to 127.0.0.1) additionally defeats the loopback bind
+        // by itself unless the Host header is checked against the port this listener actually runs
+        // on. So: the Host header must match the active port exactly, and on POST a present Origin
+        // header must also point at the same loopback origin (a MISSING Origin stays allowed, e.g.
+        // for curl/test tools - the actual attack signature is a present, foreign Origin, not an
+        // absent one; a same-origin fetch() from our own page always sends a loopback Origin, so
+        // this does not affect the page's own calls).
+        private static bool RequestAllowed(HttpListenerContext ctx) {
+            if (!IsLoopbackHostHeader(ctx.Request.Headers["Host"])) return false;
+
+            if (ctx.Request.HttpMethod == "POST") {
+                string origin = ctx.Request.Headers["Origin"];
+                if (!string.IsNullOrEmpty(origin) && !IsLoopbackOrigin(origin)) return false;
+            }
+            return true;
+        }
+
+        private static bool IsLoopbackHostHeader(string host) {
+            if (string.IsNullOrEmpty(host)) return false;
+            return host == $"127.0.0.1:{activePort}" || host == $"localhost:{activePort}";
+        }
+
+        private static bool IsLoopbackOrigin(string origin) {
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri)) return false;
+            if (uri.Scheme != "http") return false;
+            if (uri.Host != "127.0.0.1" && uri.Host != "localhost") return false;
+            return uri.Port == activePort;
+        }
+
+        // ====================================================================
         // HTTP routing
         // ====================================================================
         private static void Handle(HttpListenerContext ctx) {
+            // Checked before any route branch, so no endpoint can accidentally bypass it.
+            if (!RequestAllowed(ctx)) {
+                Write(ctx, 403, "text/plain", "forbidden");
+                return;
+            }
+
             string path = ctx.Request.Url.AbsolutePath;
             string method = ctx.Request.HttpMethod;
 

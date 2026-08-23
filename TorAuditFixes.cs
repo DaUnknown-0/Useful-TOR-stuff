@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -633,13 +633,18 @@ namespace UsefulTORStuff {
             public static void Postfix((bool wasWitch, bool inMeeting, byte thiefId, List<PlayerControl> snapshot) __state) {
                 try {
                     if (!__state.wasWitch || __state.snapshot == null) return;
+                    // The new Witch is never left spelled by their own predecessor - in a meeting just
+                    // as much as outside one (AUDIT M-15). "No target is saved" means the OTHER
+                    // targets stay condemned; it cannot sensibly mean the freshly promoted Witch
+                    // exiles themselves in the very meeting they stole the role. TOR's own
+                    // out-of-meeting branch spells out that intent ("remove the thief from the list
+                    // of spelled people, keep the rest"), so both branches now apply it.
+                    __state.snapshot.RemoveAll(x => x != null && x.PlayerId == __state.thiefId);
                     if (__state.inMeeting) {
                         Witch.futureSpelled = Witch.witchVoteSavesTargets
                             ? new List<PlayerControl>()   // all targets saved (original got this right)
                             : __state.snapshot;           // "no target is saved": restore what the stray RemoveAll pruned
                     } else {
-                        // Outside a meeting the new Witch must not stay spelled by their own predecessor.
-                        __state.snapshot.RemoveAll(x => x != null && x.PlayerId == __state.thiefId);
                         Witch.futureSpelled = __state.snapshot;
                     }
                 } catch (Exception e) {

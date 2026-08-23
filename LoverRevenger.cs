@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -664,8 +664,17 @@ namespace UsefulTORStuff {
                 }
             }
 
-            [HarmonyPriority(Priority.Last)] // run after TOR's suicide postfix so the flip stays effective
-            public static void Postfix() {
+            // FINALIZER, not a postfix (AUDIT M-9). The restore has to happen no matter what, and a
+            // postfix does not guarantee that: HarmonyX aborts the remaining postfixes as soon as an
+            // earlier one throws, and MurderPlayer carries roughly fifteen Normal-priority postfixes
+            // ahead of this one - TOR's own large, unguarded MurderPlayerPatch.Postfix included
+            // (PlayerControlPatch.cs:1205-1299). One throw up there and Lovers.bothDie would have
+            // stayed false for the rest of the round: Lovers would never again die together, and the
+            // prefix above cannot re-arm because it only fires while bothDie is still true.
+            // A finalizer runs after every postfix AND after a throw, which keeps the original
+            // "restore last, so the flip stays effective" ordering intact. Returning void leaves any
+            // exception to propagate exactly as before.
+            public static void Finalizer() {
                 try {
                     if (!flipArmed) return;
                     Lovers.bothDie = true; // restore
@@ -714,8 +723,9 @@ namespace UsefulTORStuff {
                 }
             }
 
-            [HarmonyPriority(Priority.Last)]
-            public static void Postfix() {
+            // Finalizer for the same reason as MurderPlayerSuppressPatch above (AUDIT M-9): the
+            // restore of Lovers.bothDie must survive a throw from any other patch on guesserShoot.
+            public static void Finalizer() {
                 try {
                     if (!gFlipArmed) return;
                     Lovers.bothDie = true; // restore

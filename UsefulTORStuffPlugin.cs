@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -241,6 +241,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // attribute-based (PatchAll); the guesser-list hide is a reflection patch (TryPatch).
         TimeMasterUnguessable.CreateOptions();
         TimeMasterUnguessable.TryPatch(harmony);
+
+        // What the newcomer shield does inside the first meeting: not guessable, not votable.
+        // TryPatch adds the reflection prefix on TOR's private guesserOnClick; the vote block and
+        // the guesserShoot prefix are attribute-based (PatchAll). See NewcomerMeetingProtection.cs.
+        NewcomerMeetingProtection.TryPatch(harmony);
 
         // Trapper "trapped players limp / self-limp" options. Trap.triggerTrap / physics / HandleRpc /
         // HudManager.Start patches are attribute-based (PatchAll); only the options need creation.

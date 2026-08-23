@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 using System;
@@ -168,6 +168,13 @@ namespace UsefulTORStuff
             catch (Exception ex)
             {
                 UsefulTORStuffPlugin.Logger?.LogError($"Failed to create professional UI: {ex}");
+                // AUDIT L-15: throwing anywhere AFTER DisableBackgroundUI() used to leave the whole
+                // menu behind this popup switched off - every hidden object still hidden, every
+                // PassiveButton still disabled - while the popup itself was destroyed. The result was
+                // a dead main menu until the game was restarted. Undo the background disabling on the
+                // way out, and drop IsUIOpen so a second attempt is possible.
+                try { EnableBackgroundUI(); } catch { }
+                IsUIOpen = false;
                 if (_popup != null)
                 {
                     Destroy(_popup);

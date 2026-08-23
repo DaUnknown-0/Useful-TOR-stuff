@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -174,6 +174,19 @@ namespace UsefulTORStuff {
                     if (OptionShifterInteraction == null) return true;
                     int mode = UTSGate.Sel(OptionShifterInteraction);
                     if (mode == 0) return true; // Shift Succeeds = vanilla
+
+                    // EVERYONE NEEDS THE MOD (AUDIT M-16). shifterShift is a TOR RPC procedure: it
+                    // runs on every client, but only clients with this mod would branch away from
+                    // vanilla. Unmodded clients would carry out TOR's shift while modded ones cancel
+                    // it - and in mode 1 they would also disagree about whether the Shifter is alive.
+                    // Rules about role ownership and death have to hold lobby-wide or not at all,
+                    // so this falls back to vanilla in a mixed lobby (TricksterBoxCount pattern).
+                    if (!UsefulVersionHandshake.EveryoneHasMod()) {
+                        UsefulTORStuffPlugin.Logger?.LogWarning(
+                            "[SpyExtras] Shifter/Spy interaction skipped: not every client has this mod "
+                            + "(vanilla shift applies, so the lobby stays in agreement).");
+                        return true;
+                    }
 
                     var target = Helpers.playerById(targetId);
                     if (target == null || target != Spy.spy) return true;

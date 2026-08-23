@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -375,11 +375,23 @@ namespace UsefulTORStuff {
 
                 if (!roundSeen) { roundSeen = true; roundSeenAt = Time.realtimeSinceStartup; }
 
-                // The shield ends with the first meeting. MeetingStartPatch says the same, but it
-                // is a postfix on MeetingHud.Start, a method TOR also patches - and this feature's
-                // whole autopsy is about not trusting shared patch chains. The tick repeats the
-                // clear from outside any chain, so the shield can never outlive the meeting.
-                if (shielded.Count > 0 && MeetingHud.Instance != null) {
+                // The shield ends AFTER the first meeting, not at its start (changed 2026-08-23).
+                //
+                // It used to be cleared the moment MeetingHud.Start ran, and that made the meeting
+                // the one place the shield could not protect anybody: the Guesser only exists in a
+                // meeting, and so does the vote. A newcomer was safe from every kill in the opening
+                // minutes and then perfectly shootable and votable the second the first meeting
+                // opened, which is the half of the game a newcomer is least able to defend.
+                //
+                // So the lifetime now spans the first meeting: seen at its start, dropped once it
+                // is genuinely over. "Over" is checked here rather than hooked onto one controller,
+                // because a meeting can end through MeetingHud.Close, a normal ExileController, the
+                // Airship one, or a disconnect that takes the whole thing down. Waiting for all
+                // three instances to be gone covers every one of those without a patch per path,
+                // and it keeps this file's original principle intact: the clear lives in the tick,
+                // outside any shared patch chain.
+                if (firstMeetingSeen && shielded.Count > 0
+                    && MeetingHud.Instance == null && ExileController.Instance == null) {
                     if (client.AmHost) SendClear();
                     else shielded.Clear();
                 }
@@ -478,17 +490,19 @@ namespace UsefulTORStuff {
             }
         }
 
-        // The shield ends with the first meeting - not with the round. It buys a newcomer the opening
-        // minutes, it never decides the game.
+        // Set the moment the first meeting opens; the tick uses it to know that the shield's one
+        // meeting has begun and may be dropped as soon as that meeting is over. Purely local: every
+        // client sees its own MeetingHud.Start, so no RPC is needed to agree on it.
+        private static bool firstMeetingSeen;
+
+        // The shield covers the opening minutes AND the first meeting, then it is gone. Note what
+        // that now includes: inside that meeting the newcomer cannot be guessed and cannot be voted
+        // for (see NewcomerMeetingProtection.cs). That is a deliberate widening of what this feature
+        // does - it can now keep a player in the game through one vote, where before it only kept
+        // them alive between votes.
         [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Start))]
         static class MeetingStartPatch {
-            public static void Postfix() {
-                try {
-                    if (shielded.Count == 0) return;
-                    if (AmHost()) SendClear();
-                    else shielded.Clear();   // clients drop it locally too, in case the RPC is lost
-                } catch { }
-            }
+            public static void Postfix() => firstMeetingSeen = true;
         }
 
         // ====================================================================
@@ -555,7 +569,12 @@ namespace UsefulTORStuff {
         //
         // TOR's own targeting helper takes an "untargetable" list, so the cleanest fix is to put
         // shielded players on it: no highlight, no click, for every role at once. The checks further
-        // down stay as the safety net for roles that kill without targeting (the Guesser).
+        // down stay as the safety net for roles that kill without targeting.
+        //
+        // The Guesser is NOT one of them, contrary to what this comment claimed until
+        // AUDIT-2026-08-23 (H-6): his shot runs through RPCProcedure.guesserShoot -> Exiled(),
+        // which is neither a murder nor a targeted attack, so none of the checks below ever saw it.
+        // That gap is closed in NewcomerMeetingProtection.cs, together with the vote block.
         // ====================================================================
         // The helper lives in PlayerControlFixedUpdatePatch, NOT PlayerControlPatch - looking for the
         // latter is why the first attempt logged "setTarget not found" and left shielded players
@@ -662,6 +681,7 @@ namespace UsefulTORStuff {
             // Only the per-round shield: the seen set is the whole point and must survive.
             public static void Postfix() {
                 shielded.Clear();
+                firstMeetingSeen = false;
                 lastPreviewKey = "";
             }
         }
@@ -672,6 +692,7 @@ namespace UsefulTORStuff {
             // seenFriendCodes deliberately does: the same person in a new lobby is not new again.
             public static void Postfix() {
                 shielded.Clear();
+                firstMeetingSeen = false;
                 manualNewcomers.Clear();   // a hand-picked mark belongs to the lobby it was made in
                 lastPreviewKey = "";
             }

@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -85,9 +85,17 @@ namespace UsefulTORStuff {
             }
         }
 
-        private static int Compute(float baseValue, float perAlive, float perDead, int alive, int dead) {
+        // Among Us reads VotingTime = 0 as "no limit", not as "no voting" - WebConfig marks that
+        // option zeroInf for exactly that reason. So a formula that happens to land on or below zero
+        // (a high per-dead subtraction late in a round is enough) would not shorten the vote, it
+        // would hand the lobby an endless one that only ends when everybody has voted (AUDIT L-12).
+        // Voting therefore keeps a floor of 5 seconds. Discussion has no such meaning attached - 0
+        // simply skips the discussion phase - so it still clamps to 0.
+        private const int MinVotingSeconds = 5;
+
+        private static int Compute(float baseValue, float perAlive, float perDead, int alive, int dead, int floor) {
             float seconds = baseValue + alive * perAlive - dead * perDead;
-            return Mathf.Max(0, Mathf.RoundToInt(seconds)); // hard minimum 0
+            return Mathf.Max(floor, Mathf.RoundToInt(seconds));
         }
 
         private static void CaptureOriginalsOnce() {
@@ -112,8 +120,8 @@ namespace UsefulTORStuff {
                     CaptureOriginalsOnce();
                     CountAliveDead(out int alive, out int dead);
 
-                    int disc = Compute(UTSGate.Num(DiscussionBase), UTSGate.Num(DiscussionPerAlive), UTSGate.Num(DiscussionPerDead), alive, dead);
-                    int vote = Compute(UTSGate.Num(VotingBase), UTSGate.Num(VotingPerAlive), UTSGate.Num(VotingPerDead), alive, dead);
+                    int disc = Compute(UTSGate.Num(DiscussionBase), UTSGate.Num(DiscussionPerAlive), UTSGate.Num(DiscussionPerDead), alive, dead, 0);
+                    int vote = Compute(UTSGate.Num(VotingBase), UTSGate.Num(VotingPerAlive), UTSGate.Num(VotingPerDead), alive, dead, MinVotingSeconds);
 
                     var opts = GameOptionsManager.Instance.currentNormalGameOptions;
                     opts.DiscussionTime = disc;

@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -131,9 +131,57 @@ namespace UsefulTORStuff {
 
         // ── Receiving side ────────────────────────────────────────────────────────────────────
 
+        // WHO SENT THIS (AUDIT TOR-2026-08-23, H-3)
+        //
+        // TOR applies an incoming options block without ever asking who sent it: HandleShareOptions
+        // is reached from RPCHandlerPatch with no sender in scope, and CustomOption.updateSelection
+        // additionally runs switchPreset() for id 0. So ANY guest could rewrite the whole lobby's
+        // settings on every other client - including the host's preset - and nothing would log it.
+        //
+        // The sender is only known one level up, in PlayerControl.HandleRpc, so it is captured there
+        // and read back here. Same "remember the sender, check it in the handler" shape UCRpc uses
+        // for its own channel, which is where this pattern is already proven.
+        private static byte lastSenderClientId;
+        private static bool lastSenderKnown;
+
+        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
+        [HarmonyPriority(Priority.First)]
+        private static class SenderCapturePatch {
+            public static void Prefix(PlayerControl __instance) {
+                lastSenderKnown = false;
+                try {
+                    if (__instance == null) return;
+                    lastSenderClientId = (byte)__instance.PlayerId;
+                    lastSenderKnown = true;
+                } catch { }
+            }
+        }
+
+        // True when the message currently being dispatched came from the host (or from ourselves,
+        // which is the host applying its own broadcast locally). Fails OPEN when the sender could
+        // not be determined: a settings sync that stops working is worse than one that stays
+        // spoofable, and every other layer of this file is unaffected either way.
+        private static bool SenderIsHostOrUnknown() {
+            try {
+                if (!lastSenderKnown) return true;
+                var client = AmongUsClient.Instance;
+                if (client == null) return true;
+                var sender = Helpers.playerById(lastSenderClientId);
+                if (sender == null) return true;
+                if (sender.AmOwner) return true;                      // our own local apply
+                return sender.OwnerId == client.HostId;
+            } catch { return true; }
+        }
+
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.HandleShareOptions))]
         private static class ReceivePatch {
             public static bool Prefix(byte numberOfOptions, MessageReader reader) {
+                if (!SenderIsHostOrUnknown()) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        $"[OptionSync] refused a settings block from player {lastSenderClientId}, who is not "
+                        + "the host - TOR itself applies these unconditionally (AUDIT TOR-H3).");
+                    return false;
+                }
                 try {
                     for (int i = 0; i < numberOfOptions; i++) {
                         uint optionId = reader.ReadPackedUInt32();

@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -36,6 +36,13 @@ namespace UsefulTORStuff {
         // true, während TORs Vent.Use läuft — nur dann überschreiben wir das SetButtons-Argument
         // (TORs gegateter Aufruf). Native SetButtons-Aufrufe (z.B. aus TryMoveToVent beim Vent-Wechsel)
         // bleiben unangetastet, damit die Traversal-Pfeile vom Spiel selbst korrekt gesetzt werden.
+        // AUDIT L-16: the [DIAG] lines below were left over from working this feature out and were
+        // still writing to the log on every vent click of every Spy in a shipped build. They are kept
+        // (the next vent problem will want them again) but switched off behind this one flag - flip it
+        // to true to get the full trace back. The pure-diagnostic TryMoveToVent patch is not even
+        // registered while it is false, via its Prepare() below.
+        private static readonly bool Diag = false;
+
         private static bool _inVentUse;
         // Vorzustand beim Klick: true = Einsteigen (Pfeile zeigen), false = Aussteigen (Pfeile aus).
         // Aus dem inVent VOR dem Klick bestimmt — zuverlässig, anders als das während der Aussteige-
@@ -93,9 +100,10 @@ namespace UsefulTORStuff {
                     if (!LocalIsSpy() || !_inVentUse) return;
                     bool incoming = __0;
                     __0 = _pendingIsEnter;
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[SpyFullVent][DIAG] SetButtons vent={(__instance != null ? __instance.Id : -1)} " +
-                        $"isEnter={_pendingIsEnter} incoming={incoming} -> {__0}");
+                    if (Diag)
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[SpyFullVent][DIAG] SetButtons vent={(__instance != null ? __instance.Id : -1)} " +
+                            $"isEnter={_pendingIsEnter} incoming={incoming} -> {__0}");
                 } catch { }
             }
         }
@@ -105,6 +113,10 @@ namespace UsefulTORStuff {
         // gar nicht (dann ist es die Pfeil-Sichtbarkeit/Interaktivität).
         [HarmonyPatch(typeof(Vent), nameof(Vent.TryMoveToVent))]
         static class VentTryMoveDiagPatch {
+            // Not registered at all unless the Diag flag above is on - Harmony skips a patch class
+            // whose Prepare() returns false, so this costs nothing in a normal build.
+            public static bool Prepare() => Diag;
+
             public static void Prefix(Vent __instance, Vent otherVent) {
                 try {
                     if (!LocalIsSpy()) return;
@@ -128,7 +140,8 @@ namespace UsefulTORStuff {
                     if (!LocalIsSpy()) return;
                     _pendingIsEnter = !(PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.inVent);
                     _inVentUse = true;
-                    UsefulTORStuffPlugin.Logger?.LogInfo($"[SpyFullVent][DIAG] Vent.Use click: isEnter={_pendingIsEnter}");
+                    if (Diag)
+                        UsefulTORStuffPlugin.Logger?.LogInfo($"[SpyFullVent][DIAG] Vent.Use click: isEnter={_pendingIsEnter}");
                 } catch { }
             }
             public static void Postfix() { _inVentUse = false; }

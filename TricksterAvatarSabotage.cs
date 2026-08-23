@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -233,6 +233,15 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
+            public static void Postfix() { mixupTimer = 0f; mixupMap.Clear(); }
+        }
+
+        // Same lobby-leak rule as the roles (AUDIT M-12): the byte-keyed state above is keyed by
+        // PlayerId, which is handed out per LOBBY, and resetVariables only arrives from a host
+        // that has this mod. Clearing on OnGameJoined too keeps a previous lobby's ids from
+        // acting on whoever inherits them here.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class GameJoinPatch {
             public static void Postfix() { mixupTimer = 0f; mixupMap.Clear(); }
         }
 

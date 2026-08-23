@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -52,8 +52,15 @@ namespace UsefulTORStuff {
         public void Awake() {
             if (Instance) Destroy(Instance);
             Instance = this;
-            foreach (var file in Directory.GetFiles(Paths.PluginPath, PluginAssetName + ".old")) {
-                File.Delete(file);
+            // AUDIT-2026-08-23 (L-21): guarded. A .old still locked by a virus scanner, or a
+            // plugin folder this process cannot enumerate, threw straight out of Awake - which
+            // aborts the component's initialisation, so the updater silently did not exist for the
+            // rest of the session. Cleaning up a leftover file is not worth that.
+            try {
+                foreach (var file in Directory.GetFiles(Paths.PluginPath, PluginAssetName + ".old"))
+                    try { File.Delete(file); } catch { }
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[UTS] Could not clean up old plugin files: {e.Message}");
             }
         }
 
@@ -506,7 +513,15 @@ namespace UsefulTORStuff {
         [JsonPropertyName("assets")]
         public List<GithubAsset> Assets { get; set; }
 
-        public Version Version => Version.Parse(Tag.Replace("v", string.Empty));
+        // TryParse, not Parse (AUDIT-2026-08-23, L-22). Tag is whatever text the GitHub API
+        // returned, and a release tagged anything that is not "vX.Y[.Z[.W]]" - a name, a date, a
+        // typo - made this property THROW. The sort comparison reads it for every pair, so one bad
+        // tag anywhere in the feed took down the whole comparison and left the release list in
+        // arbitrary order, from which "the newest release" is then picked. A tag that cannot be
+        // read is treated as version zero instead: it sorts last, IsNewer is false for it, and it
+        // is simply never offered as an update.
+        public Version Version =>
+            Version.TryParse((Tag ?? string.Empty).Replace("v", string.Empty), out var v) ? v : new Version(0, 0, 0, 0);
 
         public bool IsNewer(Version version) {
             return Version > version;
