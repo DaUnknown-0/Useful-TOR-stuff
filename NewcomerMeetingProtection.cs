@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -47,6 +47,8 @@ namespace UsefulTORStuff {
     public static class NewcomerMeetingProtection {
 
         // The one question this file asks. Note what it does NOT ask: AntiStartKill - see the header.
+        // Both callers add their own half of the option on top (BlocksVotes / BlocksGuesses), so a
+        // host who wants only one of the two gets only that one.
         private static bool IsProtected(byte playerId) {
             try { return NewcomerShield.IsShielded(playerId); } catch { return false; }
         }
@@ -71,6 +73,7 @@ namespace UsefulTORStuff {
             public static bool Prefix([HarmonyArgument(0)] byte srcPlayerId, [HarmonyArgument(1)] byte suspectIdx) {
                 try {
                     if (suspectIdx == SkipVote) return true;
+                    if (!NewcomerShield.BlocksVotes) return true;
                     if (!IsProtected(suspectIdx)) return true;
 
                     UsefulTORStuffPlugin.Logger?.LogInfo(
@@ -96,6 +99,7 @@ namespace UsefulTORStuff {
             public static void Postfix(MeetingHud __instance) {
                 try {
                     if (__instance == null || __instance.playerStates == null) return;
+                    if (!NewcomerShield.BlocksVotes) return;      // votes are allowed: leave the UI alone
                     if (!NewcomerShield.Active) return;           // nothing shielded: nothing to grey
                     foreach (var pva in __instance.playerStates) {
                         if (pva == null || pva.Buttons == null) continue;
@@ -145,6 +149,7 @@ namespace UsefulTORStuff {
                 if (buttonTarget < 0 || buttonTarget >= __instance.playerStates.Length) return true;
                 var pva = __instance.playerStates[buttonTarget];
                 if (pva == null) return true;
+                if (!NewcomerShield.BlocksGuesses) return true;
                 byte targetId = (byte)pva.TargetPlayerId;
                 if (!IsProtected(targetId)) return true;
 
@@ -166,6 +171,7 @@ namespace UsefulTORStuff {
         static class GuesserShootPatch {
             public static bool Prefix([HarmonyArgument(1)] byte dyingTargetId) {
                 try {
+                    if (!NewcomerShield.BlocksGuesses) return true;
                     if (!IsProtected(dyingTargetId)) return true;
                     if (!UsefulVersionHandshake.EveryoneHasMod()) {
                         UsefulTORStuffPlugin.Logger?.LogWarning(

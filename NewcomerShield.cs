@@ -128,14 +128,45 @@ namespace UsefulTORStuff {
         // rather than "healed".
         public static readonly Color ShieldColor = new Color32(255, 205, 40, byte.MaxValue);
 
+        // Selection 0 = off (shield ends at meeting start), 1 = votes, 2 = guesses, 3 = both.
+        public static CustomOption MeetingProtection;
+
+        // Read through UTSGate, not the raw getter: a host without this mod must not have its
+        // clients acting on a setting it never sent (see UTSGate's own header).
+        private static int MeetingMode {
+            get { try { return MeetingProtection == null ? 0 : UTSGate.Sel(MeetingProtection); } catch { return 0; } }
+        }
+
+        /// True when the shield is meant to survive into the first meeting at all.
+        public static bool SurvivesMeeting => MeetingMode > 0;
+        /// True when a shielded newcomer cannot be voted for during that meeting.
+        public static bool BlocksVotes => MeetingMode == 1 || MeetingMode == 3;
+        /// True when a shielded newcomer cannot be guessed during that meeting.
+        public static bool BlocksGuesses => MeetingMode == 2 || MeetingMode == 3;
+
         public static void CreateOptions() {
             try {
                 Enabled = CustomOption.Create(1380, Types.General,
                     "Protect Players New To This Session", false, null, true);
                 NotifyKiller = CustomOption.Create(1381, Types.General,
                     "Tell The Killer Why The Kill Failed", true, Enabled);
+                // What the shield is worth inside the first meeting. "Ends Before The Meeting" is
+                // the original behaviour: the shield is dropped the moment the meeting opens, so it
+                // only ever covered the minutes between votes. The other three let it live through
+                // that one meeting and decide what it stops there. See MeetingMode below.
+                // The explicit constructor, not CustomOption.Create(string[]...): that convenience
+                // overload hardcodes its defaultValue to "" and would land on index 0 only by
+                // accident (see TricksterBoxCount.cs, which had to make the same choice). Index 0
+                // happens to be what we want as the default, but relying on an accident for it is
+                // how the next selection list added above this one silently changes the default.
+                MeetingProtection = new CustomOption(1382, Types.General,
+                    "Shield During The First Meeting",
+                    new string[] { "Ends Before The Meeting", "Blocks Votes", "Blocks Guesses", "Blocks Both" },
+                    "Ends Before The Meeting", Enabled, false);
                 UTSLocalization.BindOptionTitle(Enabled, "uts.newcomershield.option_name");
                 UTSLocalization.BindOptionTitle(NotifyKiller, "uts.newcomershield.option_notify");
+                UTSLocalization.BindOptionTitle(MeetingProtection, "uts.newcomershield.option_meeting");
+                UTSLocalization.BindOptionSelections(MeetingProtection, "uts.newcomershield.option_meeting_values");
                 UsefulTORStuffPlugin.Logger?.LogInfo("[NewcomerShield] Options created.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[NewcomerShield] CreateOptions failed: {e}");
@@ -390,8 +421,18 @@ namespace UsefulTORStuff {
                 // three instances to be gone covers every one of those without a patch per path,
                 // and it keeps this file's original principle intact: the clear lives in the tick,
                 // outside any shared patch chain.
-                if (firstMeetingSeen && shielded.Count > 0
-                    && MeetingHud.Instance == null && ExileController.Instance == null) {
+                // Two shapes, picked by the option (see MeetingMode):
+                //   off  - drop it the moment a meeting exists, the original behaviour
+                //   on   - keep it for that one meeting, drop it once the meeting is truly over
+                // "Truly over" is checked here rather than hooked onto one controller, because a
+                // meeting can end through MeetingHud.Close, a normal ExileController, the Airship
+                // one, or a disconnect that takes the whole thing down. Waiting for both instances
+                // to be gone covers all of those without a patch per path, and it keeps this file's
+                // original principle: the clear lives in the tick, outside any shared patch chain.
+                bool meetingRunning = MeetingHud.Instance != null || ExileController.Instance != null;
+                bool dropNow = SurvivesMeeting ? (firstMeetingSeen && !meetingRunning)
+                                               : (MeetingHud.Instance != null);
+                if (dropNow && shielded.Count > 0) {
                     if (client.AmHost) SendClear();
                     else shielded.Clear();
                 }
@@ -502,7 +543,17 @@ namespace UsefulTORStuff {
         // them alive between votes.
         [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Start))]
         static class MeetingStartPatch {
-            public static void Postfix() => firstMeetingSeen = true;
+            public static void Postfix() {
+                try {
+                    firstMeetingSeen = true;
+                    // With the meeting protection switched off the shield dies here, exactly as it
+                    // always did. The tick repeats this from outside the patch chain; both exist for
+                    // the reason this file was written, which is not trusting a single shared hook.
+                    if (SurvivesMeeting || shielded.Count == 0) return;
+                    if (AmHost()) SendClear();
+                    else shielded.Clear();
+                } catch { }
+            }
         }
 
         // ====================================================================

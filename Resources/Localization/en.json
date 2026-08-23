@@ -1077,5 +1077,7 @@
   "uts.antistartkill.sidekick_blocked": "Spawn protection: no sidekick until you and your target have both left the start area once.",
   "uts.tricksterboxcount.option_name": "Trickster Box Count",
   "uts.tricksterboxcount.mod_warning": "Trickster Box Count is not in effect: not every player has Useful TOR Stuff, so TOR's default of 3 boxes applies to everyone.",
-  "uts.newcomershield.vote_blocked": "This player is new here and cannot be voted out before the first meeting is over."
+  "uts.newcomershield.vote_blocked": "This player is new here and cannot be voted out before the first meeting is over.",
+  "uts.newcomershield.option_meeting": "Shield During The First Meeting",
+  "uts.newcomershield.option_meeting_values": "Ends Before The Meeting|Blocks Votes|Blocks Guesses|Blocks Both"
 }
