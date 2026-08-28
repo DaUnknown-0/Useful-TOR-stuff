@@ -127,11 +127,17 @@ down.
 ### Trapper: find your own traps, and keep the log (new, `TrapperExtras.cs`)
 Two gaps that are both about information the trapper already owns but cannot reach. Each is a host
 option, default on.
-- **The traps are numbered on the map.** TOR's log says "Trap 3:" using `Trap.instanceId`, a counter
+- **The traps are numbered on the map, with TOR's own trap icon.** TOR's log says "Trap 3:" using `Trap.instanceId`, a counter
   that already runs 1..X, and never says where trap 3 is: the traps are drawn in the world but only
   on the screen the trapper is standing on, so on Airship or Polus the number answers a question
-  they cannot ask. The markers use TOR's own here-point and the same world-to-map transform its
-  trapped-player markers use, so a trap marker lands where a player marker for the same spot would.
+  they cannot ask. The marker is the same artwork the trap is drawn with on the floor
+  (`Trapper_Trap_Ingame`, fetched through TOR's own `getTrapSprite`), so the map says what the
+  world says, and it uses the same world-to-map transform TOR's trapped-player markers use, so a
+  trap marker lands where a player marker for the same spot would. Its size is measured against
+  the here-point rather than hard-coded: the sprite is loaded at world scale while map positions
+  are divided by `MapScale`, which differs per map, so matching the dot the game already draws
+  there is the only sizing that holds everywhere. If the sprite handle ever fails to resolve, the
+  marker falls back to a tinted here-point and the numbers still work.
 - **The log survives the meeting.** It is written into the meeting chat, and the traps that produced
   it are destroyed a few lines later in the same prefix, so afterwards there is no way back to it -
   and re-posting it into the chat would not help either, because the chat is hidden during a round.

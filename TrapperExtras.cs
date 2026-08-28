@@ -96,6 +96,9 @@ namespace UsefulTORStuff {
         // ================================================================================
         private static bool resolved, resolveFailed;
         private static FieldInfo fTraps, fInstanceId, fRevealed, fTrappedPlayer, fTrapObject;
+        private static MethodBase mGetTrapSprite;
+        private static Sprite trapSprite;
+        private static bool trapSpriteTried;
 
         private static bool Resolve() {
             if (resolved) return !resolveFailed;
@@ -108,9 +111,17 @@ namespace UsefulTORStuff {
                 fRevealed = AccessTools.Field(t, "revealed");
                 fTrappedPlayer = AccessTools.Field(t, "trappedPlayer");
                 fTrapObject = AccessTools.Field(t, "trap");
+                // The map marker uses TOR's OWN trap artwork rather than a recoloured here-point,
+                // so the icon on the map is the thing the trapper sees on the floor. It is a
+                // public static on the same internal class, so it comes along for the ride.
+                mGetTrapSprite = AccessTools.Method(t, "getTrapSprite");
                 if (fTraps == null || fInstanceId == null || fRevealed == null
                     || fTrappedPlayer == null || fTrapObject == null)
                     throw new Exception("one or more Trap fields not found");
+                if (mGetTrapSprite == null)
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        "[TrapperExtras] Trap.getTrapSprite not found - map markers fall back to the "
+                        + "here-point dot; the numbers still work.");
             } catch (Exception e) {
                 resolveFailed = true;
                 UsefulTORStuffPlugin.Logger?.LogWarning(
@@ -179,30 +190,91 @@ namespace UsefulTORStuff {
             }
         }
 
+        /// TOR's own trap artwork, fetched once. Null when the handle did not resolve, which is
+        /// the signal to fall back to a here-point dot rather than draw nothing.
+        private static Sprite TrapSprite() {
+            if (trapSpriteTried) return trapSprite;
+            trapSpriteTried = true;
+            try { trapSprite = mGetTrapSprite?.Invoke(null, null) as Sprite; }
+            catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[TrapperExtras] trap sprite failed: {e.Message}");
+            }
+            return trapSprite;
+        }
+
+        /*
+         * One marker: TOR's trap icon with its number on it.
+         *
+         * The icon is the same sprite the trap is drawn with on the floor (Trapper_Trap_Ingame,
+         * loaded at 300 px per unit), so the map says the same thing the world does. It is built as
+         * a fresh SpriteRenderer under the here-point's PARENT - the same transform TOR parents its
+         * own map markers to, which is what puts it in map space - rather than by cloning the
+         * here-point, because a clone would carry the dot's own sprite, sizing and material along
+         * with it.
+         *
+         * Sorting is copied off the here-point instead of guessed: the map draws into its own
+         * sorting layer, and a renderer that names a different one is either in front of everything
+         * or invisible.
+         */
         private static GameObject MakeMarker(MapBehaviour map, int id) {
-            var marker = UnityEngine.Object.Instantiate(
-                map.HerePoint, map.HerePoint.transform.parent, true);
-            marker.enabled = true;
-            marker.color = Trapper.color;
-            marker.gameObject.SetActive(true);
+            var reference = map.HerePoint;
+            var sprite = TrapSprite();
+
+            GameObject go;
+            SpriteRenderer sr;
+            if (sprite != null) {
+                go = new GameObject("UTS_TrapMarker");
+                go.transform.SetParent(reference.transform.parent, false);
+                sr = go.AddComponent<SpriteRenderer>();
+                sr.sprite = sprite;
+                /*
+                 * SIZED AGAINST THE HERE-POINT, NOT AGAINST A GUESS.
+                 *
+                 * The trap sprite is loaded at 300 px per unit, which is WORLD scale - but map
+                 * markers live in a space where positions are divided by ShipStatus.MapScale, so an
+                 * unscaled sprite would tower over the map, and by a different amount on every map.
+                 * The here-point is the player dot the game itself draws there, so it is the ruler:
+                 * match its rendered height and the icon sits right everywhere, whatever Among Us
+                 * does with the map next.
+                 */
+                float target = reference.bounds.size.y;
+                float own = sprite.bounds.size.y;
+                float k = (own > 0.0001f && target > 0.0001f) ? target / own : 0.55f;
+                go.transform.localScale = Vector3.one * k * 1.6f;   // a trap reads better than a dot
+            } else {
+                var clone = UnityEngine.Object.Instantiate(reference, reference.transform.parent, true);
+                clone.enabled = true;
+                clone.color = Trapper.color;
+                clone.gameObject.SetActive(true);
+                go = clone.gameObject;
+                sr = clone;
+            }
+            sr.sortingLayerName = reference.sortingLayerName;
+            sr.sortingOrder = reference.sortingOrder + 1;
+            go.SetActive(true);
 
             // The number, so the marker answers the question the log asks ("where is trap 3?").
             var label = new GameObject("TrapNumber");
-            label.transform.SetParent(marker.transform, false);
+            label.transform.SetParent(go.transform, false);
             label.transform.localPosition = new Vector3(0f, 0f, -0.1f);
-            label.transform.localScale = Vector3.one;
+            // Undo the icon's own scale, so the number is the same size on every marker instead of
+            // inheriting whatever the sprite needed.
+            float inv = go.transform.localScale.x > 0.001f ? 1f / go.transform.localScale.x : 1f;
+            label.transform.localScale = new Vector3(inv, inv, 1f);
             var tmp = label.AddComponent<TMPro.TextMeshPro>();
             tmp.text = id.ToString();
             tmp.fontSize = 2.2f;
             tmp.color = Color.white;
             tmp.alignment = TMPro.TextAlignmentOptions.Center;
             tmp.fontStyle = TMPro.FontStyles.Bold;
+            tmp.outlineWidth = 0.28f;                  // the icon is busy; a bare glyph vanishes on it
+            tmp.outlineColor = new Color32(0, 0, 0, 255);
             var mr = label.GetComponent<MeshRenderer>();
             if (mr != null) {
-                mr.sortingLayerName = marker.sortingLayerName;
-                mr.sortingOrder = marker.sortingOrder + 1;
+                mr.sortingLayerName = sr.sortingLayerName;
+                mr.sortingOrder = sr.sortingOrder + 1;
             }
-            return marker.gameObject;
+            return go;
         }
 
         private static void ClearMarkers() {
