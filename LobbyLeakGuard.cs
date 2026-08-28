@@ -71,6 +71,14 @@ namespace UsefulTORStuff {
         private static bool loggedUpdate;
         private static bool loggedDestroy;
         private static bool loggedChatClamp;
+        private static bool loggedClampStuck;
+
+        // Edge memory for the chat clamp, kept HERE rather than read back out of the game: see the
+        // long note in HudUpdatePatch. `buttonWasShown` is what makes the clamp fire once per
+        // appearance instead of once per frame; `windowClamps` caps a ForceClosed that never takes.
+        private static bool buttonWasShown;
+        private static int windowClamps;
+        private const int MaxWindowClamps = 8;
 
         private static bool InRound() =>
             ShipStatus.Instance != null && AmongUsClient.Instance != null
@@ -121,7 +129,11 @@ namespace UsefulTORStuff {
         static class HudUpdatePatch {
             public static void Postfix(HudManager __instance) {
                 try {
-                    if (!InRound()) { loggedDestroy = false; loggedChatClamp = false; return; }
+                    if (!InRound()) {
+                        loggedDestroy = false; loggedChatClamp = false; loggedClampStuck = false;
+                        buttonWasShown = false; windowClamps = 0;
+                        return;
+                    }
 
                     // B: the lobby screen has no business existing in a round. Asked through the
                     // side-effect-free helper: the previous build read GameStartManager.Instance
@@ -149,19 +161,56 @@ namespace UsefulTORStuff {
                     var chat = __instance.Chat;
                     if (chat == null) return;
 
-                    // IDEMPOTENT, and that word is load-bearing. chat.isActiveAndEnabled is true
-                    // for the entire round (the ChatController component always runs), so the old
-                    // guard called SetVisible(false) EVERY FRAME of EVERY round. SetVisible is not
-                    // a cheap setter: each call logs "Chat is hidden" and walks ControllerManager
-                    // through QuickChatMenu/BanMenu CloseOverlayMenu - the exact per-frame spam
-                    // filling the 2026-08-14 log (thousands of lines in seconds), plus per-frame UI
-                    // menu-stack churn in a round that is already degraded. So the clamp now acts
-                    // only when there is visibly something to clamp: the chat button is shown, or
-                    // the chat window is open.
+                    /*
+                     * EDGE-TRIGGERED, and that word is load-bearing - "idempotent" was the word
+                     * here before, and it was wrong.
+                     *
+                     * The first build called SetVisible(false) every frame because
+                     * chat.isActiveAndEnabled is true for the whole round. The 2026-08-14 fix tried
+                     * to bound that by acting "only when there is visibly something to clamp", i.e.
+                     * while chat.chatButton.gameObject.activeSelf reads true. IT READS TRUE AFTER
+                     * THE CALL: SetVisible(false) does not clear that flag on this install, so the
+                     * condition never became false and the clamp still ran on EVERY FRAME - 4662
+                     * calls in 78 seconds, measured off the 2026-08-23 log, i.e. once per frame from
+                     * round start onwards. Each call logs "Chat is hidden" and walks
+                     * ControllerManager through QuickChatMenu/BanMenu/ChatUi CloseOverlayMenu, 14
+                     * log lines a frame. Both hard client crashes in that log (2026-08-23 19:18:38
+                     * and 2026-08-24 14:24:54) died mid-write inside exactly this churn, and they
+                     * are the only two in ten days of play.
+                     *
+                     * A flag the call does not change cannot be the stop condition. So the trigger
+                     * is now an edge remembered in OUR OWN field: clamp when the chat becomes
+                     * visible, then stay quiet until it has actually gone away again. If the clamp
+                     * is powerless here (the button never goes away), that costs one call per round
+                     * instead of sixty per second - and hammering sixty times a second would not
+                     * have made it work either, only killed the client.
+                     */
                     bool buttonShown = false, windowOpen = false;
                     try { buttonShown = chat.chatButton != null && chat.chatButton.gameObject.activeSelf; } catch { }
                     try { windowOpen = chat.IsOpenOrOpening; } catch { }
-                    if (!buttonShown && !windowOpen) return;
+
+                    // The open window first, and on its own budget: ForceClosed genuinely closes it,
+                    // so this is self-limiting and a re-opened window gets clamped again. The cap is
+                    // only there in case it does not take, so that case cannot become a new loop.
+                    if (windowOpen) {
+                        if (windowClamps < MaxWindowClamps) {
+                            windowClamps++;
+                            try { chat.ForceClosed(); } catch { }
+                        } else if (!loggedClampStuck) {
+                            loggedClampStuck = true;
+                            UsefulTORStuffPlugin.Logger?.LogWarning(
+                                "[LobbyLeakGuard] the chat window stayed open through "
+                                + $"{MaxWindowClamps} ForceClosed calls - giving up for this round "
+                                + "rather than retrying every frame.");
+                        }
+                    } else {
+                        windowClamps = 0;
+                    }
+
+                    // The button: one call per appearance, never per frame.
+                    if (!buttonShown) { buttonWasShown = false; return; }
+                    if (buttonWasShown) return;
+                    buttonWasShown = true;
 
                     if (!loggedChatClamp) {
                         loggedChatClamp = true;
@@ -170,9 +219,6 @@ namespace UsefulTORStuff {
                             + $"(button={buttonShown}, window={windowOpen}).");
                     }
                     chat.SetVisible(false);
-                    // SetVisible only governs the button; a window that is already open stays open
-                    // without this.
-                    if (windowOpen) { try { chat.ForceClosed(); } catch { } }
                 } catch { }
             }
         }

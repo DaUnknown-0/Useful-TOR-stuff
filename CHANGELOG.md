@@ -125,6 +125,19 @@ down.
   Sabotage Tuning there was only one shared cooldown.
 
 ### Fixes
+- **The in-round chat clamp fires once per appearance instead of once per frame**: that is a
+  client-crash fix, not a tidiness one. The clamp hides the chat button during a round; it was
+  gated on `chat.chatButton.gameObject.activeSelf`, on the assumption that `SetVisible(false)`
+  clears that flag. It does not on this install, so the condition never became false and the clamp
+  ran on **every frame**: 4662 calls in 78 seconds in the 2026-08-23 log, each one logging "Chat is
+  hidden" and walking ControllerManager through QuickChatMenu / BanMenu / ChatUi
+  `CloseOverlayMenu`, fourteen log lines a frame. Both hard client crashes in that log
+  (19:18:38 and the next day 14:24:54) died mid-write inside exactly that churn, and they are the
+  only two in ten days of play. A flag the call does not change cannot be the stop condition, so
+  the trigger is now an edge remembered in our own field. An open chat window keeps a budget of its
+  own (`ForceClosed` genuinely closes it, so it is self-limiting) capped at eight attempts per
+  round, with one warning if it never takes, so a clamp that turns out to be powerless costs one
+  call per round rather than sixty a second.
 - **A lone surviving Sidekick no longer crashes the end of the round.** "Sidekick Gets Promoted To
   Jackal On Jackal Death" defaults to off, so a dead Jackal leaves `Jackal.jackal` null while
   `Sidekick.sidekick` survives. `PlayerStatistics.GetPlayerCounts` counts the two separately, so the
