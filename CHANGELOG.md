@@ -144,6 +144,17 @@ option, default on.
   SENDING is refused for exactly as long - the trapper reads, and cannot start talking mid-round.
 
 ### Fixes
+- **The intro-cutscene crash guard actually runs now.** It had been inert since it was written. TOR's
+  `SetRoleTexts` is a STATIC method whose parameter happens to be named `__instance`
+  (`IntroPatch.cs:216`), and `__instance` is Harmony's reserved name for the target's `this` - a
+  static method has none, so the prefix was handed null instead of the cutscene and threw on its
+  first line, every single call. Measured off the 2026-08-28 log: 486 "rebuild failed" warnings in
+  one session, 54 per round across nine rounds, one per frame of the one-second `Effects.Lerp` TOR
+  drives this from. Not once did it succeed, so every intro fell through to TOR's own unguarded
+  method - exactly the path the guard exists to avoid. Taking the argument positionally (`__0`) is
+  immune to the name collision. The fallback warning is now logged once per intro rather than once
+  per frame, and with the full exception instead of just its message: a bare "Object reference not
+  set" is what let this hide for as long as it did.
 - **A medic who dies with a shield still queued no longer takes the charge with them.** With "Set
   Shield After Meeting" on, pressing the button calls `setFutureShielded` (`RPC.cs:822`), which parks
   the target and sets `Medic.usedShield` true straight away; the shield itself is placed at the exile

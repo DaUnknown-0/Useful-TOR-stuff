@@ -238,8 +238,26 @@ namespace UsefulTORStuff {
             // Postfix onto this same method (TryPatch) - a skipped original never skips postfixes on
             // the same target, so returning false here does not stop MultiJester's card re-stamp from
             // running right after.
+            /*
+             * THE ARGUMENT IS TAKEN POSITIONALLY, AND THAT IS THE WHOLE POINT.
+             *
+             * TOR's SetRoleTexts is STATIC and its parameter happens to be called `__instance`
+             * (IntroPatch.cs:216). `__instance` is Harmony's reserved name for the target's `this`,
+             * and a static method has none - so a prefix declaring `IntroCutscene __instance` is
+             * handed NULL instead of the cutscene, and the first line that touches it throws.
+             *
+             * Measured, because it shipped that way: the 2026-08-28 log carries 486 "rebuild failed"
+             * warnings in one session, 54 per round over nine rounds - one per frame of the
+             * one-second Effects.Lerp TOR drives this from. The rebuild never once succeeded, so
+             * this guard had been inert since it was written and every call fell through to TOR's
+             * own unguarded method, which is precisely the path it exists to avoid. `__0` is the
+             * same argument by position and is immune to the name collision.
+             */
+            private static int loggedForSeed = -1;
+
             [HarmonyPrefix]
-            public static bool Prefix(IntroCutscene __instance) {
+            public static bool Prefix(IntroCutscene __0) {
+                var __instance = __0;
                 try {
                     List<RoleInfo> infos = RoleInfo.getRoleInfoForPlayer(PlayerControl.LocalPlayer);
                     RoleInfo roleInfo = infos.Where(info => !info.isModifier).FirstOrDefault();
@@ -281,8 +299,20 @@ namespace UsefulTORStuff {
                     }
                     return false;
                 } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogWarning(
-                        $"[TorCrashGuards] SetRoleTexts rebuild failed, falling back to TOR's own (may still throw on the null-roleInfo path): {e.GetType().Name}: {e.Message}");
+                    // ONCE PER INTRO, not once per frame. TOR calls this from a one-second Lerp, so
+                    // an unthrottled warning is ~54 identical lines per round - the noise that hid
+                    // the null-__instance bug above for as long as it did. The seed is re-rolled per
+                    // intro in TOR's own Prefix, which makes it a free "is this a new round" key.
+                    // The full exception is logged, not just its message: a bare "Object reference
+                    // not set" said nothing about where, which is what made this take a log dump to
+                    // find rather than a glance.
+                    int seedNow = seedField != null ? (int)seedField.GetValue(null) : 0;
+                    if (loggedForSeed != seedNow) {
+                        loggedForSeed = seedNow;
+                        UsefulTORStuffPlugin.Logger?.LogWarning(
+                            "[TorCrashGuards] SetRoleTexts rebuild failed, falling back to TOR's own "
+                            + $"(may still throw on the null-roleInfo path): {e}");
+                    }
                     return true;
                 }
             }
