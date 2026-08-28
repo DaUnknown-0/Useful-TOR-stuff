@@ -514,5 +514,70 @@ namespace UsefulTORStuff {
                 }
             }
         }
+
+        /*
+         * THE SETTINGS-CHANGE POPUP SHOWS THE VALUE BUT NOT THE SETTING.
+         *
+         * Change any modded option and the notification in the lobby's bottom-left corner reads
+         * just "3" or "On" - which setting it belongs to is missing, so the one piece of
+         * information the popup exists to deliver is the one it does not carry. With several
+         * options changed in a row they are indistinguishable.
+         *
+         * CustomOptions.cs:194 calls
+         *   Notifier.AddSettingsChangeMessage((StringNames)(this.id + 6000), value, false)
+         * and the vanilla method builds its line as "TranslationController.GetString(key): value".
+         * `id + 6000` is not a real StringNames - it is a slot chosen to sit above the game's own
+         * range, precisely so it collides with nothing - so the lookup has nothing to find and the
+         * name half comes back empty. The value is TOR's own string and arrives intact, which is
+         * why exactly half the line shows up.
+         *
+         * The name is not lost, it was never asked for: the option is sitting in
+         * CustomOption.options under that very id. So the fix resolves it there and writes the
+         * whole line through AddDisconnectMessage, which takes plain text (the same call
+         * Unknown's Collection uses for its lobby notices).
+         *
+         * SAFE FOR VANILLA SETTINGS. Only keys at or above 6000 are touched, which is TOR's own
+         * offset and above every StringNames the game defines; a vanilla key, or a modded id with
+         * no option behind it, falls through to the original untouched. Display only, on the
+         * client that receives the change, so no gate and no option: nothing here decides anything.
+         */
+        [HarmonyPatch(typeof(NotificationPopper), nameof(NotificationPopper.AddSettingsChangeMessage))]
+        internal static class SettingsChangeMessageNamePatch {
+            /// TOR's offset from CustomOptions.cs:194. Read from there, not guessed.
+            private const int TorStringNameOffset = 6000;
+
+            /*
+             * POSITIONAL INJECTION (__0/__1), NOT PARAMETER NAMES.
+             *
+             * The vanilla signature is AddSettingsChangeMessage(key, value, playSound,
+             * associatedRole) - FOUR parameters, read out of the interop assembly's metadata, not
+             * the three TOR passes at the call site. Harmony binds injected parameters by name, so
+             * a guessed name is a patch that throws the moment PatchAll runs. The first two
+             * positions are all this fix needs and they are what the call site fixes in place.
+             */
+            public static bool Prefix(NotificationPopper __instance, StringNames __0, string __1) {
+                try {
+                    int raw = (int)__0;
+                    if (raw < TorStringNameOffset) return true;          // a real vanilla setting
+
+                    int id = raw - TorStringNameOffset;
+                    string name = null;
+                    foreach (var o in CustomOption.options) {
+                        if (o == null || o.id != id) continue;
+                        name = o.name;
+                        break;
+                    }
+                    // No option behind the id: leave it exactly as it was rather than inventing a
+                    // line for a message we cannot explain.
+                    if (string.IsNullOrEmpty(name)) return true;
+
+                    __instance.AddDisconnectMessage(name + ": " + __1);
+                    return false;
+                } catch (Exception e) {
+                    ThrottledLog("settings-name", $"settings change message failed: {e.GetType().Name}: {e.Message}");
+                    return true;
+                }
+            }
+        }
     }
 }

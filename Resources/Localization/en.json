@@ -1079,5 +1079,13 @@
   "uts.tricksterboxcount.mod_warning": "Trickster Box Count is not in effect: not every player has Useful TOR Stuff, so TOR's default of 3 boxes applies to everyone.",
   "uts.newcomershield.vote_blocked": "This player is new here and cannot be voted out before the first meeting is over.",
   "uts.newcomershield.option_meeting": "Shield During The First Meeting",
-  "uts.newcomershield.option_meeting_values": "Ends Before The Meeting|Blocks Votes|Blocks Guesses|Blocks Both"
+  "uts.newcomershield.option_meeting_values": "Ends Before The Meeting|Blocks Votes|Blocks Guesses|Blocks Both",
+  "uts.trapperextras.option_map": "Show Own Traps On The Map",
+  "uts.trapperextras.option_log": "Trap Log Stays Available",
+  "uts.trapperextras.button": "Trap Log",
+  "uts.trapperextras.log_title": "Trap Logs",
+  "uts.trapperextras.log_trap": "Trap",
+  "uts.trapperextras.log_empty": "No trap has been triggered often enough to be revealed yet.",
+  "uts.trapperextras.good": "Good Role",
+  "uts.trapperextras.evil": "Evil Role"
 }

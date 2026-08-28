@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.2.9";
+    public const string PluginVersion = "1.4.3.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -268,6 +268,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // attribute-based (PatchAll); only the option needs explicit creation here. Gated on
         // "everyone has the mod" (falls back to TOR's own 3, with a host warning otherwise).
         TricksterBoxCount.CreateOptions();
+        TrapperExtras.CreateOptions();
 
         // Lawyer/Lover "knows target/partner position on map" options. MapBehaviour / HudManager
         // patches are attribute-based (PatchAll); only the options need explicit creation.

@@ -157,6 +157,10 @@ namespace UsefulTORStuff {
                     if (me == null || me.Data == null || me.Data.IsDead) return;
                     if (AmongUsClient.Instance.NetworkMode == NetworkModes.FreePlay) return;
                     if ((me == Lovers.lover1 || me == Lovers.lover2) && Lovers.enableChat) return;
+                    // The trapper reading their own trap log (TrapperExtras). Only while the
+                    // view is actually open, and sending is refused for as long as it is, so
+                    // this opens the chat for READING and nothing else.
+                    if (TrapperExtras.LogViewOpen) return;
 
                     var chat = __instance.Chat;
                     if (chat == null) return;

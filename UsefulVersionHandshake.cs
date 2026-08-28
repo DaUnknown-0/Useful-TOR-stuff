@@ -58,23 +58,89 @@ namespace UsefulTORStuff {
         // display texts are localized (UTSLocalization), so a fixed-literal probe would miss and
         // stack the message every frame in any non-English language.
         private static readonly Dictionary<string, string> lastRenderedByMarker = new();
+        /*
+         * WHAT WE CHANGE ON TOR'S LOBBY TEXT, AND HOW IT GETS PUT BACK.
+         *
+         * GameStartText is shared: TOR writes its countdown and its own version warnings onto the
+         * same element. TOR resets position and scale every frame, but nothing else - so anything
+         * further we set (pivot, wrapping, rect width) stays set until WE undo it. That is what
+         * RestoreLobbyText is for, and every path that stops drawing calls it.
+         */
+        private static bool lobbyTextTouched;
+        private static Vector2 lobbyTextSizeDelta;
+        private static bool lobbyTextWrap;
+        private static TMPro.TextOverflowModes lobbyTextOverflow;
+
+        /// How much bigger than TOR's own lobby text ours is drawn.
+        ///
+        /// It used to be 1.0, which is SMALLER than TOR's own resting 1.2 and less than half its
+        /// 2.0 for a version warning - and the gate message is the longest string we ever show, so
+        /// on one line it stretched the full width of the screen as a hairline. 1.5 with wrapping
+        /// reads at a glance; the wrap is what makes the size usable, because a bigger font on one
+        /// unbroken line would simply run off the right edge.
+        private const float LobbyTextScale = 1.5f;
+
         private static void DrawTopLeftMessage(GameStartManager gsm, TMPro.TMP_Text text, string msg, string marker) {
             if (text.text != null && lastRenderedByMarker.TryGetValue(marker, out var prev)
                 && text.text.Contains(prev)) return;
             lastRenderedByMarker[marker] = msg;
             text.text = string.IsNullOrEmpty(text.text) ? msg : text.text + "\n" + msg;
+
+            if (!lobbyTextTouched) {
+                lobbyTextTouched = true;
+                lobbyTextSizeDelta = text.rectTransform.sizeDelta;
+                lobbyTextWrap = text.enableWordWrapping;
+                lobbyTextOverflow = text.overflowMode;
+            }
+
+            text.alignment = TMPro.TextAlignmentOptions.TopLeft;
+            // Pivot to top-left so the text grows right/down from the corner, never off-screen.
+            text.rectTransform.pivot = new Vector2(0f, 1f);
+            text.transform.localScale = new Vector3(LobbyTextScale, LobbyTextScale, 1f);
+
             var cam = Camera.main;
             if (cam != null) {
                 // Map the camera's top-left viewport corner to world space, then inset slightly.
                 Vector3 tl = cam.ViewportToWorldPoint(new Vector3(0f, 1f, 10f));
+                Vector3 tr = cam.ViewportToWorldPoint(new Vector3(1f, 1f, 10f));
                 tl.z = text.transform.position.z;
                 text.transform.position = tl + new Vector3(0.7f, -0.5f, 0f);
+
+                /*
+                 * THE WRAP WIDTH IS THE SCREEN, MEASURED - not a character count.
+                 *
+                 * A fixed "break every N characters" would be wrong at the first resolution or
+                 * aspect ratio that is not the one it was tuned on, and it would have to be re-tuned
+                 * for every translation. The camera already tells us how wide the world is here, so
+                 * the rect simply gets that width less the two margins. sizeDelta is in the rect's
+                 * OWN units, so it is divided by the scale actually in effect - read after the
+                 * localScale above, because that is what it multiplies.
+                 */
+                float scale = text.transform.lossyScale.x;
+                if (scale > 0.0001f) {
+                    float usable = (tr.x - tl.x) - 1.4f;      // 0.7 inset left, 0.7 margin right
+                    if (usable > 0.5f) {
+                        text.enableWordWrapping = true;
+                        text.overflowMode = TMPro.TextOverflowModes.Overflow;
+                        text.rectTransform.sizeDelta =
+                            new Vector2(usable / scale, lobbyTextSizeDelta.y);
+                    }
+                }
             }
-            text.alignment = TMPro.TextAlignmentOptions.TopLeft;
-            // Pivot to top-left so the text grows right/down from the corner, never off-screen.
-            text.rectTransform.pivot = new Vector2(0f, 1f);
-            text.transform.localScale = new Vector3(1.0f, 1.0f, 1f);
             gsm.GameStartTextParent.SetActive(true);
+        }
+
+        /// Hands GameStartText back to TOR exactly as it was found. Called from every path that
+        /// stops drawing our messages: the countdown takes the element over, and the settings
+        /// overlay covers it.
+        private static void RestoreLobbyText(TMPro.TMP_Text text) {
+            if (text == null) return;
+            text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+            if (!lobbyTextTouched) return;
+            lobbyTextTouched = false;
+            text.rectTransform.sizeDelta = lobbyTextSizeDelta;
+            text.enableWordWrapping = lobbyTextWrap;
+            text.overflowMode = lobbyTextOverflow;
         }
 
         public sealed class PlayerVersion {
@@ -429,6 +495,7 @@ namespace UsefulTORStuff {
                     if (text != null && lastRenderedByMarker.Count > 0) {
                         text.text = "";
                         lastRenderedByMarker.Clear();
+                        RestoreLobbyText(text);
                     }
                     return;
                 }
@@ -438,7 +505,7 @@ namespace UsefulTORStuff {
                 // scale each frame but never the pivot — leaving it would displace the countdown.
                 // Restore the centred pivot and stop drawing while the countdown runs.
                 if (__instance.startState == GameStartManager.StartingStates.Countdown) {
-                    if (text != null) text.rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                    RestoreLobbyText(text);
                     return;
                 }
                 if (text == null) return;

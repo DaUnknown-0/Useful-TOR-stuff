@@ -124,7 +124,55 @@ down.
   remaining seconds as a small label per icon. A feedback gap this mod's own feature created: before
   Sabotage Tuning there was only one shared cooldown.
 
+### Trapper: find your own traps, and keep the log (new, `TrapperExtras.cs`)
+Two gaps that are both about information the trapper already owns but cannot reach. Each is a host
+option, default on.
+- **The traps are numbered on the map.** TOR's log says "Trap 3:" using `Trap.instanceId`, a counter
+  that already runs 1..X, and never says where trap 3 is: the traps are drawn in the world but only
+  on the screen the trapper is standing on, so on Airship or Polus the number answers a question
+  they cannot ask. The markers use TOR's own here-point and the same world-to-map transform its
+  trapped-player markers use, so a trap marker lands where a player marker for the same spot would.
+- **The log survives the meeting.** It is written into the meeting chat, and the traps that produced
+  it are destroyed a few lines later in the same prefix, so afterwards there is no way back to it -
+  and re-posting it into the chat would not help either, because the chat is hidden during a round.
+  It is captured in a prefix on `Trap.clearRevealedTraps`, which is the one seam between TOR writing
+  the log and destroying the traps, and a button of the trapper's own (L) reopens the chat and writes
+  in whatever they have not been shown yet. Capturing at that seam also means the entries carry TOR's
+  own shuffle of who walked into which trap, rather than the true trigger order it shuffles precisely
+  to hide. Two narrow concessions make the chat usable there: LobbyLeakGuard gains one more exemption
+  (alongside meetings, the exile screen, dead players and lovers) for as long as the view is open, and
+  SENDING is refused for exactly as long - the trapper reads, and cannot start talking mid-round.
+
 ### Fixes
+- **A medic who dies with a shield still queued no longer takes the charge with them.** With "Set
+  Shield After Meeting" on, pressing the button calls `setFutureShielded` (`RPC.cs:822`), which parks
+  the target and sets `Medic.usedShield` true straight away; the shield itself is placed at the exile
+  screen, and only while the medic is alive (`ExileControllerPatch.cs:19`). A medic killed in between
+  therefore never delivers it, and nothing hands the charge back: `usedShield` is a static that
+  belongs to the ROLE and is reset only by `clearAndReload` at round start. `Shifter.shiftRole` moves
+  the `Medic.medic` pointer and nothing else, so whoever is shifted into the role inherits the block
+  and the shield button refuses every placement, for a shield nobody ever received. The second half
+  is quieter: `futureShielded` still points at the dead medic's old target, and at the NEXT exile the
+  medic pointer is a living player again, so TOR places that stale shield - one the new medic never
+  chose. Both are cleared now. Only the undelivered charge is refunded; a shield that was really
+  placed leaves `futureShielded` null and stays spent, so a successor does not get a second one.
+- **The settings-change popup names the setting again.** Change a modded option and the notification
+  in the lobby's bottom-left corner read just `3` or `On`: the setting it belonged to was missing, so
+  the one thing the popup exists to say was the one it did not say, and several changes in a row were
+  indistinguishable. TOR calls `Notifier.AddSettingsChangeMessage((StringNames)(this.id + 6000), ...)`
+  (`CustomOptions.cs:194`) and the vanilla method builds its line as `GetString(key): value`. That key
+  is not a real `StringNames` - the offset exists precisely so it collides with nothing - so the
+  lookup finds nothing and only the value survives. The name was never lost, it was never asked for:
+  the option is sitting in `CustomOption.options` under that id. Resolved from there and written as
+  one line. Keys below 6000 (every vanilla setting) and ids with no option behind them fall through
+  untouched.
+- **The lobby warnings are readable.** Our top-left lobby messages were drawn at scale 1.0, which is
+  smaller than TOR's own resting 1.2 and less than half the 2.0 it uses for a version warning. The
+  settings-gate notice is the longest string this mod shows, so on a single unwrapped line it
+  stretched the full width of the screen as a hairline. It is now 1.5 and wraps, with the wrap width
+  measured off the camera rather than fixed at a character count, so it holds at any resolution and
+  in any translation. Everything we change on TOR's shared lobby text is recorded and handed back
+  when the countdown takes the element over or the settings overlay covers it.
 - **The in-round chat clamp fires once per appearance instead of once per frame**: that is a
   client-crash fix, not a tidiness one. The clamp hides the chat button during a round; it was
   gated on `chat.chatButton.gameObject.activeSelf`, on the assumption that `SetVisible(false)`
