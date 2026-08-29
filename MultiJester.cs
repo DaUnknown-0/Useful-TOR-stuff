@@ -538,10 +538,28 @@ namespace UsefulTORStuff {
         //      Jesters must not be added.
         //   2) any other end -> extra Jesters are removed from the winners, the same way TOR removes
         //      its own Jester (EndGamePatch "notWinners").
+        //
+        // A FINALIZER, NOT A POSTFIX (2026-08-29, from a playtest log).
+        //
+        // Two Jesters, the extra one voted out, and the end screen showed the IMPOSTOR as winner.
+        // The log says exactly how far it got: "extra Jester DrSuspect was exiled - Jester win",
+        // "Endgame for 13", TOR's own summary built for 4 players - and then no "sole winner" line
+        // from here at all, followed by a bare NullReferenceException. This correction never ran.
+        //
+        // AmongUsClient.OnGameEnd carries a dozen postfixes from this plugin family alone (roles,
+        // end-screen extras, round cleanup) plus TOR's own. Harmony runs them in priority order and
+        // STOPS at the first one that throws: every later postfix is skipped, which at Priority.Low
+        // means this one is last in line and first to be lost. The same trap is written up in
+        // NewcomerShield's header for a different method - here it cost a player his win.
+        //
+        // A finalizer runs whether the chain completed or died, so the winner list is now corrected
+        // even when somebody else's postfix threw. The exception is passed through untouched
+        // (returning null would swallow a crash that is not ours to hide) - and the guard postfix
+        // in TorCrashGuards reports it with a stack trace so the thrower can be found.
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
         [HarmonyPriority(Priority.Low)]
         private static class WinnerPatch {
-            public static void Postfix() {
+            public static void Finalizer() {
                 try {
                     if (extraJesters.Count == 0) return;
 

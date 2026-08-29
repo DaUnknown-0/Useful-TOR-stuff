@@ -532,14 +532,40 @@ namespace UsefulTORStuff {
          * why exactly half the line shows up.
          *
          * The name is not lost, it was never asked for: the option is sitting in
-         * CustomOption.options under that very id. So the fix resolves it there and writes the
-         * whole line through AddDisconnectMessage, which takes plain text (the same call
-         * Unknown's Collection uses for its lobby notices).
+         * CustomOption.options under that very id.
+         *
+         * WHERE TO PUT IT BACK - and why the answer changed (2026-08-29).
+         *
+         * The first version of this fix resolved the name here and wrote the finished line through
+         * AddDisconnectMessage, which takes plain text. It read correctly and it made a NOISE:
+         * TOR passes playSound:false at the call site above, and that switch only reaches the
+         * original method. AddDisconnectMessage has no such parameter and plays the popper's
+         * playerDisconnectSound every time (the field is right there next to settingsChangeSound in
+         * the interop metadata). Changing four options in a row beeped four times - exactly the
+         * kind of small permanent annoyance a display fix has no business introducing.
+         *
+         * Nowhere better to intercept, either. The metadata says the popper builds its line in a
+         * PRIVATE SettingsChangeMessageLogic(StringNames, string, bool), and TranslationController
+         * has no plain (StringNames) overload to answer - only the (StringNames,
+         * Il2CppReferenceArray) form that TOR's own GetStringPatch already prefixes with opt.name.
+         * That patch is in place and the popup came out nameless anyway, which is the standing
+         * proof that the lookup inside the popper never reaches it. Adding a second resolver on the
+         * same overload would change nothing.
+         *
+         * So: let the original run exactly as it is - right sprite, right colour, TOR's
+         * playSound:false honoured - and repair the finished message afterwards. The popup object
+         * is still reachable through NotificationPopper.activeMessages, and
+         * LobbyNotificationMessage.UpdateMessage(string) is public and exists for precisely this.
+         *
+         * The repair only ever touches a message whose text is the BROKEN one: it must end with the
+         * value the call just carried and must not already contain the option name. A line the
+         * original got right (should TOR's lookup ever start working) fails that test and is left
+         * alone, which also makes this self-retiring rather than something that fights a future fix.
          *
          * SAFE FOR VANILLA SETTINGS. Only keys at or above 6000 are touched, which is TOR's own
          * offset and above every StringNames the game defines; a vanilla key, or a modded id with
-         * no option behind it, falls through to the original untouched. Display only, on the
-         * client that receives the change, so no gate and no option: nothing here decides anything.
+         * no option behind it, returns immediately. Display only, on the client that receives the
+         * change: no gate, no option, nothing here decides anything.
          */
         [HarmonyPatch(typeof(NotificationPopper), nameof(NotificationPopper.AddSettingsChangeMessage))]
         internal static class SettingsChangeMessageNamePatch {
@@ -555,10 +581,11 @@ namespace UsefulTORStuff {
              * a guessed name is a patch that throws the moment PatchAll runs. The first two
              * positions are all this fix needs and they are what the call site fixes in place.
              */
-            public static bool Prefix(NotificationPopper __instance, StringNames __0, string __1) {
+            public static void Postfix(NotificationPopper __instance, StringNames __0, string __1) {
                 try {
                     int raw = (int)__0;
-                    if (raw < TorStringNameOffset) return true;          // a real vanilla setting
+                    if (raw < TorStringNameOffset) return;                // a real vanilla setting
+                    if (string.IsNullOrEmpty(__1)) return;
 
                     int id = raw - TorStringNameOffset;
                     string name = null;
@@ -567,15 +594,32 @@ namespace UsefulTORStuff {
                         name = o.name;
                         break;
                     }
-                    // No option behind the id: leave it exactly as it was rather than inventing a
-                    // line for a message we cannot explain.
-                    if (string.IsNullOrEmpty(name)) return true;
+                    // No option behind the id: leave the popup exactly as it is rather than
+                    // inventing a line for a message we cannot explain.
+                    if (string.IsNullOrEmpty(name)) return;
 
-                    __instance.AddDisconnectMessage(name + ": " + __1);
-                    return false;
+                    var messages = __instance.activeMessages;
+                    if (messages == null) return;
+
+                    // Newest last or newest first - the metadata does not say which end
+                    // AddMessageToQueue writes to, so walk the whole list and let the text decide.
+                    // Only the broken shape qualifies: ends with the value this very call carried,
+                    // and does not already carry the name. Both halves matter - the first picks out
+                    // OUR message, the second means a line the original got right is never touched
+                    // and an already-repaired one is never repaired twice.
+                    string fixedLine = name + ": " + __1;
+                    for (int i = 0; i < messages.Count; i++) {
+                        var m = messages[i];
+                        if (m == null || m.Text == null) continue;
+                        string text = m.Text.text;
+                        if (string.IsNullOrEmpty(text)) continue;
+                        if (!text.EndsWith(__1, StringComparison.Ordinal)) continue;
+                        if (text.Contains(name)) continue;
+                        m.UpdateMessage(fixedLine);
+                        return;
+                    }
                 } catch (Exception e) {
                     ThrottledLog("settings-name", $"settings change message failed: {e.GetType().Name}: {e.Message}");
-                    return true;
                 }
             }
         }

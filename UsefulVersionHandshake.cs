@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -218,6 +218,67 @@ namespace UsefulTORStuff {
             playerVersions[clientId] = new PlayerVersion(ver, guid);
         }
 
+        /*
+         * RE-BROADCAST WHEN SOMEBODY IS STILL MISSING (2026-08-29, from a playtest report:
+         * "if the host does not press rejoin/next round FIRST, the mod check falls apart for
+         * everyone who pressed before him").
+         *
+         * The handshake is fire-and-forget: each client shouts its version once when it enters the
+         * lobby (GameStartManager.Start re-arms versionSent) and once more whenever somebody else
+         * joins. That is enough only while everybody arrives in a helpful order. Return to the
+         * lobby from an end screen and the order is whoever clicked first:
+         *
+         *   1. player A goes back and broadcasts - the host is still on the end screen
+         *   2. the host goes back, and his OnGameJoined postfix CLEARS playerVersions, throwing
+         *      away A's entry (or A's message arrives in the window just before that clear)
+         *   3. nothing ever makes A speak again, because from A's side nobody "joined"
+         *
+         * A is then permanently listed as "missing mod" on the host, which is not cosmetic: it is
+         * what EveryoneHasMod() gates the extra Jesters and extra modifiers on.
+         *
+         * Fix: keep asking, briefly. While an entry is missing for a connected client, re-send our
+         * own version every two seconds - the receive side is a plain dictionary write, so a
+         * duplicate costs nothing and cannot desync anything. The attempts are capped and re-armed
+         * on each join, so a player who genuinely has no mod produces a handful of small messages
+         * and then silence, not a permanent trickle.
+         */
+        private const int ResharesPerArrival = 5;
+        private const float ReshareIntervalSeconds = 2f;
+        private static int resharesLeft;
+        private static float nextReshareAt;
+
+        private static void ArmReshares() {
+            resharesLeft = ResharesPerArrival;
+            nextReshareAt = 0f;
+        }
+
+        private static void ReshareIfSomeoneIsMissing() {
+            try {
+                if (resharesLeft <= 0) return;
+                if (Time.realtimeSinceStartup < nextReshareAt) return;
+                var client = AmongUsClient.Instance;
+                if (client == null || PlayerControl.LocalPlayer == null) return;
+
+                bool missing = false;
+                foreach (InnerNet.ClientData c in client.allClients.ToArray()) {
+                    if (c == null || c.Character == null) continue;
+                    if (c.Id == client.ClientId) continue;          // ourselves: never in the table
+                    if (playerVersions.ContainsKey(c.Id)) continue;
+                    missing = true;
+                    break;
+                }
+                // Everybody accounted for: stop early rather than spending the remaining attempts.
+                if (!missing) { resharesLeft = 0; return; }
+
+                resharesLeft--;
+                nextReshareAt = Time.realtimeSinceStartup + ReshareIntervalSeconds;
+                ShareVersion();
+            } catch (Exception e) {
+                resharesLeft = 0;
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[Handshake] re-broadcast failed: {e.Message}");
+            }
+        }
+
         // Lists every connected client that lacks this mod or runs a different/modified build.
         // Returns "" when everyone matches. Works on any client (allClients is replicated).
         public static string BuildMismatchMessage() {
@@ -418,6 +479,7 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 playerVersions.Clear();
                 versionSent = false;
+                ArmReshares();         // the table is empty: chase whatever we just threw away
                 tintedClients.Clear(); // client ids are per-connection; never carry tints across lobbies
                 // The handshake is empty again, so "the host has no mod" cannot be concluded from it
                 // yet: re-open the settings gate until the first lobby frames have re-evaluated it.
@@ -430,6 +492,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnPlayerJoined))]
         static class OnPlayerJoinedPatch {
             public static void Postfix() {
+                ArmReshares();   // the newcomer may not be ready to receive on his very first frame
                 if (PlayerControl.LocalPlayer != null) ShareVersion();
             }
         }
@@ -438,6 +501,7 @@ namespace UsefulTORStuff {
         static class GameStartManagerStartPatch {
             public static void Postfix() {
                 versionSent = false;
+                ArmReshares();   // back in the lobby from a round or an end screen
             }
         }
 
@@ -452,6 +516,9 @@ namespace UsefulTORStuff {
                     versionSent = true;
                     ShareVersion();
                 }
+
+                // Catch up on anyone whose version never reached us (see ReshareIfSomeoneIsMissing).
+                ReshareIfSomeoneIsMissing();
 
                 if (AmongUsClient.Instance == null) return;
 

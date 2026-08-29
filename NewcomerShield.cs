@@ -352,7 +352,17 @@ namespace UsefulTORStuff {
                     $"[NewcomerShield] {shielded.Count} player(s) shielded until the first meeting.");
         }
 
-        private static void ApplyClear() => shielded.Clear();
+        // Logged, unlike a plain field reset would be, and for a diagnostic reason: this is the last
+        // thing that reaches a client when the host takes a shield away by hand, so on a client that
+        // dies at that moment it is the line the log ends on (a hard exit cuts the file mid-line -
+        // see the crash-forensics note). Without it that client's log says nothing at all about the
+        // one message it had just received. Only logged when there was something to clear, so an
+        // idle lobby does not repeat it.
+        private static void ApplyClear() {
+            if (shielded.Count == 0) return;
+            shielded.Clear();
+            UsefulTORStuffPlugin.Logger?.LogInfo("[NewcomerShield] shield list cleared by the host.");
+        }
 
         // ====================================================================
         // The driver: one tick, owned by this feature, driven by NewcomerShieldUI.Update
@@ -504,8 +514,16 @@ namespace UsefulTORStuff {
                     if (string.IsNullOrEmpty(code)) continue;
                     if (HasRealCode(p)) realCodes++; else nameFallbacks++;
 
-                    bool isNew = manualNewcomers.Contains(code)
-                                 || (!grace && !seenFriendCodes.Contains(code));
+                    // Mirrors WouldShield, and the exclusion set is the half that used to be
+                    // missing here: taking a shield away by hand only ever changed the lobby
+                    // preview, because this decision asked the automatic rule again at round start
+                    // and handed the shield straight back. The host clicked "unprotect", watched
+                    // the row turn grey, and the player was shielded anyway - the one case the
+                    // panel exists for. Same order as WouldShield: an explicit exclusion beats
+                    // both the manual mark and the automatic rule.
+                    bool isNew = !manualExcluded.Contains(code)
+                                 && (manualNewcomers.Contains(code)
+                                     || (!grace && !seenFriendCodes.Contains(code)));
                     if (isNew) ids.Add(p.PlayerId);
 
                     // Playing this round counts as having been here, whether shielded or not.

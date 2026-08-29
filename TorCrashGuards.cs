@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -599,6 +599,38 @@ namespace UsefulTORStuff {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[TorCrashGuards] Arrow.UpdateProximity HUD-template guard failed: {e.GetType().Name}: {e.Message}");
                     return true;
                 }
+            }
+        }
+
+        /*
+         * WHO THREW IT? - naming the exception that kills the end-of-game chain.
+         *
+         * A playtest ended with the wrong winner on the end screen and one bare line in the log:
+         * "NullReferenceException: Object reference not set to an instance of an object." No stack,
+         * no owner. AmongUsClient.OnGameEnd carries more than a dozen postfixes across this mod
+         * family plus TOR's own, and Harmony stops the chain at the first one that throws - so a
+         * single unowned NRE silently deletes everything downstream of it (in that round: the
+         * Jester winner correction, which is why the Impostor was shown as the winner).
+         *
+         * This finalizer exists to end that guessing. It reports the exception WITH its stack trace
+         * and hands it straight back - it fixes nothing, hides nothing, and changes no outcome.
+         * Returning the exception rather than null is deliberate: swallowing it here would paper
+         * over a crash that belongs to whoever caused it, and the next reader would be looking for
+         * a bug that no longer prints.
+         *
+         * Note what this can and cannot see: Harmony hands a finalizer the exception from the
+         * original method and the patches around it, so a thrown postfix is reported here. An
+         * exception raised later, while the end-screen scene builds, belongs to a different call
+         * and will not appear.
+         */
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
+        static class OnGameEndChainReporterPatch {
+            public static Exception Finalizer(Exception __exception) {
+                if (__exception == null) return null;
+                UsefulTORStuffPlugin.Logger?.LogError(
+                    "[TorCrashGuards] the OnGameEnd patch chain threw - every patch after the "
+                    + $"thrower was skipped this round: {__exception}");
+                return __exception;
             }
         }
     }
