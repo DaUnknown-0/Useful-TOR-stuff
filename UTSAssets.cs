@@ -43,8 +43,24 @@ namespace UsefulTORStuff {
                 using Stream stream = asm.GetManifestResourceStream(path);
                 if (stream == null) return null;
                 var data = new byte[stream.Length];
-                _ = stream.Read(data, 0, (int)stream.Length);
-                var tex = new Texture2D(2, 2, TextureFormat.ARGB32, true);
+                // AUDIT-2026-08-23, L-19 (fixed in UCAssets at the time, missed here): a single
+                // Read() is not guaranteed to fill the buffer - Stream.Read may legitimately
+                // return fewer bytes than asked, and a manifest resource stream is exactly the
+                // kind that does. The old code fed the short buffer to LoadImage regardless,
+                // which either fails to decode or decodes a corrupted image. Same read loop as
+                // UCAssets.LoadTexture and UCHats.ReadResource.
+                int read = 0;
+                while (read < data.Length) {
+                    int n = stream.Read(data, read, data.Length - read);
+                    if (n <= 0) break;
+                    read += n;
+                }
+                if (read != data.Length) return null;
+                // PERF/MEMORY: no mip chain - a pyramid costs a third of the texture on top of it
+                // and buys nothing for sprites drawn at a fixed on-screen size. Matches UCAssets
+                // and UnknownsAtlas' loaders, and every procedurally drawn texture in this
+                // codebase already passes false here.
+                var tex = new Texture2D(2, 2, TextureFormat.ARGB32, false);
                 if (!ImageConversion.LoadImage(tex, data, false)) return null;
                 tex.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontSaveInEditor;
                 var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height),
@@ -82,7 +98,19 @@ namespace UsefulTORStuff {
                 using Stream stream = assembly.GetManifestResourceStream(path);
                 if (stream == null) return null;
                 var bytes = new byte[stream.Length];
-                _ = stream.Read(bytes, 0, (int)stream.Length);
+                // Same short-read bug as the sprite loader above (AUDIT-2026-08-23, L-19): a
+                // single Read() may return fewer bytes than asked. Here the tail of the buffer
+                // then stays zeroed and the clip is built at full length anyway, so the cue plays
+                // and simply cuts to silence part way through - a failure that is easy to hear
+                // and hard to attribute. Bail out instead; every caller already handles a null
+                // clip, and UCAssets' own Ogg loader uses the same read-until-full shape.
+                int got = 0;
+                while (got < bytes.Length) {
+                    int n = stream.Read(bytes, got, bytes.Length - got);
+                    if (n <= 0) break;
+                    got += n;
+                }
+                if (got != bytes.Length) return null;
                 float[] samples = new float[bytes.Length / 4];
                 for (int i = 0; i < samples.Length; i++)
                     samples[i] = (float)BitConverter.ToInt32(bytes, i * 4) / int.MaxValue;

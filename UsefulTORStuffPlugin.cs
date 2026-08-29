@@ -785,6 +785,9 @@ public class UsefulTORStuffPlugin : BasePlugin
     [HarmonyPriority(Priority.Low)] // run after TOR's own PingTracker postfix
     public static class VersionDisplayPatch
     {
+        private static string cachedLine;
+        private static string cachedForRaw;
+
         public static void Postfix(PingTracker __instance)
         {
             if (__instance == null || __instance.text == null) return;
@@ -796,16 +799,33 @@ public class UsefulTORStuffPlugin : BasePlugin
             // own wrapper and click handling, so strip the old one here rather than touching every
             // locale file's uts.plugin.version_line entry.
             string rawLine = UTSLocalization.Tr("uts.plugin.version_line", VersionDisplay.Format(Version));
-            const string linkOpen = "<link=\"usefulTORStuffCredits\">";
-            const string linkClose = "</link>";
-            string line = rawLine;
-            if (line.StartsWith(linkOpen) && line.EndsWith(linkClose))
-                line = line.Substring(linkOpen.Length, line.Length - linkOpen.Length - linkClose.Length);
 
-            UnknownsCollective.Contribute(PluginGuid, line);
+            // PERF: the strip below only has to run when the translated line actually changes,
+            // which is at a language switch - not sixty times a second. Keyed on the raw string
+            // rather than hooked to UTSLocalization.LanguageApplied: one string compare costs
+            // nothing next to the StartsWith/EndsWith/Substring it replaces, and it is
+            // self-healing if the line ever changes by a path that does not raise that event.
+            if (cachedLine == null || !string.Equals(cachedForRaw, rawLine, StringComparison.Ordinal))
+            {
+                cachedForRaw = rawLine;
+                const string linkOpen = "<link=\"usefulTORStuffCredits\">";
+                const string linkClose = "</link>";
+                string line = rawLine;
+                if (line.StartsWith(linkOpen) && line.EndsWith(linkClose))
+                    line = line.Substring(linkOpen.Length, line.Length - linkOpen.Length - linkClose.Length);
+                cachedLine = line;
+            }
+
+            UnknownsCollective.Contribute(PluginGuid, cachedLine);
             text = UnknownsCollective.Render(__instance.text, text);
 
-            __instance.text.text = text;
+            // PERF: TextMeshPro rebuilds its mesh on EVERY assignment to .text, even when the
+            // string is identical - the setter marks the text dirty without comparing. Six of our
+            // mods write this same field one after another each frame and
+            // UnknownsCollective.Render is idempotent within a frame, so at most the first of
+            // those writes carries a change. See the same guard in the other five plugins.
+            if (!string.Equals(__instance.text.text, text, StringComparison.Ordinal))
+                __instance.text.text = text;
         }
     }
 }
