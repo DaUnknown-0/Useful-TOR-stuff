@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -58,6 +58,40 @@
  *   - resetVariables is NEVER called as a probe. It wipes real round state.
  *   - No BepInEx/HarmonyX/MonoMod upgrade. TOR is built against be.697.
  *
+ * WHAT CHANGED ON 2026-08-29, AND WHY THIS FILE GOT SMALLER
+ * ----------------------------------------------------------
+ * Seven crash dumps from this machine (AppData\Local\CrashDumps) and a run of hard crashes on
+ * other players' clients the same evening ("in the lobby", "walking around in a round") were read
+ * together. Three of the dumps are recent and all three are on the main thread: two die INSIDE
+ * coreclr.dll at the very same address, one of them in an empty lobby a minute after launch; the
+ * third dies at an address inside no module at all - the JIT code region, the same 0x34..0x3A
+ * range this file logs for method entries - reading address 0xE. In every one of those sessions
+ * tiered compilation was on and this file was busy: 114 methods under watch, two "baseline"
+ * repairs per tick, fingerprint repairs whenever the runtime touched an entry, "repair #58 this
+ * session" in the host log.
+ *
+ * That made this file the prime suspect, because it is the ONE component in the whole mod family
+ * that rewrites native code while the game runs. And on x86 .NET 6 it does so on ground the
+ * runtime is rewriting too: with tiering on, a method's entry is a precode stub the runtime
+ * retargets on its own (call-counting stubs in, tier-1 code out). Most of what the fingerprint
+ * detector saw as "code changed at byte 1" was exactly that - the runtime moving its own jump, not
+ * a patch being lost. Each such sighting triggered Unpatch + Patch, and Unpatch writes MonoMod's
+ * SAVED bytes back: the precode as it looked when first detoured, pointing at code and stubs the
+ * runtime has since retired. Either the next call goes through that stale jump into recycled stub
+ * memory (the no-module crash), or the runtime trips over a precode that no longer holds what it
+ * wrote (the identical coreclr address, twice). Not proven from the dumps - there are no symbols -
+ * but it is the only account that fits all three signatures and the other players' reports.
+ *
+ * So the passive detector, the adoption of every patched TOR method and the baseline repairs are
+ * gone. What is left is the measured minimum: the two methods that were SEEN to lose their
+ * patches, repaired at the two moments they are guaranteed cold (lobby entry, round start), plus
+ * the canary - a behavioural probe, not a byte comparison - which repairs getRoleInfoForPlayer
+ * only when its postfix demonstrably did not run, and at most once every CanaryHealCooldown. A
+ * repair is still a native write and still carries the risk above; it is now rare instead of
+ * constant. The real fix remains DOTNET_TieredCompilation=0, which Doorstop cannot set for other
+ * players - it reads no runtimeconfig and sets no environment - so it stays a per-player launch
+ * option.
+ *
  * WHY THIS LIVES IN UsefulTORStuff, AND WHY IT IS NOT AN IN-GAME OPTION
  * --------------------------------------------------------------------
  * A forced regeneration rebuilds the wrapper from the WHOLE registry, so healing here also restores
@@ -100,18 +134,6 @@ namespace UsefulTORStuff {
             public string Label;
             public MethodBase Method;
 
-            // Fingerprint of the native code this method entered last time we repaired it. See
-            // CaptureFingerprint: this is what lets a drop be detected WITHOUT calling the method,
-            // which is the only way resetVariables can ever be watched.
-            public IntPtr NativeStart;
-            public byte[] Prologue;
-
-            // True once a repair has actually run on this method, which is the ONLY state in which
-            // Prologue is worth comparing: it then describes a detour we just installed ourselves.
-            // Adopting a method and trusting whatever happened to be at its entry does not work - see
-            // the comment on AdoptPatchedTorMethods.
-            public bool Baselined;
-
             // Consecutive failed repairs. NOT a permanent verdict: the first failure is expected and
             // usually clears itself, see MaxHealAttempts.
             public int FailedHeals;
@@ -122,20 +144,15 @@ namespace UsefulTORStuff {
         private static MethodInfo sentinelPostfix;
         private static MethodInfo roleInfoProbe;
         private static float nextCheck;
-        private static float nextAdopt;
         private static int healCount;
         private static int detectedDrops;   // repairs that followed an actual detected drop
-        private static int fingerprintAgreements;
-        private static int fingerprintDisagreements;
-        private static int prologuesLogged;
         private static int unrepairable;
         private const int MaxHealAttempts = 4;
-        // Two, not four. Measured on the first run of the baselining version: arming 68 methods cost
-        // ~400ms in total, and at four per tick that is roughly 24ms in a single frame, i.e. over a
-        // 60fps budget. Two keeps each arming frame comfortably under it and merely stretches the
-        // start-up from about nine seconds to about seventeen, which nobody notices.
-        private const int BaselinePerTick = 2;
         private static long totalHealMs;
+        // A canary repair is a native write into a live method. Once every ten seconds bounds how
+        // often that can happen even if the probe keeps reporting a drop.
+        private static float nextCanaryHeal;
+        private const float CanaryHealCooldown = 10f;
 
         // ────────────────────────────────────────────────────────────────────────────────────
         // Load-time setup
@@ -188,11 +205,10 @@ namespace UsefulTORStuff {
                 Add("RoleInfo.getRoleInfoForPlayer", roleInfoProbe);
                 Add("RPCProcedure.resetVariables", AccessTools.Method(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables)));
 
-                // These two are added by hand and stay at the front: index 0 is the one method the
-                // canary can call safely, and index 1 is the one whose failure does real damage. Every
-                // other patched TOR method is discovered later, on the first tick - see AdoptPatchedTorMethods,
-                // which cannot run here because plugins loading after this one (HostFix, Role Control)
-                // have not registered their patches yet.
+                // These two, and only these two: index 0 is the one method the canary can call safely,
+                // index 1 is the one whose failure does real damage. Every other patched TOR method
+                // used to be adopted on the first tick and repaired on a byte comparison; that is what
+                // the 2026-08-29 note in the header is about, and it is gone.
                 LogPatchedTorSurface();
                 LogRuntimeTiering();
 
@@ -212,40 +228,6 @@ namespace UsefulTORStuff {
             watched.Add(new Watched { Label = label, Method = m });
         }
 
-        // Take every managed TOR method anyone has patched under watch, not just the two measured
-        // ones. This became defensible only once the passive fingerprint detector was validated
-        // (2026-08-17: on the one method both detectors can see, they agreed on the real drop and the
-        // 5-byte window produced no false positives all session). That matters because the old
-        // objection to a long list was cost: healing everything on a timer would be wasteful and could
-        // stutter a round. With per-method detection nothing is repaired that has not actually been
-        // replaced, so the list length costs a pointer read and five bytes per method per tick.
-        //
-        // Runs on ticks rather than at load, because plugins that load after this one have not
-        // registered their patches yet, and it repeats occasionally so late or re-registered patches
-        // are picked up too. Il2Cpp game types are excluded throughout: those go through a different
-        // detour path and were never observed losing their patches.
-        private static void AdoptPatchedTorMethods() {
-            try {
-                var torAssembly = typeof(RPCProcedure).Assembly;
-                int added = 0;
-                foreach (var m in Harmony.GetAllPatchedMethods()) {
-                    if (m?.DeclaringType?.Assembly != torAssembly) continue;
-                    bool known = false;
-                    for (int i = 0; i < watched.Count; i++)
-                        if (watched[i].Method == m) { known = true; break; }
-                    if (known) continue;
-                    watched.Add(new Watched { Label = $"{m.DeclaringType.Name}.{m.Name}", Method = m });
-                    added++;
-                }
-                if (added > 0)
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[DetourWatchdog] {watched.Count} patched TOR method(s) under watch (+{added}); " +
-                        "each gets one repair to establish a baseline before it can be checked.");
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[DetourWatchdog] adopt failed: {e.GetType().Name}");
-            }
-        }
-
         // One line at startup naming every managed TOR method that anyone has patched. Il2Cpp game
         // types are excluded on purpose: those go through a different detour path and were never
         // observed losing their patches.
@@ -258,7 +240,7 @@ namespace UsefulTORStuff {
                 }
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[DetourWatchdog] {count} patched method(s) live in TOR's managed assembly and " +
-                    "share the failure mode; all of them are taken under watch on the first tick.");
+                    "share the failure mode; only the two measured ones are repaired (see the 2026-08-29 note).");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[DetourWatchdog] surface scan failed: {e.GetType().Name}");
             }
@@ -287,83 +269,6 @@ namespace UsefulTORStuff {
             }
         }
 
-        // ────────────────────────────────────────────────────────────────────────────────────
-        // Passive detection: has the native code under a patched method been replaced?
-        // ────────────────────────────────────────────────────────────────────────────────────
-        // The canary below can only watch ONE method, the one it is safe to call. Everything else -
-        // resetVariables above all, which wipes live round state and must never be called as a probe -
-        // needs a check that touches nothing. This is it: Harmony's repair writes a jump into the
-        // method's native code, so after a repair we record where that code starts and what its first
-        // bytes are. If the runtime later compiles a fresh copy of the method, either the entry moves
-        // or those bytes are no longer our jump, and both are visible without executing anything.
-        //
-        // NOT YET PROVEN to work in this process: on 32-bit the entry may be a precode stub whose
-        // address stays put while the code behind it is swapped, in which case the pointer alone would
-        // never change - hence reading the bytes too, and hence running this ALONGSIDE the canary for
-        // now and logging when the two disagree. The canary is the known-good reference; this is the
-        // candidate that could cover all 67 methods instead of two. One run with both decides it.
-        // Five bytes, not the sixteen this started with. Measured 2026-08-17: a 16-byte window
-        // reported "code changed at byte 8" over and over while the canary confirmed the patch was
-        // still running fine, i.e. bytes past the jump are simply not part of the detour and change
-        // for reasons of their own. The one REAL drop that session showed up at byte 1 - inside the
-        // relative offset of an x86 `E9 xx xx xx xx` jump - so the jump itself is exactly the right
-        // thing to fingerprint, and everything beyond it is noise that would cause pointless repairs.
-        private const int PrologueBytes = 5;
-
-        private static void CaptureFingerprint(Watched w) {
-            try {
-                w.NativeStart = w.Method.MethodHandle.GetFunctionPointer();
-                var buf = new byte[PrologueBytes];
-                Marshal.Copy(w.NativeStart, buf, 0, PrologueBytes);
-                w.Prologue = buf;
-                // Logged once per method so the assumption "the entry starts with a jump" is on the
-                // record and can be checked, instead of being taken on faith.
-                // Logged for the first few methods so the shape of an entry is on the record rather
-                // than assumed. NOTE what these bytes are and are not: MonoMod's own GetFunctionPointer
-                // FOLLOWS precode stubs and patches the body behind them, while this reads the raw
-                // MethodHandle pointer. So on a method with a precode this is the runtime's jump, not
-                // MonoMod's detour. That is fine for the job - a recompile retargets exactly this jump,
-                // which is the change we want to notice - but it is not "our detour", and an earlier
-                // version of this file justified an E9/FF25 filter on that false premise. There is no
-                // such filter any more: the baseline comes from a repair we performed, so whatever the
-                // bytes are, a later change to them is meaningful.
-                if (prologuesLogged < 3) {
-                    prologuesLogged++;
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[DetourWatchdog] {w.Label} entry at {w.NativeStart.ToInt64():X} reads " +
-                        $"{BitConverter.ToString(buf)} after a repair.");
-                }
-            } catch (Exception e) {
-                w.NativeStart = IntPtr.Zero;
-                w.Prologue = null;
-                UsefulTORStuffPlugin.Logger?.LogWarning(
-                    $"[DetourWatchdog] could not fingerprint {w.Label}: {e.GetType().Name}");
-            }
-        }
-
-        // Returns null when the fingerprint still matches, otherwise a short description of what moved.
-        private static string FingerprintChange(Watched w) {
-            if (w.Prologue == null || w.NativeStart == IntPtr.Zero || !w.Baselined) return null;
-            try {
-                var now = w.Method.MethodHandle.GetFunctionPointer();
-                if (now != w.NativeStart)
-                    return $"entry moved {w.NativeStart.ToInt64():X} -> {now.ToInt64():X}";
-                var buf = new byte[PrologueBytes];
-                Marshal.Copy(now, buf, 0, PrologueBytes);
-                for (int i = 0; i < PrologueBytes; i++)
-                    if (buf[i] != w.Prologue[i]) return $"code changed at byte {i}";
-                return null;
-            } catch (Exception e) {
-                return $"fingerprint read failed: {e.GetType().Name}";
-            }
-        }
-
-        // ────────────────────────────────────────────────────────────────────────────────────
-        // Detection
-        // ────────────────────────────────────────────────────────────────────────────────────
-        // Registered through PatchAll like every other patch in this mod, so it lives in the same
-        // wrapper as everything else: once that wrapper stops running, this stops ticking too, which
-        // is precisely the signal we want.
         [HarmonyPatch(typeof(RoleInfo), nameof(RoleInfo.getRoleInfoForPlayer))]
         static class CanaryPatch {
             public static void Postfix() { canaryTicks++; }
@@ -381,36 +286,8 @@ namespace UsefulTORStuff {
                 if (Time.time < nextCheck) return;
                 nextCheck = Time.time + Mathf.Max(0.1f, checkInterval?.Value ?? DefaultInterval);
 
-                // Late-loading plugins register their patches after this one was armed, so the watch
-                // list is topped up here rather than at load. Cheap and idempotent.
-                if (Time.time >= nextAdopt) {
-                    nextAdopt = Time.time + 30f;
-                    AdoptPatchedTorMethods();
-                }
-
-                // Give newly adopted methods a baseline: one repair each, a few per tick so ~70 wrapper
-                // rebuilds never land in a single frame. Until a method has been through this its entry
-                // bytes describe whatever state it happened to be in when adopted - including, possibly,
-                // an already-dead detour, which would then never look changed again and never be fixed.
-                var sw = Stopwatch.StartNew();
-                int baselined = 0;
-                for (int i = 0; i < watched.Count && baselined < BaselinePerTick; i++) {
-                    if (watched[i].Baselined || watched[i].FailedHeals >= MaxHealAttempts) continue;
-                    Heal(watched[i]);
-                    baselined++;
-                }
-                if (baselined > 0) {
-                    sw.Stop();
-                    NoteRepair(baselined, "baseline", sw.ElapsedMilliseconds);
-                    return;   // one job per tick keeps the frame cost predictable
-                }
-
                 var local = PlayerControl.LocalPlayer;
-
-                // The passive detector must keep working even if the canary's probe method is gone,
-                // so the canary is skipped rather than the whole tick abandoned.
-                bool canaryRan = false, canarySaysDropped = false;
-                if (local != null && roleInfoProbe != null) { canaryRan = true;
+                if (local == null || roleInfoProbe == null) return;
 
                 // Reflection on purpose. A hard-compiled call from this assembly can bind straight to
                 // the method's current code, which is exactly the code that may no longer carry the
@@ -421,48 +298,17 @@ namespace UsefulTORStuff {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[DetourWatchdog] probe call threw: {e.InnerException ?? e}");
                     return;
                 }
+                if (canaryTicks != before) return;   // the postfix ran: nothing is wrong
 
-                canarySaysDropped = canaryTicks == before;
-                }
-
-                // Cross-check the passive detector against the canary on the ONE method both can see.
-                // This is what earned the passive detector the right to watch the other 66, and it is
-                // kept running so a regression in it shows up as a logged mismatch rather than as
-                // silently unrepaired methods.
-                var probeWatched = watched.Count > 0 ? watched[0] : null;
-                string fingerprint = probeWatched == null ? null : FingerprintChange(probeWatched);
-                if (canaryRan && probeWatched != null && probeWatched.Baselined
-                    && canarySaysDropped != (fingerprint != null) && fingerprintDisagreements++ < 5)
-                    UsefulTORStuffPlugin.Logger?.LogWarning(
-                        $"[DetourWatchdog] detector mismatch on {probeWatched?.Label}: canary says " +
-                        $"{(canarySaysDropped ? "DROPPED" : "alive")}, native fingerprint says " +
-                        $"{(fingerprint != null ? fingerprint : "unchanged")}. Treating it as dropped.");
-                else if (canarySaysDropped && fingerprint != null && fingerprintAgreements++ < 5)
-                    UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[DetourWatchdog] both detectors agree on {probeWatched?.Label}: {fingerprint}.");
-
-                // Per-method detection means per-method repair: only what actually lost its detour is
-                // rebuilt. That is what makes watching everything affordable - the alternative, healing
-                // the whole list on a timer, would rebuild dozens of wrappers for nothing and could
-                // stutter a round.
-                int repaired = 0;
-                var names = new List<string>();
-                sw.Restart();
-                for (int i = 0; i < watched.Count; i++) {
-                    bool dropped = (i == 0 && canarySaysDropped) || FingerprintChange(watched[i]) != null;
-                    if (!dropped) continue;
-                    if (!Heal(watched[i])) continue;
-                    repaired++;
-                    if (names.Count < 8) names.Add(watched[i].Label);
-                }
+                // A real drop: the method was called and its registered postfix did not execute. This
+                // is the one condition worth a native write mid-session, and even then not more often
+                // than the cooldown allows - see the header for what a repair can cost.
+                if (Time.time < nextCanaryHeal) return;
+                nextCanaryHeal = Time.time + CanaryHealCooldown;
+                var sw = Stopwatch.StartNew();
+                bool ok = Heal(watched[0]);
                 sw.Stop();
-                // Timed for real. An earlier version called NoteRepair without a stopwatch from this
-                // path, so the log claimed "repaired 43 method(s) in 0ms" and the running total was
-                // nonsense - which is exactly the number one would want when judging whether watching
-                // everything is affordable.
-                if (repaired > 0)
-                    NoteRepair(repaired, canarySaysDropped ? "canary" : "fingerprint", sw.ElapsedMilliseconds,
-                               string.Join(", ", names) + (repaired > names.Count ? ", ..." : ""));
+                if (ok) NoteRepair(1, "canary", sw.ElapsedMilliseconds, watched[0].Label);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[DetourWatchdog] tick failed: {e}");
             }
@@ -543,10 +389,6 @@ namespace UsefulTORStuff {
                 try { healer.Unpatch(w.Method, sentinelPostfix); } catch { }
                 healer.Patch(w.Method, postfix: new HarmonyMethod(sentinelPostfix));
                 w.FailedHeals = 0;
-                w.Baselined = true;
-                // Re-baseline: the repair just installed a fresh detour, so whatever is at the
-                // entry NOW is the state we want to notice drifting away from.
-                CaptureFingerprint(w);
                 return true;
             } catch (Exception e) {
                 // A throw here is itself a finding: it would mean the combined wrapper can no longer

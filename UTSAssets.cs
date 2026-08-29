@@ -62,6 +62,9 @@ namespace UsefulTORStuff {
                 // codebase already passes false here.
                 var tex = new Texture2D(2, 2, TextureFormat.ARGB32, false);
                 if (!ImageConversion.LoadImage(tex, data, false)) return null;
+                // MEMORY: drop the CPU copy Unity keeps for readable textures; nothing reads these
+                // pixels back (same reasoning as UCAssets and HatTextureDiet).
+                tex.Apply(false, true);
                 tex.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontSaveInEditor;
                 var sprite = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height),
                     new Vector2(0.5f, 0.5f), pixelsPerUnit);

@@ -162,6 +162,16 @@ public class UsefulTORStuffPlugin : BasePlugin
         // because its canary has to be registered in the same wrapper as everything else first.
         DetourWatchdog.Bind(Config);
 
+        // Crash forensics for THIS machine: keep the BepInEx log across sessions, register WER
+        // minidumps, log memory. Bound here, applied right after (nothing below depends on it, and
+        // if the plugin dies later in Load the settings are already in place for the next launch).
+        CrashDiagnostics.Bind(Config);
+        CrashDiagnostics.Install();
+
+        // TOR's 1032-file hat pack decoded to ~600 MB of ARGB32 on every client; this shrinks it
+        // to DXT5 without a CPU copy (see HatTextureDiet.cs). Attribute patch, applied by PatchAll.
+        HatTextureDiet.Bind(Config);
+
         var harmony = new Harmony(PluginGuid);
 
         // Collision watchdog for our consolidated custom callId (see UTSRpc.cs). TOR's CustomRPC enum
@@ -416,6 +426,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Host-only lobby panel for the newcomer kill shield (who gets a free first round).
         AddComponent<NewcomerShieldUI>();
+
+        // Memory heartbeat for the crash log (see CrashDiagnostics.cs).
+        AddComponent<CrashDiagnosticsTicker>();
 
         // Registriere diese Mod in der Mod-Manager-Registry.
         try {

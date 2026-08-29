@@ -72,8 +72,13 @@ namespace UsefulTORStuff {
                              "DaUnknown-0", "UnknownsCollection", "UnknownsCollection.dll"),
             new CatalogEntry(4, "com.trackerteam.hostfix", "TOR - Hostfix",
                              "DaUnknown-0", "TOR-Host-Fix", "HostFixPlugin.dll"),
-            new CatalogEntry(5, "com.tormod.nightfall", "Nightfall",
-                             "DaUnknown-0", "Nightfall", "Nightfall.dll"),
+            // ID 5 was Nightfall ("com.tormod.nightfall", repo Nightfall, Nightfall.dll). Pulled
+            // from distribution on 2026-08-29: its world build on Mira HQ held 72 MB and allocated
+            // 304 MB in a 32-bit process, and the host's own crash dump from that round ends in
+            // coreclr right after "First-person view ON". Until that footprint is measured fixed,
+            // other players do not get it handed to them by the sync. The ID stays reserved (see
+            // the header: never re-number), so an older client that still knows 5 resolves it as
+            // before, and a host running Nightfall simply counts as "a mod outside the catalog".
         };
 
         // Reserved: "a mod outside this catalog". Counted in the inventory so the local player can
