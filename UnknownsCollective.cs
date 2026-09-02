@@ -75,7 +75,67 @@ namespace UsefulTORStuff {
         /// before ("<color=#xxxxxx>Name</color> vX.Y.Z"), with no <link> wrapper - Render() adds
         /// whichever wrapper the current view (single / collapsed / expanded) needs.
         public static void Contribute(string guid, string coloredLine) {
-            try { Members()[guid] = coloredLine; } catch { }
+            try {
+                var members = Members();
+                // Only a CHANGED line bumps the shared version - every mod calls this each frame
+                // with the same cached string, and the version is what lets Render() skip the
+                // rebuild below on the (overwhelmingly common) unchanged frame.
+                if (members.TryGetValue(guid, out var old)
+                    && string.Equals(old, coloredLine, StringComparison.Ordinal)) return;
+                members[guid] = coloredLine;
+                AppDomain.CurrentDomain.SetData(VersionKey, MembersVersion() + 1);
+            } catch { }
+        }
+
+        // PERF: the block used to be rebuilt from scratch every frame by whichever mod rendered
+        // first - an OrderBy, a Join and several interpolations, sixty times a second, for text
+        // that changes only when a mod's line changes, the list is expanded/collapsed or the
+        // lobby turns into a round. It is now cached per copy of this file, keyed on exactly those
+        // inputs; the shared members version lives in AppDomain like the rest of the state.
+        private const string VersionKey = "TORMods.CollectiveVersion";
+        private static int MembersVersion() =>
+            AppDomain.CurrentDomain.GetData(VersionKey) is int v ? v : 0;
+
+        private static string cachedBlock;
+        private static int cachedVersion = -1, cachedCount = -1;
+        private static bool cachedExpanded, cachedLobby;
+
+        private static string BlockFor(Dictionary<string, string> members, bool lobby, bool expanded) {
+            int version = MembersVersion();
+            if (cachedBlock != null && version == cachedVersion && members.Count == cachedCount
+                && lobby == cachedLobby && expanded == cachedExpanded)
+                return cachedBlock;
+
+            string block;
+            if (members.Count == 1) {
+                // Exactly one of our mods loaded: behave exactly as every mod used to on
+                // its own - one clickable line, no collective wrapper.
+                block = $"<link=\"{SoleLinkId}\">{members.Values.First()}</link>";
+            } else if (lobby) {
+                // Lobby: the "Unknown's Collective" name is a round-time thing -
+                // list every mod's own line here, same as each used to show on its own.
+                var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
+                block = $"<link=\"{ToggleLinkId}\">" + string.Join("\n", lines) + "</link>";
+            } else if (!expanded) {
+                // ">" / "v" rather than a real arrow glyph: the HUD's TMP font is ASCII-only
+                // (see the world-space overlay lesson - ▸▾ etc. render as a missing-glyph box).
+                // A bare ">" (not "&gt;" - this TMP build does not decode the entity) is safe:
+                // rich text only treats "<...>" pairs as tags.
+                block = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
+                      + $" ({members.Count}) ></link>";
+            } else {
+                var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
+                string header = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
+                      + " v</link>";
+                block = header + "\n" + string.Join("\n", lines);
+            }
+
+            cachedBlock = block;
+            cachedVersion = version;
+            cachedCount = members.Count;
+            cachedLobby = lobby;
+            cachedExpanded = expanded;
+            return block;
         }
 
         /// Handles the click and writes the line(s) into `text`, once per frame across every mod
@@ -109,29 +169,7 @@ namespace UsefulTORStuff {
                 // Idempotency: whichever mod's patch runs first this frame renders the block: every
                 // later mod's Render() call this same frame sees the marker and leaves `text` alone.
                 if (!text.Contains(MarkerPrefix)) {
-                    string block;
-                    if (members.Count == 1) {
-                        // Exactly one of our mods loaded: behave exactly as every mod used to on
-                        // its own - one clickable line, no collective wrapper.
-                        block = $"<link=\"{SoleLinkId}\">{members.Values.First()}</link>";
-                    } else if (ShipStatus.Instance == null) {
-                        // Lobby: the "Unknown's Collective" name is a round-time thing -
-                        // list every mod's own line here, same as each used to show on its own.
-                        var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
-                        block = $"<link=\"{ToggleLinkId}\">" + string.Join("\n", lines) + "</link>";
-                    } else if (!Expanded()) {
-                        // ">" / "v" rather than a real arrow glyph: the HUD's TMP font is ASCII-only
-                        // (see the world-space overlay lesson - ▸▾ etc. render as a missing-glyph box).
-                        // A bare ">" (not "&gt;" - this TMP build does not decode the entity) is safe:
-                        // rich text only treats "<...>" pairs as tags.
-                        block = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
-                              + $" ({members.Count}) ></link>";
-                    } else {
-                        var lines = members.Values.OrderBy(v => v, StringComparer.Ordinal);
-                        string header = $"<link=\"{ToggleLinkId}\"><color=#B892FF>Unknown's Collective</color>"
-                              + " v</link>";
-                        block = header + "\n" + string.Join("\n", lines);
-                    }
+                    string block = BlockFor(members, ShipStatus.Instance == null, Expanded());
 
                     int nl = text.IndexOf('\n');
                     text = nl >= 0

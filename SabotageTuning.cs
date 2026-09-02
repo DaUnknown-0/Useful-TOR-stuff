@@ -217,11 +217,23 @@ namespace UsefulTORStuff {
             }
         }
 
+        // PERF: resolved once per ShipStatus instance. This is asked every physics tick; the
+        // Systems lookup plus TryCast used to allocate a fresh Il2Cpp wrapper each time. The
+        // sabotage system is created in ShipStatus.Awake and lives as long as the ship, and the
+        // UnityEngine.Object comparison against the cached ship is false for a destroyed one, so
+        // a new map resolves again by itself.
+        private static ShipStatus sabShip;
+        private static SabotageSystemType sabCached;
+
         private static SabotageSystemType GetSab(ShipStatus ship) {
-            if (ship == null || ship.Systems == null) return null;
+            if (ship == null) return null;
+            if (sabCached != null && sabShip == ship) return sabCached;
+            if (ship.Systems == null) return null;
             ISystemType sys;
             if (!ship.Systems.TryGetValue(SystemTypes.Sabotage, out sys) || sys == null) return null;
-            return sys.TryCast<SabotageSystemType>();
+            var sab = sys.TryCast<SabotageSystemType>();
+            if (sab != null) { sabShip = ship; sabCached = sab; }
+            return sab;
         }
 
         private static ISystemType GetRaw(ShipStatus ship, SystemTypes st) {

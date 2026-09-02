@@ -216,6 +216,27 @@ namespace UsefulTORStuff {
         private static void Receive(int major, int minor, int build, int revision, Guid guid, int clientId) {
             Version ver = revision < 0 ? new Version(major, minor, build) : new Version(major, minor, build, revision);
             playerVersions[clientId] = new PlayerVersion(ver, guid);
+            MarkVersionsChanged();
+        }
+
+        // PERF: every lobby frame used to rebuild the mismatch text, the combined Mod-Check board
+        // and the AppDomain snapshot from scratch - allClients.ToArray(), a dictionary, a dozen
+        // formatted strings, a Split(',') - sixty times a second for the whole lobby. None of
+        // that input changes more than a few times per lobby (a handshake arrives, a player
+        // joins or leaves). The snapshot is now published only when the table changed; the two
+        // texts are recomputed on a change or at most every LobbyRefreshSeconds, which also
+        // covers joins/leaves and name changes that the table itself cannot see.
+        private const float LobbyRefreshSeconds = 0.25f;
+        private static bool snapshotDirty = true;
+        private static float nextLobbyRefresh = -1f;
+        private static string cachedMismatch = "";
+        private static string cachedCombined = "";
+        private static string cachedRegistry;
+        private static bool cachedOtherModsPublished;
+
+        private static void MarkVersionsChanged() {
+            snapshotDirty = true;
+            nextLobbyRefresh = -1f;
         }
 
         /*
@@ -333,7 +354,9 @@ namespace UsefulTORStuff {
 
         private static void PublishSnapshot() {
             try {
+                if (!snapshotDirty) return;
                 if (AmongUsClient.Instance == null) return;
+                snapshotDirty = false;
                 var status = new Dictionary<int, string>();
                 foreach (var kv in playerVersions) {
                     PlayerVersion pv = kv.Value;
@@ -360,7 +383,13 @@ namespace UsefulTORStuff {
         private static bool OtherModsPublished() {
             try {
                 var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
-                return reg.Split(',').Any(g => g.Length > 0 && g != UsefulGuid);
+                // The registry string is replaced (never mutated) when a mod registers, so a
+                // reference compare tells "unchanged since last frame" without a Split per frame.
+                if (!ReferenceEquals(reg, cachedRegistry)) {
+                    cachedRegistry = reg;
+                    cachedOtherModsPublished = reg.Split(',').Any(g => g.Length > 0 && g != UsefulGuid);
+                }
+                return cachedOtherModsPublished;
             } catch { return false; }
         }
 
@@ -391,7 +420,12 @@ namespace UsefulTORStuff {
         private static void TintMismatchedLobbyNames() {
             try {
                 if (AmongUsClient.Instance == null) return;
-                foreach (InnerNet.ClientData client in AmongUsClient.Instance.allClients.ToArray()) {
+                var clients = AmongUsClient.Instance.allClients;
+                if (clients == null) return;
+                // Walked in place: ToArray() copied the Il2Cpp list into a fresh managed array
+                // every lobby frame.
+                for (int i = 0; i < clients.Count; i++) {
+                    InnerNet.ClientData client = clients[i];
                     var nameText = client?.Character?.cosmetics?.nameText;
                     if (nameText == null) continue;
                     if (ClientMismatched(client.Id)) {
@@ -478,6 +512,7 @@ namespace UsefulTORStuff {
         static class OnGameJoinedPatch {
             public static void Postfix() {
                 playerVersions.Clear();
+                MarkVersionsChanged();
                 versionSent = false;
                 ArmReshares();         // the table is empty: chase whatever we just threw away
                 tintedClients.Clear(); // client ids are per-connection; never carry tints across lobbies
@@ -541,8 +576,15 @@ namespace UsefulTORStuff {
                 gateChatShown = false;
 
                 // Compute on EVERY client. GameStartManager.Update only runs in the lobby, so this
-                // value naturally persists (latches) into the game that follows.
-                string mismatch = BuildMismatchMessage();
+                // value naturally persists (latches) into the game that follows. Refreshed on a
+                // handshake change or every LobbyRefreshSeconds, not every frame (see the field
+                // comment at MarkVersionsChanged): the combined board is rebuilt in the same beat.
+                bool refresh = Time.unscaledTime >= nextLobbyRefresh;
+                if (refresh) {
+                    nextLobbyRefresh = Time.unscaledTime + LobbyRefreshSeconds;
+                    cachedMismatch = BuildMismatchMessage();
+                }
+                string mismatch = cachedMismatch;
                 bool everyone = mismatch == "";
                 // "Aktiv" nur, wenn ALLE den Mod haben UND der client-seitige Snitch-Fix hier lokal
                 // lauffähig ist (Chat-Reveal + Room-Recorder aufgelöst). Sonst stünde HostFix still,
@@ -627,9 +669,9 @@ namespace UsefulTORStuff {
                 // suppresses its own block while we are loaded.
                 bool combinedShown = OtherModsPublished();
                 if (combinedShown && (ShowToAllPlayers || AmongUsClient.Instance.AmHost)) {
-                    string combined = BuildCombinedModCheck(out _);
-                    if (combined != "")
-                        DrawTopLeftMessage(__instance, text, combined, "Mod-Check:");
+                    if (refresh || cachedCombined == null) cachedCombined = BuildCombinedModCheck(out _);
+                    if (cachedCombined != "")
+                        DrawTopLeftMessage(__instance, text, cachedCombined, "Mod-Check:");
                 }
 
                 if (UsefulTORStuffPlugin.SnitchClientFixActive) {

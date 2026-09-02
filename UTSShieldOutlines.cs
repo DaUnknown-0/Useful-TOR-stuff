@@ -62,6 +62,12 @@ namespace UsefulTORStuff {
         // Scratch list, reused every frame for every player - this runs per frame, so no garbage.
         private static readonly List<Color> colors = new List<Color>(5);
 
+        // PERF: shader property ids resolved once. Material.SetFloat("_Outline", ...) with a string
+        // marshals a managed string into Il2Cpp and hashes it on EVERY call; this runs per painted
+        // player per frame, so the int overloads are used instead. Resolved lazily (first tick, main
+        // thread) rather than in a static initializer.
+        private static int outlineId = -1, outlineColorId = -1;
+
         // TORMapOptions is INTERNAL to TOR, so the first-kill shield state comes via reflection
         // (fields are public static inside the internal class). Resolved once, read once per frame.
         private static System.Reflection.FieldInfo fiShieldFirstKill, fiFirstKillPlayer;
@@ -108,25 +114,38 @@ namespace UsefulTORStuff {
 
                 bool hidden = Camouflager.camouflageTimer > 0f || Helpers.MushroomSabotageActive();
 
+                if (outlineId < 0) {
+                    outlineId = Shader.PropertyToID("_Outline");
+                    outlineColorId = Shader.PropertyToID("_OutlineColor");
+                }
+
                 foreach (var p in PlayerControl.AllPlayerControls) {
                     if (p == null) continue;
-                    var sprite = p.cosmetics?.currentBodySprite?.BodySprite;
-                    if (sprite == null || sprite.material == null) continue;
                     byte id = p.PlayerId;
 
                     if (hidden) { painted.Remove(id); continue; }   // TOR wipes to 0 itself
 
+                    // Shields first, renderer second: the cosmetics/material chain is four interop
+                    // reads per player, so it is only walked for players that actually need a
+                    // paint or a clear this frame.
                     CollectColors(p, local, firstKill);
+                    if (colors.Count == 0 && !painted.Contains(id)) continue;
+
+                    var sprite = p.cosmetics?.currentBodySprite?.BodySprite;
+                    if (sprite == null) continue;
+                    var material = sprite.material;
+                    if (material == null) continue;
+
                     if (colors.Count == 0) {
                         // Ours to clear, and only ours - TOR repaints its own next physics tick.
-                        if (painted.Remove(id)) sprite.material.SetFloat("_Outline", 0f);
+                        if (painted.Remove(id)) material.SetFloat(outlineId, 0f);
                         continue;
                     }
 
                     int idx = colors.Count == 1 ? 0
                         : (int)(Time.time / CyclePeriod) % colors.Count;
-                    sprite.material.SetFloat("_Outline", 1f);
-                    sprite.material.SetColor("_OutlineColor", colors[idx]);
+                    material.SetFloat(outlineId, 1f);
+                    material.SetColor(outlineColorId, colors[idx]);
                     painted.Add(id);
                 }
             } catch { }

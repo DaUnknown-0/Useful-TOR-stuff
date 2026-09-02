@@ -240,19 +240,49 @@ namespace UsefulTORStuff {
             // from "TOR just multiplied an already-shrunk icon AGAIN" (undo the redundant factor).
             private static string shrunkIconKey;
 
+            // PERF (this runs every physics tick while the map is open):
+            //  - the task is found by walking myTasks in place, not ToArray()+FirstOrDefault (an
+            //    Il2Cpp list copy plus a closure per tick);
+            //  - FindConsoles() is a full scene scan - TOR already runs it once PER VENT per tick
+            //    in the postfix this one follows - so our own copy is resolved once per task
+            //    instance and step, and the key string with it;
+            //  - the icon comes out of TOR's own mapIcons table (a managed dictionary, the same
+            //    key TOR builds) instead of GameObject.Find, which walks the whole scene by name.
+            //    The table is inside an internal TOR class, hence reflection, resolved once; a
+            //    miss falls back to the old Find.
+            private static IntPtr cachedTaskPtr;
+            private static int cachedTaskStep = -1;
+            private static string cachedTaskKey;
+            private static readonly FieldInfo mapIconsField =
+                AccessTools.Field(AccessTools.TypeByName("TheOtherRoles.Patches.MapBehaviourPatch"), "mapIcons");
+
             [HarmonyPriority(Priority.Last)] // after MapBehaviourPatch.Postfix, which does the shrinking
             public static void Postfix() {
                 try {
                     var localPlayer = PlayerControl.LocalPlayer;
                     if (localPlayer == null || localPlayer.myTasks == null) { shrunkIconKey = null; return; }
 
-                    var task = localPlayer.myTasks.ToArray().FirstOrDefault(t => t.TaskType == TaskTypes.VentCleaning);
+                    PlayerTask task = null;
+                    var tasks = localPlayer.myTasks;
+                    for (int i = 0; i < tasks.Count; i++) {
+                        var t = tasks[i];
+                        if (t != null && t.TaskType == TaskTypes.VentCleaning) { task = t; break; }
+                    }
                     if (task == null || task.IsComplete) { shrunkIconKey = null; return; }
 
-                    var consoles = task.FindConsoles();
-                    if (consoles == null || consoles.Count == 0) { shrunkIconKey = null; return; }
+                    string key;
+                    int step = task.TaskStep;
+                    if (cachedTaskKey != null && task.Pointer == cachedTaskPtr && step == cachedTaskStep) {
+                        key = cachedTaskKey;
+                    } else {
+                        var consoles = task.FindConsoles();
+                        if (consoles == null || consoles.Count == 0) { shrunkIconKey = null; return; }
+                        key = $"vent {consoles[0].ConsoleId} icon";
+                        cachedTaskPtr = task.Pointer;
+                        cachedTaskStep = step;
+                        cachedTaskKey = key;
+                    }
 
-                    string key = $"vent {consoles[0].ConsoleId} icon";
                     if (key != shrunkIconKey) {
                         // Freshly became the shrink target (new task, or the map was just opened) -
                         // TOR's own multiply that just ran is the one intended shrink.
@@ -260,7 +290,10 @@ namespace UsefulTORStuff {
                         return;
                     }
 
-                    var icon = GameObject.Find(key);
+                    GameObject icon = null;
+                    if (mapIconsField?.GetValue(null) is Dictionary<string, GameObject> icons)
+                        icons.TryGetValue(key, out icon);
+                    if (icon == null) icon = GameObject.Find(key);
                     if (icon != null) icon.transform.localScale /= 0.6f;
                 } catch (Exception e) {
                     ThrottledLog("VentIcon", $"shrink guard failed: {e.GetType().Name}: {e.Message}");

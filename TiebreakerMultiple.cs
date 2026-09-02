@@ -214,7 +214,15 @@ namespace UsefulTORStuff {
             public static void Postfix(List<RoleInfo> __result, PlayerControl p, bool showModifier) {
                 try {
                     if (!showModifier || p == null || __result == null) return;
-                    if (!tiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId)) return;
+                    // PERF: no LINQ here - this postfix runs for every player on every name-tag
+                    // rebuild (each frame for the local player, for everyone once dead), and the
+                    // lambda closed over `p`, allocating a fresh closure per call.
+                    bool isTiebreaker = false;
+                    for (int i = 0; i < tiebreakers.Count; i++) {
+                        var t = tiebreakers[i];
+                        if (t != null && t.PlayerId == p.PlayerId) { isTiebreaker = true; break; }
+                    }
+                    if (!isTiebreaker) return;
                     if (!__result.Contains(RoleInfo.tiebreaker)) __result.Add(RoleInfo.tiebreaker);
                 } catch { }
             }

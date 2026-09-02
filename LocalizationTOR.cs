@@ -157,11 +157,26 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(TranslationController), nameof(TranslationController.GetString),
             typeof(StringNames), typeof(Il2CppReferenceArray<Il2CppSystem.Object>))]
         private static class GetStringPatch {
+            // PERF: this postfix runs on EVERY vanilla GetString call (HUD labels, task list, menus -
+            // many per frame). Enum.ToString() on a StringNames value is a reflection-backed name
+            // lookup plus a fresh string each time, so the names are resolved once and kept. The
+            // tier-B gate (a cached bool) goes first: for every tier-A player the postfix is then
+            // a single field read.
+            private static readonly Dictionary<StringNames, string> nameCache = new Dictionary<StringNames, string>();
+
+            private static string NameOf(StringNames id) {
+                if (!nameCache.TryGetValue(id, out var name)) {
+                    name = id.ToString();
+                    nameCache[id] = name;
+                }
+                return name;
+            }
+
             public static void Postfix(StringNames id, Il2CppReferenceArray<Il2CppSystem.Object> parts, ref string __result) {
+                if (!UTSLocalization.TierBActive) return;
                 if ((int)id >= 6000) return; // TOR's fake IDs: already-translated option names
                 if (DynamicVanillaIds.Contains(id)) return; // dynamically composed by TOR, see above
-                if (!UTSLocalization.TierBActive) return;
-                var t = UTSLocalization.VanillaOrNull(id.ToString());
+                var t = UTSLocalization.VanillaOrNull(NameOf(id));
                 if (t == null) return;
                 if (parts != null && parts.Length > 0) {
                     try {

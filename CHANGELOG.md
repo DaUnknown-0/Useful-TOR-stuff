@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### Performance pass over the per-frame paths (audit 2026-09-01)
+Nothing here changes behaviour; every item removes work that was redone every frame (or every
+physics tick) for a result that could not have changed since the last time.
+- **Vanilla text lookups** (`LocalizationTOR.cs`): the `GetString` postfix runs on every vanilla
+  text lookup. It called `Enum.ToString()` on the `StringNames` value each time (a reflection
+  name lookup plus a new string) and evaluated the tier-B gate through an array search. The names
+  are now cached, the gate is a cached bool and is checked first: for a tier-A language the
+  postfix is one field read.
+- **Lobby handshake** (`UsefulVersionHandshake.cs`): the mismatch text, the combined Mod-Check
+  board and the AppDomain snapshot were rebuilt every lobby frame (`allClients.ToArray()`, a
+  dictionary, a dozen formatted strings, a registry `Split`). The snapshot is published only when
+  the version table changed; the two texts refresh on a change or every 0.25 s; the name tint
+  walks the client list in place; the "other mods published" check re-splits the registry only
+  when the registry string changed.
+- **Version line** (`UsefulTORStuffPlugin.cs`): the HUD line was re-formatted every frame just to
+  compare it against its cache. The translated template's identity plus the test-version toggle
+  are the change detector now.
+- **Collective HUD block** (`UnknownsCollective.cs`, all five copies): the block is cached and
+  rebuilt only when a member line, the member count, the expanded flag or the lobby/round state
+  changes; `Contribute` bumps a shared version only on an actual change.
+- **Shield outlines** (`UTSShieldOutlines.cs`): shader property ids are resolved once instead of
+  marshalling `"_Outline"` / `"_OutlineColor"` per painted player per frame, and the
+  cosmetics/material chain is only walked for players that need a paint or a clear.
+- **Vent-clean map icon** (`TorLeakFixes.cs`): per map tick this used `ToArray()+FirstOrDefault`,
+  a `FindConsoles()` scene scan and `GameObject.Find`. The task is found in place, the console is
+  resolved once per task instance/step, and the icon comes from TOR's own `mapIcons` table.
+- **Sabotage system** (`SabotageTuning.cs`): resolved once per `ShipStatus` instead of a
+  `TryCast` wrapper allocation per physics tick.
+- **Tiebreaker role display** (`TiebreakerMultiple.cs`): no closure allocation per name-tag rebuild.
+
 ### The settings list reads like a settings list (new, `SettingsOverlayView.cs`)
 The F1 overlay and the lobby settings text printed almost everything in white: TOR hard-codes
 sub-options to `Color.white`, and it colours a role only by baking a `<color>` tag into the option

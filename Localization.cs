@@ -84,7 +84,10 @@ namespace UsefulTORStuff {
         private static readonly List<(WeakReference optRef, string[] keys, object[] originals)> boundSelections = new();
 
         public static string ActiveCode { get; private set; } = "en";
-        public static bool TierBActive => Array.IndexOf(TierBCodes, ActiveCode) >= 0;
+        // PERF: cached alongside ActiveCode instead of an Array.IndexOf over string codes per
+        // call - the vanilla GetString postfix (LocalizationTOR) asks this on EVERY vanilla text
+        // lookup, which is the hottest path this mod sits on.
+        public static bool TierBActive { get; private set; }
         public static event Action LanguageApplied;
 
         private static void BindConfig(ConfigFile config) {
@@ -115,6 +118,7 @@ namespace UsefulTORStuff {
             var code = ResolveCode();
             LoadTable(code, active);
             ActiveCode = code;
+            TierBActive = Array.IndexOf(TierBCodes, code) >= 0;
         }
 
         // ---------- public lookup API ----------
@@ -176,9 +180,11 @@ namespace UsefulTORStuff {
             var code = ResolveCode();
             LoadTable(code, active);
             vanillaActive.Clear();
-            if (Array.IndexOf(TierBCodes, code) >= 0)
+            bool tierB = Array.IndexOf(TierBCodes, code) >= 0;
+            if (tierB)
                 LoadTable("vanilla." + code, vanillaActive);
             ActiveCode = code;
+            TierBActive = tierB;
 
             foreach (var (optRef, key) in boundOptions)
                 if (optRef.Target is object opt) ApplyBoundOption(opt, key);
