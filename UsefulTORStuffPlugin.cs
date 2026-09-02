@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.3.8";
+    public const string PluginVersion = "1.4.3.9";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -167,6 +167,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // if the plugin dies later in Load the settings are already in place for the next launch).
         CrashDiagnostics.Bind(Config);
         CrashDiagnostics.Install();
+
+        // Performance HUD (F10): frame-time tail and managed allocation rate, the two numbers the
+        // per-frame work in this mod family actually moves. See PerfHud.cs. Only the config is bound
+        // here; nothing measures until the key is pressed.
+        PerfHud.Bind(Config);
 
         // TOR's 1032-file hat pack decoded to ~600 MB of ARGB32 on every client; this shrinks it
         // to DXT5 without a CPU copy (see HatTextureDiet.cs). Attribute patch, applied by PatchAll.
@@ -429,6 +434,10 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Memory heartbeat for the crash log (see CrashDiagnostics.cs).
         AddComponent<CrashDiagnosticsTicker>();
+
+        // Performance HUD. Its own component, not a Harmony postfix, so it keeps measuring in the
+        // main menu and the lobby too - only a round has a HudManager to hang a patch on.
+        AddComponent<PerfHudTicker>();
 
         // Registriere diese Mod in der Mod-Manager-Registry.
         try {

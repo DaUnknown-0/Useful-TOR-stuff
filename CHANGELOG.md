@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Performance HUD (`PerfHud.cs`)
+A measuring stick for the pass below. Peak fps cannot show what that pass changed, so this shows
+what can: frame time as an average **and** as a 99th percentile plus the share of frames over
+20 ms, managed bytes allocated per second, and gen-0 collections per second, alongside the scene
+and player count a run is only comparable within.
+- **F10** shows/hides it, **shift+F10** resets the run statistics. Both switch-off and reset write
+  a one-line summary to the BepInEx log, which is the line to compare two builds with.
+- Two scopes: `now` is the last half second, `run` is everything since switch-on or reset. Frames
+  over 200 ms are counted as stalls and kept out of the averages and the percentile, so one scene
+  load cannot own the tail.
+- Nothing measures until the key is pressed; idle it costs one bool test and one `GetKeyDown` per
+  frame. The HUD rebuilds its text twice a second, not per frame, so it cannot distort what it
+  measures. Config section `PerfHud` (`Enabled`, `ShowOnStart`, `ToggleKey`).
+
 ### Performance pass over the per-frame paths (audit 2026-09-01)
 Nothing here changes behaviour; every item removes work that was redone every frame (or every
 physics tick) for a result that could not have changed since the last time.
