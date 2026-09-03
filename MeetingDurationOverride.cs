@@ -136,20 +136,41 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Restore the host's configured discussion/voting time once the game ends so the lobby
-        // settings don't keep the last computed values. Same hook TOR uses for resetVanillaSettings.
+        // Restore the host's configured discussion/voting time so the lobby settings don't keep the
+        // last computed values. Shared by both call sites below: OnGameEnd is the normal path, but a
+        // host that leaves the game early (crash, forced return to lobby, ...) can skip OnGameEnd
+        // entirely, in which case OnGameJoined - fired when the next lobby is entered - is the only
+        // remaining chance to put the captured originals back before a new game could pick them up.
+        private static void Restore() {
+            if (!_capturedThisGame) return;
+            var opts = GameOptionsManager.Instance.currentNormalGameOptions;
+            opts.DiscussionTime = _originalDiscussionTime;
+            opts.VotingTime = _originalVotingTime;
+            _capturedThisGame = false;
+            UsefulTORStuffPlugin.Logger?.LogInfo("[MeetingDurationOverride] Restored host's discussion/voting time.");
+        }
+
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
         public static class RestorePatch {
             public static void Postfix() {
                 try {
-                    if (!_capturedThisGame) return;
-                    var opts = GameOptionsManager.Instance.currentNormalGameOptions;
-                    opts.DiscussionTime = _originalDiscussionTime;
-                    opts.VotingTime = _originalVotingTime;
-                    _capturedThisGame = false;
-                    UsefulTORStuffPlugin.Logger?.LogInfo("[MeetingDurationOverride] Restored host's discussion/voting time.");
+                    Restore();
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[MeetingDurationOverride] Restore failed: {e}");
+                }
+            }
+        }
+
+        // Safety net for the early-leave case described above: OnGameJoined fires on entering ANY
+        // lobby (including one after a crashed/skipped OnGameEnd), so a still-set _capturedThisGame
+        // here means the previous game's restore never ran.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        public static class RestoreOnJoinPatch {
+            public static void Postfix() {
+                try {
+                    Restore();
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[MeetingDurationOverride] Restore-on-join failed: {e}");
                 }
             }
         }

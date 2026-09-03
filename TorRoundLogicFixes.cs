@@ -236,8 +236,7 @@ namespace UsefulTORStuff {
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════
-        // TOR-M8) Crewmate win fires while a live Arsonist/Vulture/Pursuer could still win on
-        // their own
+        // TOR-M8) Crewmate win fires while a live Arsonist/Vulture could still win on their own
         //
         // EndGamePatch.cs's CheckEndCriteriaPatch.Prefix runs the win checks in a fixed order:
         // MiniLose, JesterWin, ArsonistWin, VultureWin, SabotageWin, TaskWin, ProsecutorWin,
@@ -245,15 +244,20 @@ namespace UsefulTORStuff {
         // the round the moment TeamImpostorsAlive == 0 && TeamJackalAlive == 0. By construction,
         // reaching that final check already means Arsonist.triggerArsonistWin,
         // Vulture.triggerVultureWin and Lawyer.triggerProsecutorWin were all false this pass - but
-        // it says nothing about whether an Arsonist, Vulture or Pursuer is still alive and could
-        // still go on to trigger their own win later (ignite everyone, eat enough bodies, or land
-        // their kill). CrewmateWin does not check for any of them, so the round ends as a crew win
-        // out from under a neutral killer who has not lost yet.
+        // it says nothing about whether an Arsonist or Vulture is still alive and could still go on
+        // to trigger their own win later (ignite everyone or eat enough bodies). CrewmateWin does
+        // not check for either of them, so the round ends as a crew win out from under a neutral
+        // killer who has not lost yet. Pursuer is deliberately excluded from this guard: Pursuer has
+        // no win-trigger of their own, they win as an additional winner alongside the crew, so a
+        // live Pursuer must not block the crew win.
         //
         // CheckAndEndGameForCrewmateWin is private static on TOR's internal CheckEndCriteriaPatch
         // class, resolved by reflection exactly like SheriffParityWin already does for the sibling
         // Impostor/Jackal win checks (same class, same technique, so both live comfortably side by
         // side without fighting over the same method).
+        //
+        // Hide 'N Seek and Prop Hunt run their own timer-based win outside of the normal team win
+        // flow; a live Arsonist/Vulture during those modes must not suppress that timer win.
         //
         // DESYNC: no gate needed, for the same reason SheriffParityWin documents for its own two
         // win-check prefixes: the check only ever runs meaningfully on the host (RpcEndGame is the
@@ -283,7 +287,12 @@ namespace UsefulTORStuff {
 
             public static bool Prefix(ref bool __result) {
                 try {
-                    if (Alive(Arsonist.arsonist) || Alive(Vulture.vulture) || Alive(Pursuer.pursuer)) {
+                    // Pursuer has no win-trigger of their own; they win as an additional winner
+                    // whenever the crew wins, so they must not block the crew win check here.
+                    if (Alive(Arsonist.arsonist) || Alive(Vulture.vulture)) {
+                        // Hide 'N Seek / Prop Hunt run their own timer-based win outside of the
+                        // normal neutral-killer roster, so this guard must not block their win.
+                        if (HideNSeek.isHideNSeekGM || IsPropHuntGM()) return true;
                         __result = false;
                         return false;
                     }
@@ -294,6 +303,23 @@ namespace UsefulTORStuff {
             }
 
             private static bool Alive(PlayerControl p) => p != null && p.Data != null && !p.Data.IsDead && !p.Data.Disconnected;
+
+            // TOR's PropHunt class is internal (HideNSeek is public), so its gamemode flag has to
+            // come via reflection - same pattern AntiStartKill/TorLobbyFixes already use for it.
+            private static FieldInfo _fiPropHuntGM;
+            private static bool _propHuntFieldResolved;
+            private static bool IsPropHuntGM() {
+                if (!_propHuntFieldResolved) {
+                    _propHuntFieldResolved = true;
+                    try {
+                        var type = typeof(CustomOption).Assembly.GetType("TheOtherRoles.CustomGameModes.PropHunt");
+                        _fiPropHuntGM = type?.GetField("isPropHuntGM", BindingFlags.Public | BindingFlags.Static);
+                    } catch (Exception e) {
+                        UsefulTORStuffPlugin.Logger?.LogError($"[TorRoundLogicFixes/M8] PropHunt field lookup failed: {e}");
+                    }
+                }
+                return _fiPropHuntGM != null && (bool)_fiPropHuntGM.GetValue(null);
+            }
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════

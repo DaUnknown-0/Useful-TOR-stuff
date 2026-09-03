@@ -79,6 +79,60 @@ namespace UsefulTORStuff {
         private static bool open;
         private static int consumedClickFrame = -1;
 
+        // ---------- click latch ----------
+        //
+        // Input.GetMouseButtonDown(0) is only reliable when read from Update: it is true for
+        // exactly the one Update call in which the button went down. MapBehaviour has no Update,
+        // only FixedUpdate, and Unity runs every FixedUpdate for a frame BEFORE that frame's
+        // Update (see UTSShieldOutlines' header comment for the same ordering fact) - reading
+        // GetMouseButtonDown directly from FixedUpdate can miss the click entirely (it fires
+        // between two FixedUpdate calls) or, if FixedUpdate runs more than once per rendered
+        // frame, "see" the same click several times over.
+        //
+        // Fix: latch the click once per rendered frame from a HudManager.Update postfix (HudManager
+        // always ticks during a round, same as the other HudManager.Update-driven features in this
+        // mod) into ClickFrame/ClickPos, public so MeetingMapPing's own FixedUpdate-based HandleClick
+        // can share the exact same latch instead of reading Input itself. Because Update runs AFTER
+        // this frame's FixedUpdate calls, a consumer only ever sees a given ClickFrame value one
+        // frame late - consumers must therefore compare against "have I already handled this
+        // ClickFrame value", not against the current Time.frameCount, so each logical click is still
+        // handled exactly once no matter how many FixedUpdate calls happen to run before the next
+        // Update ticks ClickFrame forward.
+        public static int ClickFrame = -1;
+        public static Vector3 ClickPos;
+        private static int handledClickFrame = -1;
+
+        [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
+        private static class ClickLatchPatch {
+            public static void Postfix() {
+                if (Input.GetMouseButtonDown(0)) {
+                    ClickFrame = Time.frameCount;
+                    ClickPos = Input.mousePosition;
+                }
+            }
+        }
+
+        // The click that OPENS the map (the vanilla map button) is the same click the latch
+        // above just captured. Without this, the very first FixedUpdate of the freshly-shown
+        // map used to see that still-fresh ClickFrame as unhandled and immediately reprocess
+        // it as a click ON the overlay (toggle button / ping), even though the player's click
+        // actually landed on the "open map" button, not on anything drawn inside the map.
+        // MapBehaviour.Show() fires exactly once per real open (unlike the FixedUpdate-based
+        // root-activation flag, which only flips once per meeting, not once per open/close
+        // cycle within the same meeting), so latching both consumers' "already handled" state
+        // right here discards the opening click every time, regardless of how many times the
+        // map is opened and closed during one meeting. Centralized here (rather than
+        // duplicated per FixedUpdate postfix) so MeetingMapPing's own latch stays consistent
+        // no matter which of the two FixedUpdate postfixes on MapBehaviour happens to run
+        // first in a given frame.
+        [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.Show))]
+        private static class ShowPatch {
+            public static void Postfix() {
+                handledClickFrame = Time.frameCount; // the frame the latch writes for this click, whichever Update ran first
+                MeetingMapPing.DiscardOpeningClick();
+            }
+        }
+
         [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.FixedUpdate))]
         private static class MapPatch {
             public static void Postfix(MapBehaviour __instance) {
@@ -105,6 +159,10 @@ namespace UsefulTORStuff {
             if (root != null) return;
             var here = map.HerePoint;
             if (here == null) return;
+            // A fresh root/buttonText instance is about to be built - force Refit's next call to
+            // write .text at least once, even if this round's label happens to equal a stale value
+            // left over from a previous (destroyed) instance.
+            lastLabel = null;
             int layer = map.gameObject.layer;
             int sortLayerId = here.sortingLayerID;
             int sortBase = here.sortingOrder + 20; // safely above the map background/icons
@@ -181,6 +239,17 @@ namespace UsefulTORStuff {
 
         // ---------- per-frame layout ----------
 
+        // Last label string actually written to buttonText, and the button width computed from it
+        // (ForceMeshUpdate + textBounds) - the label only changes when the language selection or the
+        // open/closed arrow changes, not every tick, but this used to rebuild the TMP mesh and re-read
+        // textBounds unconditionally every FixedUpdate the map is open. Invalidated in Ensure() and
+        // SetOpen(): Ensure() because a fresh buttonText instance (a new map/root after the old one was
+        // destroyed between rounds) must always get its first .text write even if this round's label
+        // happens to equal a stale value left over from the previous instance; SetOpen() as a second,
+        // belt-and-braces invalidation right at the one place the label's arrow suffix flips.
+        private static string lastLabel;
+        private static float lastBw = 1.6f;
+
         private static void Refit(MapBehaviour map) {
             var cam = ResolveCamera(root.layer);
             if (cam == null) return;
@@ -188,15 +257,25 @@ namespace UsefulTORStuff {
             string cfg = UTSLocalization.ModLanguage?.Value?.Trim().ToLowerInvariant() ?? "auto";
             int cur = Math.Max(0, Array.IndexOf(Codes, cfg));
             string shown = cur == 0 ? $"auto ({UTSLocalization.ActiveCode})" : Names[cur];
-            buttonText.text = UTSLocalization.Tr("uts.maplang.label", shown) + (open ? "  ^" : "  v");
+            string label = UTSLocalization.Tr("uts.maplang.label", shown) + (open ? "  ^" : "  v");
 
             // camera-fit per frame: pin the button to the bottom-right viewport corner
             Vector3 corner = cam.ViewportToWorldPoint(new Vector3(0.985f, 0.03f, 10f));
             Vector3 local = root.transform.parent.InverseTransformPoint(corner);
             local.z = -3f;
-            buttonText.ForceMeshUpdate();
-            var tb = buttonText.textBounds;
-            float bw = Mathf.Max(1.6f, tb.size.x + 0.3f), bh = 0.34f;
+
+            float bw;
+            if (label != lastLabel) {
+                buttonText.text = label;
+                buttonText.ForceMeshUpdate();
+                var tb = buttonText.textBounds;
+                bw = Mathf.Max(1.6f, tb.size.x + 0.3f);
+                lastLabel = label;
+                lastBw = bw;
+            } else {
+                bw = lastBw;
+            }
+            float bh = 0.34f;
             // anchor: right edge at the corner
             Vector3 btnCenter = local + new Vector3(-bw / 2f, bh / 2f, 0f);
             buttonText.transform.localPosition = btnCenter + new Vector3(0f, 0f, -0.02f);
@@ -219,14 +298,15 @@ namespace UsefulTORStuff {
         // ---------- input ----------
 
         private static void HandleClick() {
-            if (!Input.GetMouseButtonDown(0)) return;
+            if (ClickFrame < 0 || ClickFrame == handledClickFrame) return;
+            handledClickFrame = ClickFrame;
             var cam = ResolveCamera(root != null ? root.layer : 5);
             if (cam == null) return;
-            Vector3 world = cam.ScreenToWorldPoint(Input.mousePosition);
+            Vector3 world = cam.ScreenToWorldPoint(ClickPos);
 
             if (open) {
                 // panel open: EVERY click is ours - select a cell or just close
-                consumedClickFrame = Time.frameCount;
+                consumedClickFrame = ClickFrame;
                 int hit = CellAt(world);
                 if (hit >= 0) {
                     UTSLocalization.ModLanguage.Value = Codes[hit]; // SettingChanged re-applies live
@@ -236,7 +316,7 @@ namespace UsefulTORStuff {
                 return;
             }
             if (OverButton(world)) {
-                consumedClickFrame = Time.frameCount;
+                consumedClickFrame = ClickFrame;
                 SetOpen(true);
             }
         }
@@ -272,6 +352,10 @@ namespace UsefulTORStuff {
         private static void SetOpen(bool value) {
             open = value;
             if (panel != null) panel.SetActive(value);
+            // Belt-and-braces: the label's arrow suffix depends on `open`, so this already forces a
+            // mismatch on the next Refit() naturally - invalidated explicitly anyway, right where the
+            // suffix flips, rather than relying on that string comparison alone.
+            lastLabel = null;
         }
 
         private static bool OverButton(Vector3 world) {
@@ -294,11 +378,15 @@ namespace UsefulTORStuff {
 
         /// MeetingMapPing calls this before turning a click into a ping. True while the
         /// dropdown is open (menu clicks must never ping) or when the pointer is on the button.
+        /// Compares against ClickFrame (not Time.frameCount): consumedClickFrame is now also
+        /// recorded in ClickFrame's timebase, so this stays correct no matter which of the two
+        /// FixedUpdate postfixes on MapBehaviour (this one's or MeetingMapPing's) happens to
+        /// run first in a given frame - both read the same latched click.
         public static bool IsPointerOverToggle(MapBehaviour map, Camera cam) {
-            if (Time.frameCount == consumedClickFrame || open) return true;
+            if ((ClickFrame >= 0 && ClickFrame == consumedClickFrame) || open) return true;
             try {
                 var uiCam = ResolveCamera(root != null ? root.layer : map.gameObject.layer);
-                return uiCam != null && OverButton(uiCam.ScreenToWorldPoint(Input.mousePosition));
+                return uiCam != null && OverButton(uiCam.ScreenToWorldPoint(ClickPos));
             } catch { return false; }
         }
     }

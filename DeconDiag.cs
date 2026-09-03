@@ -40,9 +40,9 @@
  * took down process-wide HTTP). Everything here is read-only polling from HudManager.Update,
  * which several mods in this family already patch without incident.
  *
- * Config-gated (Diagnostics/DeconTrace); default ON for the test builds, meant to be switched off
- * once the answer is in the log. All logging is state-change-driven: a healthy idle round logs
- * one line.
+ * Config-gated (Diagnostics/DeconTrace); default OFF - it did its job for the 2026-08-14/15 reports
+ * and stays in the tree as a read-only tool a host can switch back on if the symptom resurfaces.
+ * All logging is state-change-driven: a healthy idle round logs one line.
  */
 
 using System;
@@ -58,10 +58,10 @@ namespace UsefulTORStuff {
         internal static ConfigEntry<bool> Enabled;
 
         public static void Bind(ConfigFile config) {
-            Enabled = config.Bind("Diagnostics", "DeconTrace", true,
+            Enabled = config.Bind("Diagnostics", "DeconTrace", false,
                 "Log decontamination system / door state transitions, minigame open/close and "
                 + "meeting starts, to pin down why the Polus decon door and the emergency meeting "
-                + "misbehave. Read-only; switch off once diagnosed.");
+                + "misbehave. Read-only; switch on again only if the symptom comes back.");
         }
 
         // ---- per-round state ----
@@ -74,6 +74,11 @@ namespace UsefulTORStuff {
         }
 
         private static readonly List<DeconWatch> watches = new List<DeconWatch>();
+        // Fallback-path collider cache for IsOpen() below (unknown door kind, not a ManualDoor):
+        // GetComponentsInChildren allocates a fresh array every call, and IsOpen runs twice per
+        // watched door every 0.25s poll. Keyed by the door's Il2Cpp pointer, cleared on every fresh
+        // ScanRound so a door instance from a previous round can never serve a stale array.
+        private static readonly Dictionary<IntPtr, Collider2D[]> fallbackColliderCache = new Dictionary<IntPtr, Collider2D[]>();
         private static bool roundScanned;
         private static float nextPoll;
         private static string lastMinigame = "";
@@ -121,6 +126,7 @@ namespace UsefulTORStuff {
                 + $"AmHost={client.AmHost}, GameStartManager={gsm}, map={ShipStatus.Instance.name}");
 
             watches.Clear();
+            fallbackColliderCache.Clear();
             try {
                 foreach (var kv in ShipStatus.Instance.Systems) {
                     DeconSystem ds = null;
@@ -163,8 +169,14 @@ namespace UsefulTORStuff {
                 if (door == null) return null;
                 var manual = door.TryCast<ManualDoor>();
                 if (manual != null && manual.myCollider != null) return !manual.myCollider.enabled;
-                // Unknown door kind: fall back to "any enabled solid collider means closed".
-                foreach (var c in door.GetComponentsInChildren<Collider2D>())
+                // Unknown door kind: fall back to "any enabled solid collider means closed". The
+                // CHILD LIST itself (which colliders exist) is cached per door instance - only their
+                // .enabled is re-read every poll, so a fresh allocation isn't needed every 0.25s.
+                if (!fallbackColliderCache.TryGetValue(door.Pointer, out var colliders)) {
+                    colliders = door.GetComponentsInChildren<Collider2D>();
+                    fallbackColliderCache[door.Pointer] = colliders;
+                }
+                foreach (var c in colliders)
                     if (c != null && !c.isTrigger && c.enabled) return false;
                 return true;
             } catch { return null; }

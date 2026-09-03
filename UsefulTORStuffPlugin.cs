@@ -276,7 +276,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Trickster "Avatar Mixup Sabotage" option (Fungle). HudManager.Start patch is attribute-based;
         // TryPatch resolves TOR's private lightsOutButton for the shared cooldown.
         TricksterAvatarSabotage.CreateOptions();
-        TricksterAvatarSabotage.TryPatch();
+        TricksterAvatarSabotage.TryPatch(harmony);
 
         // Trickster "Box Count" option (1-5, default 3): how many placed Jack-in-the-Boxes convert
         // into a connected vent network, replacing TOR's hardcoded 3. The clearAndReload postfix is

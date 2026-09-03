@@ -132,14 +132,36 @@ namespace UsefulTORStuff
             return data as List<string> ?? new List<string>();
         }
 
+        // PERF (2026-09-01 audit): GetAllMods() re-reads every registered mod's Dictionary out of
+        // AppDomain and re-converts it to a fresh ModInfo on EVERY call - MaybeCheckForUpdates and the
+        // Mod Manager UI both call it repeatedly (the UI while its panel is open). A short TTL cache
+        // avoids repeating that work call after call within the same instant; it is additionally
+        // invalidated the moment the manifest's mod COUNT changes (a mod registering mid-TTL becomes
+        // visible immediately instead of waiting out the rest of the window). The returned ModInfo
+        // instances are the SAME objects across cache hits, not fresh copies per call - the fields the
+        // UI holds onto (_entryRefs) and the callbacks (HasUpdate, TriggerUpdate, ...) are all set once
+        // at conversion time and never mutated afterwards, so a shared reference behaves identically to
+        // a fresh one for every existing caller.
+        private const float CacheTtlSeconds = 2f;
+        private static List<ModInfo> _cachedMods;
+        private static float _cachedAtRealtime = float.NegativeInfinity;
+        private static int _cachedManifestCount = -1;
+
         // Gibt alle registrierten Mods zurück, indem Dictionaries aus AppDomain gelesen werden.
         public static List<ModInfo> GetAllMods()
         {
+            var manifest = GetManifest();
+            bool manifestChanged = manifest.Count != _cachedManifestCount;
+            if (_cachedMods != null && !manifestChanged
+                && (Time.realtimeSinceStartup - _cachedAtRealtime) < CacheTtlSeconds)
+            {
+                return _cachedMods;
+            }
+
             var mods = new List<ModInfo>();
 
             try
             {
-                var manifest = GetManifest();
                 var allGuids = new HashSet<string>(manifest);
 
                 // Fallback hard-coded GUIDs (funktioniert mit alten Mods, die SetData() direkt verwenden)
@@ -168,13 +190,22 @@ namespace UsefulTORStuff
                     }
                 }
 
-                UsefulTORStuffPlugin.Logger?.LogInfo($"Mod Manager: Found {mods.Count} mods (Manifest: {manifest.Count}, Hardcoded: {knownGuids.Length})");
+                // Only logged when the resulting mod count actually changed since the last real
+                // fetch - a cache-refresh call every couple seconds while the panel sits open used to
+                // spam this line unchanged.
+                if (_cachedMods == null || mods.Count != _cachedMods.Count)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"Mod Manager: Found {mods.Count} mods (Manifest: {manifest.Count}, Hardcoded: {knownGuids.Length})");
+                }
             }
             catch (Exception ex)
             {
                 UsefulTORStuffPlugin.Logger?.LogError($"Failed to retrieve registered mods: {ex}");
             }
 
+            _cachedMods = mods;
+            _cachedAtRealtime = Time.realtimeSinceStartup;
+            _cachedManifestCount = manifest.Count;
             return mods;
         }
 

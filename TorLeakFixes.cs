@@ -237,8 +237,12 @@ namespace UsefulTORStuff {
         static class VentCleanIconShrinkPatch {
             // The vent this player's active VentCleaning task targets, the last time we checked -
             // used only to tell "TOR just applied the FIRST shrink this session" (nothing to do)
-            // from "TOR just multiplied an already-shrunk icon AGAIN" (undo the redundant factor).
+            // from "TOR just multiplied an already-shrunk icon AGAIN" (write the compensated
+            // absolute scale back). shrunkIcon/baseScale below remember the exact icon instance and
+            // its pristine (pre-shrink) scale, captured once at key-change time.
             private static string shrunkIconKey;
+            private static GameObject shrunkIcon;
+            private static Vector3 baseScale;
 
             // PERF (this runs every physics tick while the map is open):
             //  - the task is found by walking myTasks in place, not ToArray()+FirstOrDefault (an
@@ -260,6 +264,16 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 try {
                     var localPlayer = PlayerControl.LocalPlayer;
+                    // AUDIT: reset paths below only clear shrunkIconKey, never shrunkIcon/baseScale.
+                    // A transient one-tick drop-out (myTasks momentarily null, FindConsoles briefly
+                    // empty, mapIcons mid-rebuild) used to null shrunkIcon too, so the very next tick
+                    // that finds the SAME icon again looked like a "fresh target" and re-derived
+                    // baseScale from the current runtime scale - which, since our enforcement did not
+                    // run during the drop-out tick, TOR's own MapBehaviourPatch postfix had already
+                    // multiplied by 0.6 again on top of the existing shrink. Baking that in as the new
+                    // "pristine" base permanently fixed the icon at 0.6*0.6 = 0.36x. Keeping
+                    // shrunkIcon/baseScale alive across a mere key reset lets the icon == shrunkIcon
+                    // branch below reuse the still-good base instead.
                     if (localPlayer == null || localPlayer.myTasks == null) { shrunkIconKey = null; return; }
 
                     PlayerTask task = null;
@@ -283,18 +297,32 @@ namespace UsefulTORStuff {
                         cachedTaskKey = key;
                     }
 
-                    if (key != shrunkIconKey) {
-                        // Freshly became the shrink target (new task, or the map was just opened) -
-                        // TOR's own multiply that just ran is the one intended shrink.
-                        shrunkIconKey = key;
-                        return;
-                    }
-
                     GameObject icon = null;
                     if (mapIconsField?.GetValue(null) is Dictionary<string, GameObject> icons)
                         icons.TryGetValue(key, out icon);
                     if (icon == null) icon = GameObject.Find(key);
-                    if (icon != null) icon.transform.localScale /= 0.6f;
+                    if (icon == null) { shrunkIconKey = null; return; }
+
+                    if (icon != shrunkIcon) {
+                        // Real new instance (fresh target vent, or clearAndReload/ShowVentsOnMap
+                        // rebuilt mapIcons with a fresh GameObject even under the same key) -
+                        // re-capture the pristine pre-shrink scale. TOR's own multiply that just ran
+                        // this tick is the one intended shrink, so nothing else to do this tick.
+                        shrunkIconKey = key;
+                        shrunkIcon = icon;
+                        baseScale = icon.transform.localScale / 0.6f;
+                        return;
+                    }
+
+                    // Same icon instance as before - even if shrunkIconKey was just reset by a
+                    // transient drop-out above - so reuse the already-captured base scale instead of
+                    // re-deriving it from the (possibly already double-shrunk) current runtime value.
+                    // TOR multiplies by 0.6 again this tick (MapBehaviourPatch.cs) on top of whatever
+                    // we wrote last tick. Writing the absolute compensated value here - instead of
+                    // dividing the already-drifted runtime scale back out - keeps the output stable
+                    // instead of accumulating floating-point error over many ticks.
+                    shrunkIconKey = key;
+                    icon.transform.localScale = baseScale * 0.6f;
                 } catch (Exception e) {
                     ThrottledLog("VentIcon", $"shrink guard failed: {e.GetType().Name}: {e.Message}");
                     shrunkIconKey = null;

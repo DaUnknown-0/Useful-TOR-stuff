@@ -188,14 +188,13 @@ namespace UsefulTORStuff {
         // targetWasGuessed). A finalizer puts the flag back, so nothing downstream - the Lawyer win
         // check reads it too - sees the temporary value. Same flip-and-restore shape LoverRevenger
         // uses for Lovers.bothDie, finalizer included, so a throw anywhere in the chain cannot leave
-        // the flag stuck.
+        // the flag stuck. The flip flag lives in Harmony's __state rather than a static field, so a
+        // reentrant Exiled() call cannot clobber another call's in-flight flag.
         // ══════════════════════════════════════════════════════════════════════════════════════
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.Exiled))]
         static class LawyerPromotionSuicidePatch {
-            private static bool flipped;
-
-            public static void Prefix(PlayerControl __instance) {
-                flipped = false;
+            public static void Prefix(PlayerControl __instance, out bool __state) {
+                __state = false;
                 try {
                     if (Lawyer.lawyer == null || Lawyer.target == null) return;
                     if (__instance == null || __instance != Lawyer.target) return;
@@ -205,16 +204,15 @@ namespace UsefulTORStuff {
                     if (Jester.jester != null && Lawyer.target == Jester.jester) return;
 
                     Lawyer.targetWasGuessed = true;
-                    flipped = true;
+                    __state = true;
                 } catch (Exception e) {
-                    flipped = false;
+                    __state = false;
                     ThrottledLog("H6", $"prefix failed: {e.GetType().Name}: {e.Message}");
                 }
             }
 
-            public static void Finalizer() {
-                if (!flipped) return;
-                flipped = false;
+            public static void Finalizer(bool __state) {
+                if (!__state) return;
                 try { Lawyer.targetWasGuessed = false; } catch { }
             }
         }

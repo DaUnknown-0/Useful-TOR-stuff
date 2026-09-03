@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
@@ -45,6 +46,32 @@ public static class SnitchLogic
     private static MethodInfo taskInfoMethod;
     private static MethodInfo getRolesStringMethod;
     private static MethodInfo torStartMeetingPrefixMethod;
+
+    // PERF (2026-09-01 audit): the hot Snitch fields above (read/written every SnitchHudUpdatePrefix
+    // call and every meeting/map-open) used to go through FieldInfo.GetValue/SetValue on every
+    // access - boxing the value every time, plus a Convert.ToInt32/ToBoolean unbox on every read.
+    // Each is now backed by a compiled Expression.Lambda over Expression.Field, built ONCE in
+    // ResolveHandles from the very same FieldInfo, giving a direct-field-access-speed delegate with
+    // no boxing and no Convert.* call. Falls back to the pre-fix null-safe defaults when a handle
+    // could not be resolved, exactly like the FieldInfo-based getters/setters did.
+    private static Func<PlayerControl> getSnitchPlayerDelegate;
+    private static Func<int> getSnitchModeDelegate;
+    private static Action<int> setSnitchModeDelegate;
+    private static Func<int> getSnitchTargetsDelegate;
+    private static Func<bool> getSnitchIsRevealedDelegate;
+    private static Action<bool> setSnitchIsRevealedDelegate;
+    private static Func<bool> getSnitchNeedsUpdateDelegate;
+    private static Action<bool> setSnitchNeedsUpdateDelegate;
+    private static Func<TMPro.TextMeshPro> getSnitchTextDelegate;
+    private static Action<TMPro.TextMeshPro> setSnitchTextDelegate;
+    private static Func<int> getSnitchTaskCountForRevealDelegate;
+
+    // Same idea for the hot Helpers/TasksHandler calls: Delegate.CreateDelegate binds directly to
+    // the resolved MethodInfo once, so a call no longer allocates an object[] argument array or
+    // boxes the PlayerControl/return value through MethodInfo.Invoke.
+    private static Func<PlayerControl, bool> helpersIsEvilDelegate;
+    private static Func<PlayerControl, bool> helpersIsKillerDelegate;
+    private static Func<NetworkedPlayerInfo, Tuple<int, int>> taskInfoDelegate;
 
     private static int snitchModeChatValue;
     private static int snitchModeMapValue;
@@ -283,6 +310,79 @@ public static class SnitchLogic
         // direkt auf diese Methode, damit der Mode-Swap garantiert genau um TORs synchrones
         // Snitch.mode-Lesen herum aktiv ist, unabhängig von globaler Patch-Reihenfolge).
         torStartMeetingPrefixMethod = ResolveMethod(startMeetingPatchType, "Prefix");
+
+        CompileDelegates();
+    }
+
+    // Builds the compiled field/method delegates above from whatever handles ResolveHandles just
+    // found. Each builder tolerates a null handle (returns null), so a partially-resolved TOR build
+    // degrades exactly like the FieldInfo/MethodInfo path used to - the Get*/Set*/Call* wrappers
+    // below fall back to their pre-fix defaults whenever the delegate is null.
+    private static void CompileDelegates()
+    {
+        getSnitchPlayerDelegate = MakeGetter<PlayerControl>(snitchPlayerField);
+        getSnitchModeDelegate = MakeGetter<int>(snitchModeField);
+        setSnitchModeDelegate = MakeSetter<int>(snitchModeField);
+        getSnitchTargetsDelegate = MakeGetter<int>(snitchTargetsField);
+        getSnitchIsRevealedDelegate = MakeGetter<bool>(snitchIsRevealedField);
+        setSnitchIsRevealedDelegate = MakeSetter<bool>(snitchIsRevealedField);
+        getSnitchNeedsUpdateDelegate = MakeGetter<bool>(snitchNeedsUpdateField);
+        setSnitchNeedsUpdateDelegate = MakeSetter<bool>(snitchNeedsUpdateField);
+        getSnitchTextDelegate = MakeGetter<TMPro.TextMeshPro>(snitchTextField);
+        setSnitchTextDelegate = MakeSetter<TMPro.TextMeshPro>(snitchTextField);
+        getSnitchTaskCountForRevealDelegate = MakeGetter<int>(snitchTaskCountForRevealField);
+
+        helpersIsEvilDelegate = MakeMethodDelegate<Func<PlayerControl, bool>>(helpersIsEvilMethod);
+        helpersIsKillerDelegate = MakeMethodDelegate<Func<PlayerControl, bool>>(helpersIsKillerMethod);
+        taskInfoDelegate = MakeMethodDelegate<Func<NetworkedPlayerInfo, Tuple<int, int>>>(taskInfoMethod);
+    }
+
+    // Expression.Field(null, field) reads a static field directly (no boxing for value types);
+    // Expression.Convert bridges TOR's actual field type (e.g. the nested Snitch.Mode enum) to the
+    // plain int/bool/reference type this file works with - the same numeric widening a normal C#
+    // cast would do, compiled once instead of paid on every access via Convert.ToInt32/ToBoolean.
+    private static Func<T> MakeGetter<T>(FieldInfo field)
+    {
+        if (field == null) return null;
+        try
+        {
+            Expression body = Expression.Field(null, field);
+            if (field.FieldType != typeof(T)) body = Expression.Convert(body, typeof(T));
+            return Expression.Lambda<Func<T>>(body).Compile();
+        }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogWarning($"SnitchLogic: getter compile failed for {field.Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static Action<T> MakeSetter<T>(FieldInfo field)
+    {
+        if (field == null) return null;
+        try
+        {
+            var value = Expression.Parameter(typeof(T), "value");
+            Expression converted = field.FieldType == typeof(T) ? (Expression)value : Expression.Convert(value, field.FieldType);
+            var assign = Expression.Assign(Expression.Field(null, field), converted);
+            return Expression.Lambda<Action<T>>(assign, value).Compile();
+        }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogWarning($"SnitchLogic: setter compile failed for {field.Name}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static TDelegate MakeMethodDelegate<TDelegate>(MethodInfo method) where TDelegate : Delegate
+    {
+        if (method == null) return null;
+        try { return (TDelegate)Delegate.CreateDelegate(typeof(TDelegate), method); }
+        catch (Exception ex)
+        {
+            UsefulTORStuffPlugin.Logger?.LogWarning($"SnitchLogic: delegate bind failed for {method.Name}: {ex.Message}");
+            return null;
+        }
     }
 
     // Auflösung mit mehreren Kandidaten plus Fallback-Suche über alle TOR-Typen.
@@ -356,58 +456,61 @@ public static class SnitchLogic
 
     private static PlayerControl GetSnitchPlayer()
     {
-        return snitchPlayerField?.GetValue(null) as PlayerControl;
+        return getSnitchPlayerDelegate != null ? getSnitchPlayerDelegate() : null;
     }
 
     private static int GetSnitchMode()
     {
-        return snitchModeField == null ? -1 : Convert.ToInt32(snitchModeField.GetValue(null));
+        return getSnitchModeDelegate != null ? getSnitchModeDelegate() : -1;
     }
 
     private static void SetSnitchMode(int value)
     {
-        if (snitchModeField == null || snitchModeEnumType == null) return;
-        snitchModeField.SetValue(null, Enum.ToObject(snitchModeEnumType, value));
+        // snitchModeEnumType is also what the compiled setter's target field type is, so this
+        // guard stays as a belt-and-braces check alongside the delegate-null check, exactly
+        // matching the previous FieldInfo path's two preconditions.
+        if (setSnitchModeDelegate == null || snitchModeEnumType == null) return;
+        setSnitchModeDelegate(value);
     }
 
     private static int GetSnitchTargets()
     {
-        return snitchTargetsField == null ? -1 : Convert.ToInt32(snitchTargetsField.GetValue(null));
+        return getSnitchTargetsDelegate != null ? getSnitchTargetsDelegate() : -1;
     }
 
     private static bool GetSnitchIsRevealed()
     {
-        return snitchIsRevealedField != null && Convert.ToBoolean(snitchIsRevealedField.GetValue(null));
+        return getSnitchIsRevealedDelegate != null && getSnitchIsRevealedDelegate();
     }
 
     private static void SetSnitchIsRevealed(bool value)
     {
-        if (snitchIsRevealedField != null) snitchIsRevealedField.SetValue(null, value);
+        setSnitchIsRevealedDelegate?.Invoke(value);
     }
 
     private static bool GetSnitchNeedsUpdate()
     {
-        return snitchNeedsUpdateField != null && Convert.ToBoolean(snitchNeedsUpdateField.GetValue(null));
+        return getSnitchNeedsUpdateDelegate != null && getSnitchNeedsUpdateDelegate();
     }
 
     private static void SetSnitchNeedsUpdate(bool value)
     {
-        if (snitchNeedsUpdateField != null) snitchNeedsUpdateField.SetValue(null, value);
+        setSnitchNeedsUpdateDelegate?.Invoke(value);
     }
 
     private static TMPro.TextMeshPro GetSnitchText()
     {
-        return snitchTextField?.GetValue(null) as TMPro.TextMeshPro;
+        return getSnitchTextDelegate != null ? getSnitchTextDelegate() : null;
     }
 
     private static void SetSnitchText(TMPro.TextMeshPro text)
     {
-        if (snitchTextField != null) snitchTextField.SetValue(null, text);
+        setSnitchTextDelegate?.Invoke(text);
     }
 
     private static int GetSnitchTaskCountForReveal()
     {
-        return snitchTaskCountForRevealField == null ? 0 : Convert.ToInt32(snitchTaskCountForRevealField.GetValue(null));
+        return getSnitchTaskCountForRevealDelegate != null ? getSnitchTaskCountForRevealDelegate() : 0;
     }
 
     private static Dictionary<byte, SpriteRenderer> GetHerePoints()
@@ -436,9 +539,15 @@ public static class SnitchLogic
 
     private static bool IsSnitchTargetMatch(PlayerControl player)
     {
+        return IsSnitchTargetMatch(player, GetSnitchTargets());
+    }
+
+    // Overload for a per-loop caller (the map postfix' player scan) that already read
+    // Snitch.targets once for the whole pass instead of once per player.
+    private static bool IsSnitchTargetMatch(PlayerControl player, int targets)
+    {
         if (player == null || player.Data == null) return false;
 
-        int targets = GetSnitchTargets();
         if (targets == snitchTargetsEvilPlayersValue) return CallHelpersIsEvil(player);
         if (targets == snitchTargetsKillersValue) return CallHelpersIsKiller(player);
         return false;
@@ -470,20 +579,20 @@ public static class SnitchLogic
 
     private static bool CallHelpersIsEvil(PlayerControl player)
     {
-        if (helpersIsEvilMethod == null || player == null) return false;
-        return Convert.ToBoolean(helpersIsEvilMethod.Invoke(null, new object[] { player }));
+        if (helpersIsEvilDelegate == null || player == null) return false;
+        return helpersIsEvilDelegate(player);
     }
 
     private static bool CallHelpersIsKiller(PlayerControl player)
     {
-        if (helpersIsKillerMethod == null || player == null) return false;
-        return Convert.ToBoolean(helpersIsKillerMethod.Invoke(null, new object[] { player }));
+        if (helpersIsKillerDelegate == null || player == null) return false;
+        return helpersIsKillerDelegate(player);
     }
 
-    private static Tuple<int, int> CallTaskInfo(object playerInfo)
+    private static Tuple<int, int> CallTaskInfo(NetworkedPlayerInfo playerInfo)
     {
-        if (taskInfoMethod == null) return Tuple.Create(0, 0);
-        return taskInfoMethod.Invoke(null, new[] { playerInfo }) as Tuple<int, int> ?? Tuple.Create(0, 0);
+        if (taskInfoDelegate == null || playerInfo == null) return Tuple.Create(0, 0);
+        return taskInfoDelegate(playerInfo) ?? Tuple.Create(0, 0);
     }
 
     private static string CallGetRolesString(PlayerControl player, bool useColors, bool showModifier, bool suppressGhostInfo)
@@ -515,6 +624,7 @@ public static class SnitchLogic
         if (text == null) return;
         UnityEngine.Object.Destroy(text.gameObject);
         SetSnitchText(null);
+        lastHudText = null; // a freshly (re-)created text must always get its first .text set
     }
 
     private static void AddChatMessage(PlayerControl speaker, string message)
@@ -543,12 +653,19 @@ public static class SnitchLogic
             roomMap.Clear();
             chatModeSwapped = false;
             mapModeSwapped = false;
+            lastHudText = null;
         }
         catch (Exception ex)
         {
             UsefulTORStuffPlugin.Logger?.LogError($"SnitchLogic clearAndReload reset failed: {ex}");
         }
     }
+
+    // Last string actually written to the HUD text's .text - a TMP text-set rebuilds the mesh even
+    // when the new string is identical to the old one, and SnitchHudUpdatePrefix used to run this
+    // formatting/assignment on every call while the text is showing. Compared before writing, so an
+    // unchanged reveal (task count did not move) is a no-op instead of a redundant mesh rebuild.
+    private static string lastHudText;
 
     private static bool SnitchHudUpdatePrefix()
     {
@@ -571,22 +688,32 @@ public static class SnitchLogic
             var local = PlayerControl.LocalPlayer;
             int numberOfTasks = playerTotal - playerCompleted;
             int targets = GetSnitchTargets();
-            bool localCanSee = local != null &&
-                               ((targets == snitchTargetsEvilPlayersValue && CallHelpersIsEvil(local)) ||
-                                (targets == snitchTargetsKillersValue && CallHelpersIsKiller(local)));
 
             var text = GetSnitchText();
-            if (GetSnitchIsRevealed() && localCanSee)
+            // TOR's own short-circuit order (PlayerControlPatch.cs's snitchUpdate): isRevealed is
+            // checked FIRST, and isEvil/isKiller - arbitrary TOR role logic, the expensive part -
+            // is only evaluated once the snitch is actually revealed. The old code computed the
+            // isEvil/isKiller check unconditionally on every call, revealed or not.
+            bool revealedAndVisible = GetSnitchIsRevealed() && local != null &&
+                                      ((targets == snitchTargetsEvilPlayersValue && CallHelpersIsEvil(local)) ||
+                                       (targets == snitchTargetsKillersValue && CallHelpersIsKiller(local)));
+
+            if (revealedAndVisible)
             {
                 if (text == null)
                 {
                     text = CreateSnitchText();
                     SetSnitchText(text);
+                    lastHudText = null; // fresh text instance - force the first write below
                 }
-                else
+
+                string hudText = snitchIsDead
+                    ? UTSLocalization.Tr("uts.snitchlogic.snitch_dead_hud")
+                    : UTSLocalization.Tr("uts.snitchlogic.snitch_alive_hud", playerCompleted, playerTotal);
+                if (text != null && hudText != lastHudText)
                 {
-                    text.text = UTSLocalization.Tr("uts.snitchlogic.snitch_alive_hud", playerCompleted, playerTotal);
-                    if (snitchIsDead) text.text = UTSLocalization.Tr("uts.snitchlogic.snitch_dead_hud");
+                    text.text = hudText;
+                    lastHudText = hudText;
                 }
             }
             else if (text != null)
@@ -809,10 +936,13 @@ public static class SnitchLogic
 
                 if (MeetingHud.Instance == null)
                 {
+                    // Read once for the whole pass instead of once per player (compiled getter, but
+                    // still no reason to re-read an unchanging value AllPlayerControls.Count times).
+                    int targets = GetSnitchTargets();
                     foreach (PlayerControl player in PlayerControl.AllPlayerControls)
                     {
                         if (player == null || player.Data == null || player.Data.IsDead) continue;
-                        if (!IsSnitchTargetMatch(player)) continue;
+                        if (!IsSnitchTargetMatch(player, targets)) continue;
 
                         Vector3 v = player.transform.position;
                         v /= shipStatus.MapScale;

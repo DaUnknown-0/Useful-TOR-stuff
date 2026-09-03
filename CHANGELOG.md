@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+### Bug- and Perf-Audit 2026-09-03
+A pass over the recent additions, nothing user-facing except the two behaviour fixes at the top.
+- **Crew win no longer waits on a living Pursuer** (`TorRoundLogicFixes.cs`, guard M8): the Pursuer
+  has no win of his own in TOR, he is added as a bonus winner whenever the Crew wins, so a guard that
+  blocked the Crew win while a Pursuer was still alive could stall a win that should have happened.
+  The Pursuer is removed from the guard; Hide N Seek and Prop Hunt were already exempted from it and
+  stay that way.
+- **Reentrant murder patches no longer share a static flag** (`TorUpstreamFixes.cs` H6,
+  `LoverRevenger.cs`): a nested `Exiled()`/`MurderPlayer` call for the Lovers modifier could read or
+  clear the wrong flag if two calls overlapped. Both now carry the state on a Harmony `__state`
+  instead of a static field.
+- **Map click detection moved off the physics tick** (`MeetingMapPing.cs`, `MapLanguageToggle.cs`):
+  both read clicks in `MapBehaviour.FixedUpdate`, so above 50 fps a click landing between physics
+  ticks was lost. Clicks are now latched in `HudManager.Update` instead, and the click that opens the
+  map is discarded so it cannot also register as a ping or a language-menu click.
+- **Trickster avatar mixup stops repainting every physics tick** (`TricksterAvatarSabotage.cs`):
+  `setLook` used to run for every player on every `FixedUpdate`. It now runs once, re-applies only on
+  Camouflage/Morph/night-vision ending, and is throttled to once per 0.1 s.
+- **Swapper lights fix moved off a dedup-risk detour** (`SwapperLightsFix.cs`): the prefixes on
+  `Minigame.Close()`/`TuneRadioMinigame.Close()` are gone, since small Il2Cpp methods can be silently
+  merged by the runtime's deduplication. `Swapper.swapper` is now hidden in the sabotage's own Begin
+  prefix and restored in its Finalizer instead.
+- **`/color` no longer resets a valid colour to 0** (`TorAuditFixes.cs`): an invalid colour id used to
+  fall through into `SetColor(0)`; it is now a no-op.
+- **The version handshake survives a null `Data`** (`UsefulVersionHandshake.cs`): a client that had
+  just joined and had not populated `Data` yet threw out of the lobby-warning postfix; both call sites
+  now guard against it.
+- **Vent-icon shrink uses an absolute scale** (`TorLeakFixes.cs`): the shrink divided the current
+  scale each time, so a freshly created icon started smaller than intended depending on how many
+  shrink cycles had already run. It now scales from a remembered base size and always settles at 0.6x.
+- **Meeting Duration Override restores on an early leave too** (`MeetingDurationOverride.cs`): the
+  Discussion/Voting time restore only ran on the normal path; it now also runs from `OnGameJoined`, so
+  leaving mid-round no longer leaves the override applied in the next lobby.
+- **Impostor Count Range remembers the real `NumImpostors`** (`ImpostorCountRange.cs`): the original
+  value is now captured and written back when the feature is switched off or the lobby changes,
+  instead of leaving whatever value the feature last rolled.
+- **Positional sounds get a per-clip generation counter** (`SoundAtPositionFix.cs`): two overlapping
+  loops of the same clip could stop each other early; each play now carries its own generation, so
+  only its own stop call can end it.
+- **MultiModifiers checks who is allowed to break Extra Armor** (`MultiModifiers.cs`): the RPC that
+  breaks the Extra Armor modifier is now checked for plausibility: the host is always trusted,
+  otherwise the sender must not be the target and the target must actually be Extra-Armored.
+- **DeconDiag ships off by default**, with its collider fallback cached instead of resolved again.
+- **UTSRejoin bundles its saves** (`UTSRejoin.cs`): three separate config writes per join are now one.
+- **The updater stops reporting a failed write as success** (`UsefulTORStuffUpdater.cs`): a failed
+  download or move used to still delete the `.old` backup on the following start, because nothing
+  checked whether the write had actually finished. It now checks `IsCompletedSuccessfully`, wraps the
+  move and the write in try/catch with a rollback, guards a null asset, and removes a half-written
+  file instead of leaving it behind.
+- **`ModManagerCore.GetAllMods` is cached for 2 seconds** and only logs when the result changes.
+- **Perf**: SnitchLogic runs on compiled delegates instead of reflection and only reprints its text on
+  change, matching TOR's own short-circuit; UsefulVersionHandshake caches its registry split;
+  TrapperExtras caches its containers and delegates; LawyerLoverTracker only touches the material on
+  change; SettingsOverlayView looks up a child by index instead of an O(n²) search; MapLanguageToggle's
+  refit only calls `ForceMeshUpdate` when the text actually changed.
+
 ### Performance HUD (`PerfHud.cs`)
 A measuring stick for the pass below. Peak fps cannot show what that pass changed, so this shows
 what can: frame time as an average **and** as a 99th percentile plus the share of frames over

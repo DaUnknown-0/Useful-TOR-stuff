@@ -141,8 +141,24 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Click detection shares MapLanguageToggle's HudManager.Update click latch (ClickFrame/
+        // ClickPos) instead of reading Input.GetMouseButtonDown(0) directly here - see the latch's
+        // header comment in MapLanguageToggle.cs for why a bare GetMouseButtonDown read is unsafe
+        // from MapBehaviour.FixedUpdate. lastHandledClickFrame is this consumer's own "have I
+        // already processed this ClickFrame value" latch, kept separate from MapLanguageToggle's
+        // internal one so each site consumes the same click independently.
+        private static int lastHandledClickFrame = -1;
+
+        // Called from MapLanguageToggle's MapBehaviour.Show postfix (the single, centralized
+        // "map became active" signal - see the comment there) the moment the map is opened, so
+        // the very click that opened it is never reprocessed here as a ping placement.
+        internal static void DiscardOpeningClick() {
+            lastHandledClickFrame = Time.frameCount; // same frame the HudManager.Update latch stamps, independent of Update order
+        }
+
         private static void HandleClick(MapBehaviour map) {
-            if (!Input.GetMouseButtonDown(0)) return;
+            if (MapLanguageToggle.ClickFrame < 0 || MapLanguageToggle.ClickFrame == lastHandledClickFrame) return;
+            lastHandledClickFrame = MapLanguageToggle.ClickFrame;
             if (Time.unscaledTime < nextSendAllowed) return;
             var local = PlayerControl.LocalPlayer;
             if (local == null || local.Data == null || local.Data.IsDead) return;
@@ -153,12 +169,12 @@ namespace UsefulTORStuff {
             if (cam == null) return;
             // Top strip holds the map close button - never ping from there. The language
             // toggle (bottom right) consumes its own clicks first.
-            var vp = cam.ScreenToViewportPoint(Input.mousePosition);
+            var vp = cam.ScreenToViewportPoint(MapLanguageToggle.ClickPos);
             if (vp.y > 0.85f) return;
             if (MapLanguageToggle.IsPointerOverToggle(map, cam)) return;
 
             var parent = map.HerePoint.transform.parent;
-            Vector3 world = cam.ScreenToWorldPoint(Input.mousePosition);
+            Vector3 world = cam.ScreenToWorldPoint(MapLanguageToggle.ClickPos);
             Vector3 mapLocal = parent.InverseTransformPoint(world);
 
             nextSendAllowed = Time.unscaledTime + SendCooldownSeconds;

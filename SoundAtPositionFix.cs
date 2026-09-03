@@ -21,6 +21,7 @@
  */
 
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using TheOtherRoles;
@@ -29,6 +30,19 @@ using UnityEngine;
 namespace UsefulTORStuff {
     [HarmonyPatch]
     public static class SoundAtPositionFix {
+        // Per-clip generation counter: two overlapping playAtPosition calls for the SAME clip (e.g.
+        // two Bomber fuses ticking at once) would otherwise race on the same shared AudioSource -
+        // whichever lerp coroutine expires first calls StopSound(clip) and stops BOTH, and the two
+        // coroutines' volume writes stomp each other every frame in between. Each Start() call bumps
+        // its clip's generation and captures the new value; the lerp lambda only touches volume/
+        // StopSound while its own generation is still the current one for that clip, so a superseded
+        // (older) instance quietly does nothing once a newer one has taken over.
+        // Keyed by the clip's native Il2Cpp pointer, not the managed AudioClip wrapper itself - Il2Cpp
+        // interop can hand out more than one distinct managed wrapper instance for the same native
+        // object, which would defeat the generation dedup above (two wrapper instances for the same
+        // clip hashing/equating differently and never seeing each other's generation bump).
+        private static readonly Dictionary<IntPtr, int> gen = new Dictionary<IntPtr, int>();
+
         // TORMapOptions is internal to TOR - read its enableSoundEffects flag via reflection.
         private static FieldInfo enableSfxField;
         private static bool sfxFieldResolved;
@@ -55,9 +69,16 @@ namespace UsefulTORStuff {
                 if (source == null) return false;
                 source.loop = loop;
 
+                IntPtr clipPtr = clip.Pointer;
+                int myGen = gen.TryGetValue(clipPtr, out int g) ? g + 1 : 1;
+                gen[clipPtr] = myGen;
+
                 HudManager.Instance.StartCoroutine(Effects.Lerp(maxDuration, new Action<float>((p) => {
                     try {
                         if (source == null) return;
+                        // A newer playAtPosition for the same clip has taken over - this instance is
+                        // superseded, leave the source alone (the newer coroutine now owns it).
+                        if (!gen.TryGetValue(clipPtr, out int current) || current != myGen) return;
                         if (p == 1f) {
                             // Vanilla-managed teardown (keeps SoundManager's bookkeeping intact) -
                             // the original destroyed the shared source here and corrupted it.
@@ -75,6 +96,14 @@ namespace UsefulTORStuff {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[SoundAtPositionFix] fell back to TOR original: {e.Message}");
                 return true;
             }
+        }
+
+        // New lobby: clip identities can be reused/reloaded across lobbies, so a stale generation
+        // entry here must not suppress a legitimate first play in the next one.
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        public static void OnGameJoinedPostfix() {
+            gen.Clear();
         }
     }
 }

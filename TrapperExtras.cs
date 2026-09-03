@@ -36,6 +36,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using HarmonyLib;
@@ -100,6 +101,17 @@ namespace UsefulTORStuff {
         private static Sprite trapSprite;
         private static bool trapSpriteTried;
 
+        // PERF (2026-09-01 audit): MapMarkerPatch reads instanceId/trap off every live Trap on every
+        // physics tick while the map is open. FieldInfo.GetValue boxes the value (instanceId is an
+        // int) on every single call; these compiled delegates, built once here in Resolve() from the
+        // very same FieldInfo, read the field directly with no boxing - same trick SnitchLogic uses
+        // for TOR's static fields, just over an INSTANCE field this time (the Trap the value comes
+        // out of is a Harmony/Expression-visible `object`, so this works without ever naming TOR's
+        // internal Trap type at compile time).
+        private static Func<IEnumerable> getTrapsDelegate;
+        private static Func<object, int> getInstanceIdDelegate;
+        private static Func<object, GameObject> getTrapObjectDelegate;
+
         private static bool Resolve() {
             if (resolved) return !resolveFailed;
             resolved = true;
@@ -122,6 +134,25 @@ namespace UsefulTORStuff {
                     UsefulTORStuffPlugin.Logger?.LogWarning(
                         "[TrapperExtras] Trap.getTrapSprite not found - map markers fall back to the "
                         + "here-point dot; the numbers still work.");
+
+                // Perf path: compiled Expression-tree getters (no boxing, see the comment above the
+                // fields). If the compile itself fails for any reason - the FieldInfos above already
+                // resolved fine, so the type/fields genuinely exist - fall back to plain
+                // FieldInfo.GetValue getters instead of disabling the whole feature. Slower (boxes
+                // every call), but the map markers and trap log stay on for the session either way.
+                try {
+                    getTrapsDelegate = MakeStaticGetter<IEnumerable>(fTraps);
+                    getInstanceIdDelegate = MakeInstanceGetter<int>(fInstanceId);
+                    getTrapObjectDelegate = MakeInstanceGetter<GameObject>(fTrapObject);
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        "[TrapperExtras] compiled field getters failed, falling back to plain "
+                        + $"reflection (slower, feature stays on): {e.Message}");
+                    var traps = fTraps; var instanceId = fInstanceId; var trapObj = fTrapObject;
+                    getTrapsDelegate = () => (IEnumerable)traps.GetValue(null);
+                    getInstanceIdDelegate = obj => (int)instanceId.GetValue(obj);
+                    getTrapObjectDelegate = obj => (GameObject)trapObj.GetValue(obj);
+                }
             } catch (Exception e) {
                 resolveFailed = true;
                 UsefulTORStuffPlugin.Logger?.LogWarning(
@@ -131,17 +162,36 @@ namespace UsefulTORStuff {
             return !resolveFailed;
         }
 
+        private static Func<T> MakeStaticGetter<T>(FieldInfo field) {
+            Expression body = Expression.Field(null, field);
+            if (field.FieldType != typeof(T)) body = Expression.Convert(body, typeof(T));
+            return Expression.Lambda<Func<T>>(body).Compile();
+        }
+
+        private static Func<object, T> MakeInstanceGetter<T>(FieldInfo field) {
+            var objParam = Expression.Parameter(typeof(object), "obj");
+            Expression typed = Expression.Convert(objParam, field.DeclaringType);
+            Expression body = Expression.Field(typed, field);
+            if (field.FieldType != typeof(T)) body = Expression.Convert(body, typeof(T));
+            return Expression.Lambda<Func<object, T>>(body, objParam).Compile();
+        }
+
         /// The live trap list, as plain objects. Empty when anything failed to resolve, so every
         /// caller can foreach over it without a null check.
         private static IEnumerable Traps() {
             if (!Resolve()) return Array.Empty<object>();
-            return fTraps.GetValue(null) as IEnumerable ?? (IEnumerable)Array.Empty<object>();
+            return getTrapsDelegate() ?? (IEnumerable)Array.Empty<object>();
         }
 
         // ================================================================================
         // 1) The trapper's own traps, numbered, on the map
         // ================================================================================
         private static readonly Dictionary<int, GameObject> markers = new();
+        // Reused across ticks (Clear()ed, not reallocated) - this runs every physics tick the map is
+        // open, and a fresh HashSet/List per tick was pure churn for what is at most a handful of
+        // live traps.
+        private static readonly HashSet<int> markerSeenScratch = new();
+        private static readonly List<int> markerGoneScratch = new();
 
         [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.FixedUpdate))]
         internal static class MapMarkerPatch {
@@ -152,11 +202,12 @@ namespace UsefulTORStuff {
                     var ship = MapUtilities.CachedShipStatus;
                     if (ship == null) { ClearMarkers(); return; }
 
-                    var seen = new HashSet<int>();
+                    var seen = markerSeenScratch;
+                    seen.Clear();
                     foreach (var t in Traps()) {
                         if (t == null) continue;
-                        int id = (int)fInstanceId.GetValue(t);
-                        var go = fTrapObject.GetValue(t) as GameObject;
+                        int id = getInstanceIdDelegate(t);
+                        var go = getTrapObjectDelegate(t);
                         if (go == null) continue;
                         seen.Add(id);
 
@@ -177,7 +228,8 @@ namespace UsefulTORStuff {
                     }
 
                     // Traps that no longer exist (revealed ones are destroyed after a meeting).
-                    var gone = new List<int>();
+                    var gone = markerGoneScratch;
+                    gone.Clear();
                     foreach (var kv in markers) if (!seen.Contains(kv.Key)) gone.Add(kv.Key);
                     foreach (var id in gone) {
                         if (markers[id] != null) UnityEngine.Object.Destroy(markers[id]);
@@ -324,7 +376,7 @@ namespace UsefulTORStuff {
                     foreach (var t in Traps()) {
                         if (t == null) continue;
                         if (!(bool)fRevealed.GetValue(t)) continue;
-                        int id = (int)fInstanceId.GetValue(t);
+                        int id = getInstanceIdDelegate(t);
                         var ids = fTrappedPlayer.GetValue(t) as List<byte>;
                         if (ids == null) continue;
 

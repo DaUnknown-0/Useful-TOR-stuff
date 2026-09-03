@@ -212,7 +212,58 @@ namespace UsefulTORStuff {
         // Page building
         // ==========================================================================================
 
+        // PERF (2026-09-01 audit): every page build used to re-scan the FULL CustomOption.options list
+        // with a fresh LINQ .Where() for each type/parent lookup it needed (BuildGeneral, AddRateSection
+        // x4, BuildType, SubRolesWithOwnRate per root, ModifierExtras per modifier) - several full
+        // passes over every registered option, per page, per overlay refresh. childrenByParent and
+        // optionsByType below are built in a SINGLE pass over CustomOption.options, in TOR's own
+        // registration order (every consumer relies on that order for display, so it is preserved
+        // exactly), and reused for the rest of that page build. The cache is invalidated only when the
+        // options list has actually changed - either a different List<CustomOption> instance (TOR
+        // reassigns it on some resets) or a different Count (an option added/removed) - so an overlay
+        // sitting open and refreshing every 0.25s (TorPerfFixes' throttle) does not rebuild the index
+        // on every single one of those refreshes.
+        private static List<CustomOption> indexedOptionsList;
+        private static int indexedOptionsCount = -1;
+        private static Dictionary<CustomOption, List<CustomOption>> childrenByParent = new();
+        private static Dictionary<Types, List<CustomOption>> optionsByType = new();
+        private static readonly List<CustomOption> EmptyOptionList = new();
+
+        private static void EnsureChildIndex() {
+            var options = CustomOption.options;
+            if (options != null && ReferenceEquals(options, indexedOptionsList) && options.Count == indexedOptionsCount)
+                return;
+
+            indexedOptionsList = options;
+            indexedOptionsCount = options?.Count ?? 0;
+            var byParent = new Dictionary<CustomOption, List<CustomOption>>();
+            var byType = new Dictionary<Types, List<CustomOption>>();
+            if (options != null) {
+                foreach (var option in options) {
+                    if (option == null) continue;
+                    if (option.parent != null) {
+                        if (!byParent.TryGetValue(option.parent, out var kids))
+                            byParent[option.parent] = kids = new List<CustomOption>();
+                        kids.Add(option);
+                    }
+                    if (!byType.TryGetValue(option.type, out var ofType))
+                        byType[option.type] = ofType = new List<CustomOption>();
+                    ofType.Add(option);
+                }
+            }
+            childrenByParent = byParent;
+            optionsByType = byType;
+        }
+
+        private static List<CustomOption> ChildrenOf(CustomOption parent) =>
+            childrenByParent.TryGetValue(parent, out var list) ? list : EmptyOptionList;
+
+        private static List<CustomOption> OptionsOfType(Types type) =>
+            optionsByType.TryGetValue(type, out var list) ? list : EmptyOptionList;
+
         private static string BuildPage(int page, CustomGamemodes mode, bool wideLayout) {
+            EnsureChildIndex();
+
             List<List<Line>> blocks;
             string title;
             Color titleColor;
@@ -247,9 +298,9 @@ namespace UsefulTORStuff {
         // Mirrors TOR's own special cases for the min/max role counts (CustomOptions.cs:1024-1064):
         // those eight options are shown as four ranges, not eight separate numbers.
         private static List<List<Line>> BuildGeneral(CustomGamemodes mode) {
-            var pool = CustomOption.options.Where(o => o.type == Types.General).ToList();
+            var pool = OptionsOfType(Types.General).ToList();
             if (mode == CustomGamemodes.Guesser) {
-                pool.AddRange(CustomOption.options.Where(o => o.type == Types.Guesser));
+                pool.AddRange(OptionsOfType(Types.Guesser));
                 var remove = new HashSet<int> { 308, 310, 311, 312, 313, 314, 315, 316, 317, 318 };
                 pool = pool.Where(o => !remove.Contains(o.id)).ToList();
             } else {
@@ -300,7 +351,7 @@ namespace UsefulTORStuff {
         }
 
         private static void AddRateSection(List<List<Line>> blocks, Types type, string title, string countValue) {
-            var roots = CustomOption.options.Where(o => o.type == type && o.parent == null).ToList();
+            var roots = OptionsOfType(type).Where(o => o.parent == null).ToList();
             if (roots.Count == 0) return;
 
             var active = new List<CustomOption>();
@@ -328,7 +379,7 @@ namespace UsefulTORStuff {
 
         // ---- pages 4-7: one option type in full ---------------------------------------------------
         private static List<List<Line>> BuildType(Types type) {
-            var pool = CustomOption.options.Where(o => o.type == type).ToList();
+            var pool = OptionsOfType(type).ToList();
             var roots = pool.Where(o => o.parent == null).ToList();
 
             var active = new List<CustomOption>();
@@ -546,8 +597,7 @@ namespace UsefulTORStuff {
         }
 
         private static IEnumerable<CustomOption> SubRolesWithOwnRate(CustomOption root) {
-            foreach (var option in CustomOption.options) {
-                if (option.parent != root) continue;
+            foreach (var option in ChildrenOf(root)) {
                 if (option.id != 103 && option.id != 224 && option.id != 358) continue;
                 if (!IsVisible(option)) continue;
                 yield return option;
@@ -574,8 +624,7 @@ namespace UsefulTORStuff {
             if (option.type != Types.Modifier || option.getSelection() == 0) return "";
             if (option == CustomOptionHolder.modifierLover)
                 return $" (1 Evil: {CustomOptionHolder.modifierLoverImpLoverRate.getSelection() * 10}%)";
-            var quantity = CustomOption.options
-                .Where(o => o.parent == option && o.name.Contains("Quantity")).ToList();
+            var quantity = ChildrenOf(option).Where(o => o.name.Contains("Quantity")).ToList();
             return quantity.Count == 1 ? $" ({quantity[0].getQuantity()})" : "";
         }
 

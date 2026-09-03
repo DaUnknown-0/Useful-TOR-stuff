@@ -43,14 +43,34 @@ namespace UsefulTORStuff {
         internal static ConfigEntry<string> SavedCode;
         internal static ConfigEntry<string> SavedRegion;
         internal static ConfigEntry<string> SavedStamp;
+        private static ConfigFile _config;
 
         public static void Bind(ConfigFile config) {
+            _config = config;
             SavedCode = config.Bind("ModSync", "RejoinCode", "",
                 "Lobby code remembered before a mod sync restart. Cleared once used or expired.");
             SavedRegion = config.Bind("ModSync", "RejoinRegion", "",
                 "Server region of the remembered lobby.");
             SavedStamp = config.Bind("ModSync", "RejoinStamp", "",
                 "UTC timestamp of the remembered lobby (round-trip format). Entries expire after 30 minutes.");
+        }
+
+        // Batches the three .Value writes below into a single disk save: BepInEx's ConfigFile
+        // writes the WHOLE file on every .Value set by default (SaveOnConfigSet), so setting three
+        // entries back to back would otherwise serialize and write the file three times for what is
+        // conceptually one update. Temporarily disabling SaveOnConfigSet defers all three writes to
+        // one explicit Save() call; the finally puts the flag back so every OTHER config entry in
+        // the mod keeps its normal per-set save behavior.
+        private static void BatchedSave(Action writes) {
+            if (_config == null) { writes(); return; }
+            bool prev = _config.SaveOnConfigSet;
+            _config.SaveOnConfigSet = false;
+            try {
+                writes();
+            } finally {
+                _config.SaveOnConfigSet = prev;
+            }
+            _config.Save();
         }
 
         // Called after a successful sync (UTSModDownloader, right before the restart) and, since
@@ -69,9 +89,12 @@ namespace UsefulTORStuff {
                 try { region = DestroyableSingleton<ServerManager>.Instance?.CurrentRegion?.Name ?? ""; }
                 catch { }
 
-                SavedCode.Value = code;
-                SavedRegion.Value = region;
-                SavedStamp.Value = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+                string stamp = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
+                BatchedSave(() => {
+                    SavedCode.Value = code;
+                    SavedRegion.Value = region;
+                    SavedStamp.Value = stamp;
+                });
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[ModSync] remembered lobby {code} ({region}) for the post-restart rejoin.");
             } catch (Exception ex) {
@@ -81,9 +104,11 @@ namespace UsefulTORStuff {
 
         public static void Clear() {
             if (SavedCode == null) return;
-            SavedCode.Value = "";
-            SavedRegion.Value = "";
-            SavedStamp.Value = "";
+            BatchedSave(() => {
+                SavedCode.Value = "";
+                SavedRegion.Value = "";
+                SavedStamp.Value = "";
+            });
         }
 
         // A remembered lobby that is still young enough to be worth offering.

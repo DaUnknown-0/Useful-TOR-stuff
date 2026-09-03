@@ -164,6 +164,17 @@ namespace UsefulTORStuff {
             }
 
             var asset = release.Assets.Find(FilterPluginAsset);
+            if (asset == null) {
+                UsefulTORStuffPlugin.Logger?.LogError(
+                    $"[Updater] update failed: release \"{release.Version}\" has no \"{PluginAssetName}\" asset.");
+                _updateState = 3;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_failed");
+                    button.SetActive(true);
+                }
+                _busy = false;
+                yield break;
+            }
             var www = new UnityWebRequest();
             www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
             www.SetUrl(asset.DownloadUrl);
@@ -197,12 +208,40 @@ namespace UsefulTORStuff {
 
             var filePath = Path.Combine(Paths.PluginPath, asset.Name);
 
-            if (File.Exists(filePath + ".old")) File.Delete(filePath + ".old");
-            if (File.Exists(filePath)) File.Move(filePath, filePath + ".old");
+            // Move the working DLL aside before writing the download, so a write failure below can
+            // roll back to it instead of leaving the plugin folder without a usable Useful TOR Stuff
+            // at all. Guarded in its own try/catch: a locked .old (virus scanner, another process)
+            // must not silently proceed and overwrite the still-working plugin file (mirrors
+            // Nightfall/NightfallUpdater.cs and UnknownsCollection/UnknownsCollectionUpdater.cs).
+            var moved = false;
+            try {
+                if (File.Exists(filePath + ".old")) File.Delete(filePath + ".old");
+                if (File.Exists(filePath)) File.Move(filePath, filePath + ".old");
+                moved = true;
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError(
+                    $"[Updater] update failed: could not move the old plugin file aside ({e.Message}).");
+                www.downloadHandler.Dispose();
+                www.Dispose();
+                _updateState = 3;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_failed");
+                    button.SetActive(true);
+                }
+                _busy = false;
+                yield break;
+            }
 
-            var persistTask = File.WriteAllBytesAsync(filePath, www.downloadHandler.data);
+            System.Threading.Tasks.Task persistTask = null;
             var hasError = false;
-            while (!persistTask.IsCompleted) {
+            try {
+                persistTask = File.WriteAllBytesAsync(filePath, www.downloadHandler.data);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[Updater] update failed: could not start writing the new plugin file ({e.Message}).");
+                hasError = true;
+                persistTask = null;
+            }
+            while (persistTask != null && !persistTask.IsCompleted) {
                 if (persistTask.Exception != null) {
                     hasError = true;
                     break;
@@ -210,6 +249,11 @@ namespace UsefulTORStuff {
 
                 yield return new WaitForEndOfFrame();
             }
+            // AUDIT (mirrors UnknownsCollectionUpdater.cs): Task.IsCompleted is also true for
+            // Faulted/Canceled, so a task that already failed by the very first check never enters
+            // the loop above and hasError stays false. Re-check after the loop so a write failure is
+            // never reported as a successful update.
+            if (!hasError && persistTask != null && !persistTask.IsCompletedSuccessfully) hasError = true;
 
             www.downloadHandler.Dispose();
             www.Dispose();
@@ -220,7 +264,33 @@ namespace UsefulTORStuff {
                     popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_success");
                 }
             } else {
+                // ROLL BACK: the working DLL was moved aside to .old before the download was
+                // written, so a failed write used to leave the plugin folder with no usable Useful
+                // TOR Stuff at all (a half-written file, or nothing) - the mod simply stopped
+                // loading next start, with the only trace an update popup that said it had failed.
+                // Putting the old file back makes a failed update a no-op again (same rollback shape
+                // as UTSModDownloader.cs's per-mod sync jobs).
+                try {
+                    if (moved && File.Exists(filePath + ".old")) {
+                        if (File.Exists(filePath)) File.Delete(filePath);
+                        File.Move(filePath + ".old", filePath);
+                        UsefulTORStuffPlugin.Logger?.LogWarning("[Updater] update failed - restored the previous plugin file.");
+                    } else if (File.Exists(filePath)) {
+                        // No .old to restore from (nothing was moved aside, or it is already gone) -
+                        // leaving the half-written download in place would be picked up as the plugin
+                        // DLL on next start. Delete it instead so the folder is left without Useful
+                        // TOR Stuff rather than with a broken one.
+                        try { File.Delete(filePath); } catch { }
+                    }
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError(
+                        $"[Updater] update failed AND the previous plugin file could not be restored ({e.Message}). "
+                        + $"Reinstall Useful TOR Stuff manually: the working DLL is next to it, named \"{PluginAssetName}.old\".");
+                }
                 _updateState = 3;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_failed");
+                }
             }
             if (!managerMode) button.SetActive(true);
             _busy = false;

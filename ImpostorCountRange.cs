@@ -269,13 +269,20 @@ namespace UsefulTORStuff {
         private static class LobbyEnforceMaxPatch {
             private static float nextCheck;
 
+            // The vanilla lobby setting the host had configured before this feature first
+            // overwrote it, captured once per lobby (CaptureOnce) so turning the feature back off
+            // can put it back (RestoreOnce) instead of just leaving whatever max was last forced.
+            private static int? _originalNumImpostors;
+
             public static void Postfix() {
                 try {
                     if (Time.unscaledTime < nextCheck) return;
                     nextCheck = Time.unscaledTime + 1f;
                     if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
-                    if (!FeatureEnabled) return;
                     var opts = GameOptionsManager.Instance.CurrentGameOptions;
+                    if (!FeatureEnabled) { RestoreOnce(opts); return; }
+
+                    CaptureOnce(opts);
                     int max = EffectiveMax;
                     if (opts.NumImpostors == max) return;
                     opts.SetInt(Int32OptionNames.NumImpostors, max);
@@ -286,6 +293,49 @@ namespace UsefulTORStuff {
                     UsefulTORStuffPlugin.Logger?.LogWarning(
                         $"[ImpostorCountRange] enforcing max failed: {e.Message}");
                 }
+            }
+
+            private static void CaptureOnce(IGameOptions opts) {
+                if (_originalNumImpostors.HasValue) return;
+                _originalNumImpostors = opts.NumImpostors;
+            }
+
+            internal static void RestoreOnce(IGameOptions opts) {
+                if (!_originalNumImpostors.HasValue) return;
+                int original = _originalNumImpostors.Value;
+                _originalNumImpostors = null;
+                if (opts.NumImpostors == original) return;
+                opts.SetInt(Int32OptionNames.NumImpostors, original);
+                GameManager.Instance?.LogicOptions?.SyncOptions();
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[ImpostorCountRange] Feature off - restored vanilla impostor count to {original}.");
+            }
+
+            // New lobby: whatever we forced/captured belonged to the previous one.
+            public static void ClearCapture() { _originalNumImpostors = null; }
+        }
+
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        private static class LobbyEnforceMaxGameJoinPatch {
+            // AUDIT: a lobby-leak clear alone used to just drop the captured original NumImpostors
+            // without ever putting it back - if the feature was on when the previous lobby was left,
+            // that lobby's vanilla setting stayed forced to the last computed max forever (nothing
+            // else ever restores it once the capture is gone). Restore first, while we can still tell
+            // it apart from the new lobby's own settings (still host, options already available);
+            // ClearCapture() then unconditionally drops whatever is left (not host, no options yet,
+            // or RestoreOnce already cleared it) so the new lobby starts with a clean slate either way.
+            public static void Postfix() {
+                try {
+                    if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost
+                            && GameOptionsManager.Instance != null
+                            && GameOptionsManager.Instance.CurrentGameOptions != null) {
+                        LobbyEnforceMaxPatch.RestoreOnce(GameOptionsManager.Instance.CurrentGameOptions);
+                    }
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        $"[ImpostorCountRange] RestoreOnce before lobby-join clear failed: {e.Message}");
+                }
+                LobbyEnforceMaxPatch.ClearCapture();
             }
         }
 

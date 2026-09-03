@@ -10,8 +10,10 @@
  * (a random derangement of their outfits) for a configurable duration, then everyone reverts.
  *
  * Sync: the triggering Trickster computes the mapping (playerId -> source playerId whose look to wear)
- * and broadcasts it with a custom RPC (246); every client then re-applies the look each frame (like
- * TOR's Camouflager does) via Helpers.setLook, and reverts via setDefaultLook when the timer ends or
+ * and broadcasts it with a custom RPC (246); every client applies the whole mapping ONCE when it
+ * arrives (exactly like TOR's own Camouflager RPC handler sets its disguise once, RPC.cs's
+ * camouflagerCamouflage - not per tick), with a cheap 0.5s-throttled re-apply as a safety net against
+ * something else overwriting a borrowed look, and reverts via setDefaultLook when the timer ends or
  * a meeting starts.
  *
  * Constraints (couldUse): not during the Camouflager flash, not while a mixup is already running, and
@@ -50,6 +52,9 @@ namespace UsefulTORStuff {
         // Active mixup state (synced via RPC; identical on every client).
         private static readonly Dictionary<byte, byte> mixupMap = new Dictionary<byte, byte>();
         private static float mixupTimer;
+        // Throttle for the periodic look re-apply safety net (looks are set once in ApplyMixup, this
+        // just guards against something else overwriting them mid-effect).
+        private static float nextReapply;
 
         public static void CreateOptions() {
             try {
@@ -78,18 +83,67 @@ namespace UsefulTORStuff {
             }
         }
 
-        public static void TryPatch() {
+        public static void TryPatch(Harmony harmony) {
             try {
                 var hmsp = typeof(CustomOption).Assembly.GetType("TheOtherRoles.HudManagerStartPatch");
                 lightsOutButtonField = hmsp?.GetField("lightsOutButton", BindingFlags.NonPublic | BindingFlags.Static);
                 if (lightsOutButtonField == null)
-                    UsefulTORStuffPlugin.Logger?.LogWarning("[TricksterAvatarSabotage] lightsOutButton field not found — shared cooldown disabled.");
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[TricksterAvatarSabotage] lightsOutButton field not found, shared cooldown disabled.");
 
                 camouflagerButtonField = hmsp?.GetField("camouflagerButton", BindingFlags.NonPublic | BindingFlags.Static);
                 if (camouflagerButtonField == null)
-                    UsefulTORStuffPlugin.Logger?.LogWarning("[TricksterAvatarSabotage] camouflagerButton field not found — Camo block during mixup disabled.");
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[TricksterAvatarSabotage] camouflagerButton field not found, Camo block during mixup disabled.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] TryPatch failed: {e}");
+            }
+
+            // Event-driven re-apply: Camouflager.resetCamouflage/Morphling.resetMorph/
+            // SurveillanceMinigamePatch.resetNightVision each call setDefaultLook/setLook on
+            // players directly, independent of our own throttled safety-net re-apply, and can run
+            // in the same tick right after we last wrote a borrowed look - overwriting it until
+            // the next throttled pass catches up (previously up to 0.5s of a wrong/default look
+            // showing). Hooking these three re-apply the mixup mapping the instant one of them
+            // fires, on top of (not instead of) the throttled safety net.
+            // Camouflager/Morphling are public classes with public static methods, so they patch
+            // directly by type; SurveillanceMinigamePatch is an internal class in TOR's assembly
+            // (its resetNightVision method is public but unreachable via typeof() from here), so
+            // it needs the reflection fallback - if that ever fails to resolve (TOR renames/moves
+            // it), only this one re-apply hook is skipped, the other two and the throttled net
+            // still work.
+            try {
+                harmony.Patch(
+                    AccessTools.Method(typeof(Camouflager), nameof(Camouflager.resetCamouflage)),
+                    postfix: new HarmonyMethod(typeof(TricksterAvatarSabotage), nameof(ReapplyOnResetPostfix)));
+                harmony.Patch(
+                    AccessTools.Method(typeof(Morphling), nameof(Morphling.resetMorph)),
+                    postfix: new HarmonyMethod(typeof(TricksterAvatarSabotage), nameof(ReapplyOnResetPostfix)));
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] Camouflager/Morphling reset hooks failed: {e}");
+            }
+            try {
+                var smp = typeof(CustomOption).Assembly.GetType("TheOtherRoles.Patches.SurveillanceMinigamePatch");
+                var resetNightVision = smp?.GetMethod("resetNightVision", BindingFlags.Public | BindingFlags.Static);
+                if (resetNightVision == null) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[TricksterAvatarSabotage] resetNightVision not found, night-vision reset re-apply hook disabled.");
+                } else {
+                    harmony.Patch(resetNightVision,
+                        postfix: new HarmonyMethod(typeof(TricksterAvatarSabotage), nameof(ReapplyOnResetPostfix)));
+                }
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] resetNightVision hook failed: {e}");
+            }
+        }
+
+        // Shared postfix target for all three reset hooks above.
+        public static void ReapplyOnResetPostfix() {
+            try {
+                // Only while a round is actually running: at round start TOR resets Camouflager/Morphling
+                // before the resetVariables postfix clears the mixup, so a stale map must not be re-applied.
+                if (mixupTimer > 0f && mixupMap.Count > 0 && AmongUsClient.Instance != null
+                    && AmongUsClient.Instance.GameState == InnerNet.InnerNetClient.GameStates.Started)
+                    ReapplyLooks();
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] ReapplyOnResetPostfix failed: {e}");
             }
         }
 
@@ -165,8 +219,26 @@ namespace UsefulTORStuff {
             mixupMap.Clear();
             foreach (var kv in map) mixupMap[kv.Key] = kv.Value;
             mixupTimer = duration;
+            // Set every borrowed look once here (perf: was re-set from every player's FixedUpdate,
+            // every physics tick, for the whole effect duration - see ReapplyLooks for the throttled
+            // safety-net re-application instead).
+            ReapplyLooks();
+            nextReapply = Time.time + 0.1f;
             // Glitchy identity-shuffle cue: the mixup is a visible global effect, so everyone hears it.
             UTSAssets.PlayMixup();
+        }
+
+        // Walks the whole mapping and re-writes each affected player's look. Called once when the
+        // mixup starts and then only periodically (nextReapply) from the local player's FixedUpdate
+        // pass, not per player per tick.
+        private static void ReapplyLooks() {
+            foreach (var kv in mixupMap) {
+                var target = Helpers.playerById(kv.Key);
+                var src = Helpers.playerById(kv.Value);
+                if (target == null || src == null || src.Data == null) continue;
+                var o = src.Data.DefaultOutfit;
+                target.setLook(src.Data.PlayerName, o.ColorId, o.HatId, o.VisorId, o.SkinId, o.PetId);
+            }
         }
 
         private static void EndMixup() {
@@ -204,8 +276,8 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Re-apply each affected player's borrowed look every frame (Low priority → after TOR's own
-        // look updates). End on timer expiry or when a meeting starts.
+        // Timer/expiry only (Low priority -> after TOR's own look updates); looks themselves are set
+        // once in ApplyMixup/ReapplyLooks, not per player per tick here.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.FixedUpdate))]
         [HarmonyPriority(Priority.Low)]
         static class ApplyPatch {
@@ -213,19 +285,16 @@ namespace UsefulTORStuff {
                 try {
                     if (mixupTimer <= 0f || __instance == null) return;
 
-                    if (mixupMap.TryGetValue(__instance.PlayerId, out byte srcId)) {
-                        var src = Helpers.playerById(srcId);
-                        if (src != null && src.Data != null) {
-                            var o = src.Data.DefaultOutfit;
-                            __instance.setLook(src.Data.PlayerName, o.ColorId, o.HatId, o.VisorId, o.SkinId, o.PetId);
-                        }
-                    }
-
-                    // Timer/expiry handled once per frame (on the local player's pass).
+                    // Timer/expiry + throttled re-apply handled once per tick (on the local player's
+                    // pass), not once per player per tick.
                     if (__instance == PlayerControl.LocalPlayer) {
                         if (MeetingHud.Instance != null) { EndMixup(); return; }
                         mixupTimer -= Time.fixedDeltaTime;
-                        if (mixupTimer <= 0f) EndMixup();
+                        if (mixupTimer <= 0f) { EndMixup(); return; }
+                        if (Time.time >= nextReapply) {
+                            ReapplyLooks();
+                            nextReapply = Time.time + 0.1f;
+                        }
                     }
                 } catch { }
             }
@@ -233,7 +302,7 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
-            public static void Postfix() { mixupTimer = 0f; mixupMap.Clear(); }
+            public static void Postfix() { mixupTimer = 0f; mixupMap.Clear(); nextReapply = 0f; }
         }
 
         // Same lobby-leak rule as the roles (AUDIT M-12): the byte-keyed state above is keyed by

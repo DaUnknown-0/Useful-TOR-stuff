@@ -306,7 +306,7 @@ namespace UsefulTORStuff {
             string message = "";
             if (AmongUsClient.Instance == null) return message;
             foreach (InnerNet.ClientData client in AmongUsClient.Instance.allClients.ToArray()) {
-                if (client == null || client.Character == null) continue;
+                if (client == null || client.Character == null || client.Character.Data == null) continue;
                 string name = client.Character.Data.PlayerName;
 
                 if (!playerVersions.TryGetValue(client.Id, out PlayerVersion pv)) {
@@ -377,31 +377,45 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Registry cache shared by every reader below (OtherModsPublished, ClientMismatched via
+        // TintMismatchedLobbyNames): cachedRegistry holds the raw registry string, cachedRegistryGuids
+        // the same string pre-split into its non-empty GUIDs. The registry string is replaced (never
+        // mutated) when a mod registers (see PublishSnapshot's SetData above), so a reference compare
+        // on the raw string tells "unchanged since last read" without a Split call - the trick
+        // OtherModsPublished already used just for itself, now shared by every caller that needs the
+        // guid list instead of each re-splitting the same string.
+        private static string[] cachedRegistryGuids = Array.Empty<string>();
+
+        private static string[] EnsureRegistryCache() {
+            var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
+            if (!ReferenceEquals(reg, cachedRegistry)) {
+                cachedRegistry = reg;
+                cachedRegistryGuids = reg.Split(',').Where(g => g.Length > 0).ToArray();
+                cachedOtherModsPublished = cachedRegistryGuids.Any(g => g != UsefulGuid);
+            }
+            return cachedRegistryGuids;
+        }
+
         // True when ANY other mod has published a handshake snapshot besides us (Chance, Unknown's
         // Collection, future mods). The combined Mod-Check overview is drawn whenever there is more
         // than one column to merge - not just when Chance specifically is installed.
         private static bool OtherModsPublished() {
             try {
-                var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
-                // The registry string is replaced (never mutated) when a mod registers, so a
-                // reference compare tells "unchanged since last frame" without a Split per frame.
-                if (!ReferenceEquals(reg, cachedRegistry)) {
-                    cachedRegistry = reg;
-                    cachedOtherModsPublished = reg.Split(',').Any(g => g.Length > 0 && g != UsefulGuid);
-                }
+                EnsureRegistryCache();
                 return cachedOtherModsPublished;
             } catch { return false; }
         }
 
         // A client mismatches when, for ANY published mod, it has no handshake entry or a non-"ok"
-        // status - the same per-row rule the combined Mod-Check board uses.
-        private static bool ClientMismatched(int clientId) {
+        // status - the same per-row rule the combined Mod-Check board uses. `statsList` is the
+        // caller's already-resolved per-guid status dictionaries (see TintMismatchedLobbyNames),
+        // read ONCE per call instead of once per client - AppDomain.GetData is a linear scan over
+        // domain-local data, not a hashed lookup, so re-fetching the same guid's dict for every
+        // client in the lobby used to repeat that scan lobby-size times over.
+        private static bool ClientMismatched(int clientId, List<Dictionary<int, string>> statsList) {
             try {
-                var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
-                foreach (var g in reg.Split(',')) {
-                    if (g.Length == 0) continue;
-                    var stats = AppDomain.CurrentDomain.GetData(HandshakeKeyPrefix + g + ".status")
-                                as Dictionary<int, string>;
+                for (int i = 0; i < statsList.Count; i++) {
+                    var stats = statsList[i];
                     if (stats == null || !stats.TryGetValue(clientId, out string token)) return true;
                     int sep = token.IndexOf(StatusSep);
                     string code = sep >= 0 ? token.Substring(0, sep) : token;
@@ -417,18 +431,30 @@ namespace UsefulTORStuff {
         // fights another mod's own lobby name colouring. Lobby-only by construction: called from
         // GameStartManager.Update, and TOR re-manages name colours once the game starts.
         private static readonly HashSet<int> tintedClients = new HashSet<int>();
+        // Reused across calls (Clear()ed, not reallocated) - one list of per-guid stats dicts,
+        // resolved once per call (guids outer) instead of once per client (clients outer, guids
+        // inner, the old ClientMismatched shape).
+        private static readonly List<Dictionary<int, string>> tintStatsScratch = new List<Dictionary<int, string>>();
         private static void TintMismatchedLobbyNames() {
             try {
                 if (AmongUsClient.Instance == null) return;
                 var clients = AmongUsClient.Instance.allClients;
                 if (clients == null) return;
+
+                var guids = EnsureRegistryCache();
+                tintStatsScratch.Clear();
+                for (int i = 0; i < guids.Length; i++) {
+                    tintStatsScratch.Add(AppDomain.CurrentDomain.GetData(HandshakeKeyPrefix + guids[i] + ".status")
+                                          as Dictionary<int, string>);
+                }
+
                 // Walked in place: ToArray() copied the Il2Cpp list into a fresh managed array
                 // every lobby frame.
                 for (int i = 0; i < clients.Count; i++) {
                     InnerNet.ClientData client = clients[i];
                     var nameText = client?.Character?.cosmetics?.nameText;
                     if (nameText == null) continue;
-                    if (ClientMismatched(client.Id)) {
+                    if (ClientMismatched(client.Id, tintStatsScratch)) {
                         nameText.color = Palette.ImpostorRed;
                         tintedClients.Add(client.Id);
                     } else if (tintedClients.Remove(client.Id)) {
@@ -462,7 +488,7 @@ namespace UsefulTORStuff {
 
             var sb = new StringBuilder();
             foreach (InnerNet.ClientData client in AmongUsClient.Instance.allClients.ToArray()) {
-                if (client == null || client.Character == null) continue;
+                if (client == null || client.Character == null || client.Character.Data == null) continue;
                 string name = client.Character.Data.PlayerName;
                 var segments = new List<string>();
                 bool playerMismatch = false;

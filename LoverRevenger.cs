@@ -133,18 +133,6 @@ namespace UsefulTORStuff {
         private static PlayerControl currentTarget;  // Revenger's nearest target (for the button)
         private static CustomButton revengerButton;
 
-        // bothDie-flip bookkeeping for the MurderPlayer suppression prefix/postfix
-        private static bool flipArmed;
-        private static PlayerControl flipVictim;
-        private static PlayerControl flipPartner;
-        private static byte flipKiller = byte.MaxValue;
-
-        // same, for the Guesser path (guesserShoot -> Exiled-based partner suicide)
-        private static bool gFlipArmed;
-        private static PlayerControl gVictim;
-        private static PlayerControl gPartner;
-        private static byte gKiller = byte.MaxValue;
-
         // ---- Custom RPC (247) subtypes ----
         // NOTE: 247, NOT 252 — 252 is BomberCancel's CancelBombRpcId. Both live in this same plugin, so
         // sharing the id made each HandleRpc prefix mis-read the other's payload (a stray subtype byte
@@ -614,8 +602,9 @@ namespace UsefulTORStuff {
                 triggerRevengerWin = false;
                 griefChatShown = false;
                 currentTarget = null;
-                flipArmed = false; flipVictim = null; flipPartner = null; flipKiller = byte.MaxValue;
-                gFlipArmed = false; gVictim = null; gPartner = null; gKiller = byte.MaxValue;
+                // No gFlipArmed/gVictim/gPartner/gKiller reset here anymore: GuesserShootSuppressPatch's
+                // flip bookkeeping now travels through Harmony's __state (see the patch below), so it
+                // never outlives a single guesserShoot call and there is nothing left to clear here.
                 SetGuessable(false); // keep the guess list clean between rounds; re-added on intro end
             }
         }
@@ -640,11 +629,22 @@ namespace UsefulTORStuff {
         // We flip Lovers.bothDie OFF for the duration of the triggering MurderPlayer so TOR's
         // bothDie-gated suicide+death-reason block is skipped, then restore it last.
         // ====================================================================
+        // Flip bookkeeping travels through Harmony's __state instead of a static field: MurderPlayer
+        // can run reentrantly (e.g. a kill effect chain triggering another MurderPlayer call before
+        // the outer one's Finalizer runs), and a static field would let the inner call's Prefix
+        // overwrite the outer call's still-pending flip state.
+        private struct FlipState {
+            public bool armed;
+            public PlayerControl victim;
+            public PlayerControl partner;
+            public byte killerId;
+        }
+
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.MurderPlayer))]
         static class MurderPlayerSuppressPatch {
-            public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
+            public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target, out FlipState __state) {
+                __state = default;
                 try {
-                    flipArmed = false;
                     if (!active) return;
                     PlayerControl killer = __instance, victim = target;
                     if (killer == null || victim == null || killer == victim) return; // real kill only
@@ -655,11 +655,12 @@ namespace UsefulTORStuff {
 
                     // Skip TOR's suicide+override block (both guarded by Lovers.bothDie).
                     Lovers.bothDie = false;
-                    flipArmed = true;
-                    flipVictim = victim;
-                    flipPartner = partner;
-                    flipKiller = killer.PlayerId;
+                    __state.armed = true;
+                    __state.victim = victim;
+                    __state.partner = partner;
+                    __state.killerId = killer.PlayerId;
                 } catch (Exception e) {
+                    __state = default;
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] suppress prefix failed: {e}");
                 }
             }
@@ -674,19 +675,18 @@ namespace UsefulTORStuff {
             // A finalizer runs after every postfix AND after a throw, which keeps the original
             // "restore last, so the flip stays effective" ordering intact. Returning void leaves any
             // exception to propagate exactly as before.
-            public static void Finalizer() {
+            public static void Finalizer(FlipState __state) {
                 try {
-                    if (!flipArmed) return;
+                    if (!__state.armed) return;
                     Lovers.bothDie = true; // restore
-                    bool victimDied = flipVictim != null && flipVictim.Data != null && flipVictim.Data.IsDead;
-                    if (victimDied && flipPartner != null && !flipPartner.Data.IsDead) {
+                    bool victimDied = __state.victim != null && __state.victim.Data != null && __state.victim.Data.IsDead;
+                    if (victimDied && __state.partner != null && !__state.partner.Data.IsDead) {
                         // Arm the delayed decision for the next meeting end.
                         pendingArmed = true;
-                        pendingLover = flipPartner;
-                        pendingKillerId = flipKiller;
-                        UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] Delayed Lover death armed (partner {flipPartner.Data?.PlayerName}, killer id {flipKiller}).");
+                        pendingLover = __state.partner;
+                        pendingKillerId = __state.killerId;
+                        UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] Delayed Lover death armed (partner {__state.partner.Data?.PlayerName}, killer id {__state.killerId}).");
                     }
-                    flipArmed = false; flipVictim = null; flipPartner = null; flipKiller = byte.MaxValue;
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] suppress postfix failed: {e}");
                 }
@@ -702,9 +702,13 @@ namespace UsefulTORStuff {
         // ====================================================================
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.guesserShoot))]
         static class GuesserShootSuppressPatch {
-            public static void Prefix([HarmonyArgument(0)] byte killerId, [HarmonyArgument(1)] byte dyingTargetId) {
+            // AUDIT: same reasoning as MurderPlayerSuppressPatch's FlipState above - travels through
+            // Harmony's __state instead of a static field so a reentrant guesserShoot call cannot have
+            // its Prefix overwrite an outer, still-pending call's flip state, and reuses the very same
+            // struct shape (armed/victim/partner/killerId already match 1:1).
+            public static void Prefix([HarmonyArgument(0)] byte killerId, [HarmonyArgument(1)] byte dyingTargetId, out FlipState __state) {
+                __state = default;
                 try {
-                    gFlipArmed = false;
                     if (!active || !Lovers.bothDie) return;
                     var victim = Helpers.playerById(dyingTargetId);
                     if (victim == null || !IsLover(victim)) return;
@@ -714,29 +718,29 @@ namespace UsefulTORStuff {
                     if (pendingArmed || revenger != null) return; // already in a delay/revenger flow
 
                     Lovers.bothDie = false; // skip TOR's bothDie-gated partner suicide during Exiled()
-                    gFlipArmed = true;
-                    gVictim = victim;
-                    gPartner = partner;
-                    gKiller = killerId;
+                    __state.armed = true;
+                    __state.victim = victim;
+                    __state.partner = partner;
+                    __state.killerId = killerId;
                 } catch (Exception e) {
+                    __state = default;
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] guesserShoot prefix failed: {e}");
                 }
             }
 
             // Finalizer for the same reason as MurderPlayerSuppressPatch above (AUDIT M-9): the
             // restore of Lovers.bothDie must survive a throw from any other patch on guesserShoot.
-            public static void Finalizer() {
+            public static void Finalizer(FlipState __state) {
                 try {
-                    if (!gFlipArmed) return;
+                    if (!__state.armed) return;
                     Lovers.bothDie = true; // restore
-                    bool victimDied = gVictim != null && gVictim.Data != null && gVictim.Data.IsDead;
-                    if (victimDied && gPartner != null && !gPartner.Data.IsDead) {
+                    bool victimDied = __state.victim != null && __state.victim.Data != null && __state.victim.Data.IsDead;
+                    if (victimDied && __state.partner != null && !__state.partner.Data.IsDead) {
                         pendingArmed = true;
-                        pendingLover = gPartner;
-                        pendingKillerId = gKiller;
-                        UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] Delayed Lover death armed via guess (partner {gPartner.Data?.PlayerName}, guesser id {gKiller}).");
+                        pendingLover = __state.partner;
+                        pendingKillerId = __state.killerId;
+                        UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] Delayed Lover death armed via guess (partner {__state.partner.Data?.PlayerName}, guesser id {__state.killerId}).");
                     }
-                    gFlipArmed = false; gVictim = null; gPartner = null; gKiller = byte.MaxValue;
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] guesserShoot postfix failed: {e}");
                 }

@@ -37,6 +37,15 @@ namespace UsefulTORStuff {
         private static bool cachedValid;
         private static PlayerControl cachedColorPlayer;
 
+        // PERF (2026-09-01 audit): SetPlayerMaterialColors recolors the marker's whole material -
+        // real work, not a cheap flag set - and MapMarkerPatch used to call it every physics tick the
+        // map is open, even though the tracked player's color changes only rarely (a color swap, or
+        // switching WHO is tracked/which marker instance exists). Memoized against the three things
+        // that can actually make the applied color stale; invalidated in ResetPatch for a fresh round.
+        private static byte lastColorAppliedPlayerId = byte.MaxValue;
+        private static int lastColorAppliedColorId = -1;
+        private static SpriteRenderer lastColorAppliedMarker;
+
         public static void CreateOptions() {
             try {
                 LawyerRound = CustomOption.Create(1280, Types.Neutral, "Lawyer Knows Target Position", false, CustomOptionHolder.lawyerSpawnRate);
@@ -94,7 +103,13 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
-            public static void Postfix() { cachedValid = false; cachedColorPlayer = null; }
+            public static void Postfix() {
+                cachedValid = false;
+                cachedColorPlayer = null;
+                lastColorAppliedPlayerId = byte.MaxValue;
+                lastColorAppliedColorId = -1;
+                lastColorAppliedMarker = null;
+            }
         }
 
         [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.FixedUpdate))]
@@ -145,7 +160,17 @@ namespace UsefulTORStuff {
                     v.z = -2.1f;
                     marker.transform.localPosition = v;
                     marker.enabled = true;
-                    if (colorPlayer != null) colorPlayer.SetPlayerMaterialColors(marker);
+                    if (colorPlayer != null) {
+                        int colorId = colorPlayer.CurrentOutfit.ColorId;
+                        if (marker != lastColorAppliedMarker
+                            || colorPlayer.PlayerId != lastColorAppliedPlayerId
+                            || colorId != lastColorAppliedColorId) {
+                            colorPlayer.SetPlayerMaterialColors(marker);
+                            lastColorAppliedMarker = marker;
+                            lastColorAppliedPlayerId = colorPlayer.PlayerId;
+                            lastColorAppliedColorId = colorId;
+                        }
+                    }
                     if (!marker.gameObject.activeSelf) marker.gameObject.SetActive(true);
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LawyerLoverTracker] MapBehaviour postfix failed: {e}");

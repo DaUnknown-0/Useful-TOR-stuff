@@ -16,12 +16,15 @@
  * panel for the local Swapper, without touching TOR's source:
  *   - A Postfix on Console.CanUse re-computes a normal distance-based usability for the local
  *     Swapper at the matching console (TOR's prefix already set both flags to false).
- *   - To defeat TOR's auto-close we do NOT patch TOR's postfixes (patching another patch method is
- *     unreliable under HarmonyX). Instead our own high-priority prefix on each minigame's Begin sets
- *     a one-shot "suppress next close" flag, and a prefix on Minigame.Close swallows exactly that one
- *     close — the one TOR's postfix fires right after Begin. Later (player-initiated) closes proceed.
- *     The flag is only set when the local player is the Swapper with the option on, which is exactly
- *     when TOR's postfix fires its close, so it is always consumed and never leaks.
+ *   - To defeat TOR's auto-close we do NOT patch Minigame.Close/TuneRadioMinigame.Close: both are
+ *     small parameterless Il2Cpp methods, and detouring them risks the Il2Cpp method-dedup crash
+ *     documented for Minigame.Close(bool) elsewhere in this mod (identical native code for two
+ *     managed methods gets folded into one, so a detour on one silently detours the other too).
+ *     Instead our own high-priority prefix on each minigame's Begin flips Swapper.swapper to null
+ *     for the duration of that one Begin call (out __state remembers the real value), so TOR's own
+ *     Begin-postfix - which only Close()s the panel when Swapper.swapper == PlayerControl.LocalPlayer
+ *     - reads null and does nothing. A Finalizer restores Swapper.swapper right after Begin returns,
+ *     so nothing downstream (the rest of the frame, other Swapper checks) ever sees the flip.
  */
 
 using System;
@@ -35,9 +38,6 @@ namespace UsefulTORStuff {
     public static class SwapperLightsFix {
         public static CustomOption LightsOption;  // Off/On toggle (lights)
         public static CustomOption CommsOption;   // Off/On toggle (comms)
-
-        // One-shot: set in a minigame Begin prefix, consumed by the next Minigame.Close.
-        private static bool suppressNextClose;
 
         public static void CreateOptions() {
             try {
@@ -106,35 +106,42 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Arm the one-shot suppression right before TOR's Begin-postfix fires its Close().
+        // Flip Swapper.swapper to null for the duration of TOR's Begin-postfix so its
+        // "Close() the Swapper's own panel" check reads null and does nothing; the Finalizer
+        // restores the real value right after Begin returns (__state carries it, so a reentrant
+        // Begin call cannot clobber another call's in-flight flip).
         [HarmonyPatch(typeof(SwitchMinigame), nameof(SwitchMinigame.Begin))]
         [HarmonyPriority(Priority.High)]
         static class LightsBeginPatch {
-            public static void Prefix() { if (LightsActive()) suppressNextClose = true; }
+            public static void Prefix(out PlayerControl __state) {
+                __state = null;
+                try {
+                    if (LightsActive()) { __state = Swapper.swapper; Swapper.swapper = null; }
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[SwapperLightsFix] Lights Begin prefix failed: {e}");
+                    __state = null;
+                }
+            }
+            public static void Finalizer(PlayerControl __state) {
+                if (__state != null) Swapper.swapper = __state;
+            }
         }
 
         [HarmonyPatch(typeof(TuneRadioMinigame), nameof(TuneRadioMinigame.Begin))]
         [HarmonyPriority(Priority.High)]
         static class CommsBeginPatch {
-            public static void Prefix() { if (CommsActive()) suppressNextClose = true; }
-        }
-
-        // Swallow exactly the one close TOR's postfix fires after Begin; later closes proceed.
-        // SwitchMinigame (lights) inherits Minigame.Close(), but TuneRadioMinigame (comms) OVERRIDES
-        // Close(), so both must be patched or comms would still auto-close.
-        private static bool ConsumeSuppress() {
-            if (suppressNextClose) { suppressNextClose = false; return false; }
-            return true;
-        }
-
-        [HarmonyPatch(typeof(Minigame), nameof(Minigame.Close), new Type[] { })]
-        static class MinigameClosePatch {
-            public static bool Prefix() => ConsumeSuppress();
-        }
-
-        [HarmonyPatch(typeof(TuneRadioMinigame), nameof(TuneRadioMinigame.Close), new Type[] { })]
-        static class TuneRadioClosePatch {
-            public static bool Prefix() => ConsumeSuppress();
+            public static void Prefix(out PlayerControl __state) {
+                __state = null;
+                try {
+                    if (CommsActive()) { __state = Swapper.swapper; Swapper.swapper = null; }
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[SwapperLightsFix] Comms Begin prefix failed: {e}");
+                    __state = null;
+                }
+            }
+            public static void Finalizer(PlayerControl __state) {
+                if (__state != null) Swapper.swapper = __state;
+            }
         }
     }
 }

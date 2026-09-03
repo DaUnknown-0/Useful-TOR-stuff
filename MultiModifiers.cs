@@ -421,25 +421,57 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Plausibility check before trusting a break-armor message (AUDIT): the sender here is the
+        // KILLER's client, not the host (checkArmored runs locally on whoever attempted the murder),
+        // so this cannot use UTSRpc.RequireHost - the host must still be accepted outright (it may
+        // relay/act on a client's behalf, same convention as RequireOwnerOrHost), but a non-host
+        // sender is only believable if they exist, are not naming THEMSELVES as the newly
+        // unarmored target, and the target is actually marked extra-armored in the first place.
+        // Anything else is a forged/buggy message and is dropped rather than desyncing the armor set.
+        // AUDIT: no longer requires the sender to still be alive - a legitimate break-armor message
+        // is sent from checkArmored the moment a murder attempt lands, so a simultaneous death of
+        // the sender (e.g. an unrelated kill resolving the same tick) must not discard an otherwise
+        // valid message; sender != null / PlayerId mismatch / IsExtraArmored already reject forgery.
+        private static void ApplyBreakExtraArmor(PlayerControl sender, byte playerId) {
+            try {
+                if (!UTSRpc.IsHost(sender)) {
+                    if (sender == null || sender.PlayerId == playerId || !IsExtraArmored(playerId)) {
+                        UsefulTORStuffPlugin.Logger?.LogWarning(
+                            $"[MultiModifiers] implausible break-armor from player " +
+                            $"{sender?.PlayerId.ToString() ?? "?"} for target {playerId} - ignored.");
+                        return;
+                    }
+                }
+                brokenExtraArmor.Add(playerId);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] break-armor apply failed: {e}");
+            }
+        }
+
         // Receiver on the consolidated channel (module byte 245). Registered from TryPatch; the
         // module byte is already consumed, so this starts at the subtype byte exactly as before.
         private static void HandleModuleRpc(MessageReader reader) {
             try {
                 byte subtype = reader.ReadByte();
-                if (subtype == SubBreakExtraArmor) brokenExtraArmor.Add(reader.ReadByte());
+                if (subtype == SubBreakExtraArmor) ApplyBreakExtraArmor(UTSRpc.Sender, reader.ReadByte());
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] HandleRpc failed: {e}");
             }
         }
 
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 245 from pre-240
-        // builds. Idempotent, so receiving both copies is harmless.
+        // builds. __instance is the sender on this path (see ApplyBreakExtraArmor).
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(PlayerControl __instance, byte callId, MessageReader reader) {
                 if (callId != RpcId) return true;
-                HandleModuleRpc(reader);
+                try {
+                    byte subtype = reader.ReadByte();
+                    if (subtype == SubBreakExtraArmor) ApplyBreakExtraArmor(__instance, reader.ReadByte());
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] legacy HandleRpc failed: {e}");
+                }
                 return false;
             }
         }

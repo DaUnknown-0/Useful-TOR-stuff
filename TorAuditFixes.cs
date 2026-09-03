@@ -385,11 +385,15 @@ namespace UsefulTORStuff {
                             handled = true;
                             int col;
                             if (!Int32.TryParse(text.Substring(7), out col)) {
+                                // AUDIT: TryParse failing must not fall through to Clamp/SetColor - that
+                                // silently "succeeded" with color 0 (TryParse's out value on failure)
+                                // and still printed the success message even after the usage error.
                                 chat.AddChat(PlayerControl.LocalPlayer, "Unable to parse color id\nUsage: /color {id}");
+                            } else {
+                                col = Math.Clamp(col, 0, Palette.PlayerColors.Length - 1);
+                                PlayerControl.LocalPlayer.SetColor(col);
+                                chat.AddChat(PlayerControl.LocalPlayer, "Changed color succesfully");
                             }
-                            col = Math.Clamp(col, 0, Palette.PlayerColors.Length - 1);
-                            PlayerControl.LocalPlayer.SetColor(col);
-                            chat.AddChat(PlayerControl.LocalPlayer, "Changed color succesfully");
                         }
                     }
 
