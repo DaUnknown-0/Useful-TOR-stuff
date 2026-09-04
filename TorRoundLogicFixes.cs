@@ -7,7 +7,8 @@
  * 4.8.0 (Audits\TOR-AUDIT-2026-08-23.md) that are not covered by any existing fix file yet
  * (Audits\TOR-ABDECKUNG-2026-08-23.md, section 5, "Offen, ungefixt").
  *
- * SCOPE of this file: TOR-M1, M6, M8, M10, M11, M17, M30, M32, M33, and the section-3
+ * SCOPE of this file: TOR-M1, M6, M10, M11, M17, M30, M32, M33 (M8 is written up below as
+ * deliberately NOT patched, house rule), and the section-3
  * robustness findings assigned for this pass (Guesser.remainingShots foreign id, Hacker integer
  * division, win-trigger flags after RpcEndGame). Every one of those was re-read against the
  * current workspace source before writing a patch; three related section-3 claims turned out to
@@ -238,89 +239,20 @@ namespace UsefulTORStuff {
         // ══════════════════════════════════════════════════════════════════════════════════════
         // TOR-M8) Crewmate win fires while a live Arsonist/Vulture could still win on their own
         //
-        // EndGamePatch.cs's CheckEndCriteriaPatch.Prefix runs the win checks in a fixed order:
-        // MiniLose, JesterWin, ArsonistWin, VultureWin, SabotageWin, TaskWin, ProsecutorWin,
-        // LoverWin, JackalWin, ImpostorWin, and only then CheckAndEndGameForCrewmateWin, which ends
-        // the round the moment TeamImpostorsAlive == 0 && TeamJackalAlive == 0. By construction,
-        // reaching that final check already means Arsonist.triggerArsonistWin,
-        // Vulture.triggerVultureWin and Lawyer.triggerProsecutorWin were all false this pass - but
-        // it says nothing about whether an Arsonist or Vulture is still alive and could still go on
-        // to trigger their own win later (ignite everyone or eat enough bodies). CrewmateWin does
-        // not check for either of them, so the round ends as a crew win out from under a neutral
-        // killer who has not lost yet. Pursuer is deliberately excluded from this guard: Pursuer has
-        // no win-trigger of their own, they win as an additional winner alongside the crew, so a
-        // live Pursuer must not block the crew win.
+        // DELIBERATELY NOT PATCHED (house rule, playtests 2026-09-04). The audit read this as a
+        // bug: CheckAndEndGameForCrewmateWin ends the round on TeamImpostorsAlive == 0 &&
+        // TeamJackalAlive == 0 without asking whether an Arsonist or Vulture is still alive and
+        // could still trigger their own win later. A guard that held the crew win back for them
+        // lived here from 2026-09-03 to 2026-09-04 and produced exactly the round it was meant to
+        // "fix": both Impostors dead, meeting after meeting kept running because a Vulture still had
+        // bodies to eat. The user's rule for this pack is that neither of them may hold up a crew
+        // win - the Vulture because he cannot kill and so counts as crew for every team check, and
+        // the Arsonist by explicit decision the same day ("auch ein Arsonist soll einen Crew-Sieg
+        // nicht verhindern"). TOR's original order therefore stands: a neutral who has not fired
+        // his own win by the time the crew's lands simply loses. Do not reintroduce a guard here.
         //
-        // CheckAndEndGameForCrewmateWin is private static on TOR's internal CheckEndCriteriaPatch
-        // class, resolved by reflection exactly like SheriffParityWin already does for the sibling
-        // Impostor/Jackal win checks (same class, same technique, so both live comfortably side by
-        // side without fighting over the same method).
-        //
-        // Hide 'N Seek and Prop Hunt run their own timer-based win outside of the normal team win
-        // flow; a live Arsonist/Vulture during those modes must not suppress that timer win.
-        //
-        // DESYNC: no gate needed, for the same reason SheriffParityWin documents for its own two
-        // win-check prefixes: the check only ever runs meaningfully on the host (RpcEndGame is the
-        // host's decision, broadcast to everyone over the network), so this is host-authoritative
-        // like that feature, not something every client independently re-derives.
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        [HarmonyPatch]
-        static class CrewmateWinNeutralKillerGuard {
-            private static MethodBase _target;
-
-            public static MethodBase TargetMethod() {
-                if (_target != null) return _target;
-                try {
-                    var type = typeof(CustomOption).Assembly.GetType("TheOtherRoles.Patches.CheckEndCriteriaPatch");
-                    _target = type?.GetMethod("CheckAndEndGameForCrewmateWin", BindingFlags.NonPublic | BindingFlags.Static);
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[TorRoundLogicFixes/M8] TargetMethod lookup failed: {e}");
-                }
-                return _target;
-            }
-
-            public static bool Prepare() {
-                bool ok = TargetMethod() != null;
-                if (!ok) UsefulTORStuffPlugin.Logger?.LogWarning("[TorRoundLogicFixes/M8] CheckAndEndGameForCrewmateWin not found - guard disabled.");
-                return ok;
-            }
-
-            public static bool Prefix(ref bool __result) {
-                try {
-                    // Pursuer has no win-trigger of their own; they win as an additional winner
-                    // whenever the crew wins, so they must not block the crew win check here.
-                    if (Alive(Arsonist.arsonist) || Alive(Vulture.vulture)) {
-                        // Hide 'N Seek / Prop Hunt run their own timer-based win outside of the
-                        // normal neutral-killer roster, so this guard must not block their win.
-                        if (HideNSeek.isHideNSeekGM || IsPropHuntGM()) return true;
-                        __result = false;
-                        return false;
-                    }
-                } catch (Exception e) {
-                    ThrottledLog("M8", $"guard failed, falling back to TOR original: {e.GetType().Name}: {e.Message}");
-                }
-                return true;
-            }
-
-            private static bool Alive(PlayerControl p) => p != null && p.Data != null && !p.Data.IsDead && !p.Data.Disconnected;
-
-            // TOR's PropHunt class is internal (HideNSeek is public), so its gamemode flag has to
-            // come via reflection - same pattern AntiStartKill/TorLobbyFixes already use for it.
-            private static FieldInfo _fiPropHuntGM;
-            private static bool _propHuntFieldResolved;
-            private static bool IsPropHuntGM() {
-                if (!_propHuntFieldResolved) {
-                    _propHuntFieldResolved = true;
-                    try {
-                        var type = typeof(CustomOption).Assembly.GetType("TheOtherRoles.CustomGameModes.PropHunt");
-                        _fiPropHuntGM = type?.GetField("isPropHuntGM", BindingFlags.Public | BindingFlags.Static);
-                    } catch (Exception e) {
-                        UsefulTORStuffPlugin.Logger?.LogError($"[TorRoundLogicFixes/M8] PropHunt field lookup failed: {e}");
-                    }
-                }
-                return _fiPropHuntGM != null && (bool)_fiPropHuntGM.GetValue(null);
-            }
-        }
+        // (Pursuer never belonged in such a guard in the first place: no win-trigger of their own,
+        // they win as an additional winner alongside the crew.)
 
         // ══════════════════════════════════════════════════════════════════════════════════════
         // TOR-M10) HandleGuesser.tasksToUnlock keeps the Guesser-GM value in Classic mode

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Playtest fixes 2026-09-04
+- **Minimap icons no longer survive the round** (`TorLeakFixes.cs` item 12): TOR's
+  `MapBehaviourPatch.clearAndReload` replaces its `herePoints` dictionary without destroying the
+  cloned HerePoint renderers, which hang under the HudManager and outlive the round change. Anyone
+  who was a ghost, Snitch or Trapper in one round kept seeing those players on the minimap in the
+  next, frozen at their old positions. A prefix now destroys the icons before TOR drops the
+  reference, and a `MapBehaviour.FixedUpdate` postfix at `Priority.Last` clears them mid-round as
+  soon as no branch owns them any more (a ghost revived by the Pelican, for example). Nothing is
+  swept by object name, since the meeting pings, the Lawyer/Lover marker and the map language menu
+  are HerePoint clones under the same parent.
+- **Crew win no longer waits on a living Arsonist or Vulture** (`TorRoundLogicFixes.cs`, guard M8
+  removed): the guard added on 2026-09-03 held the Crew win back while either of them was alive,
+  and in a playtest kept a meeting running with both Impostors already dead because a Vulture still
+  had bodies to eat. House rule from that playtest: neither may hold up a Crew win; whoever has not
+  fired their own win by the time the Crew's lands simply loses, which is TOR's original order. The
+  guard is gone entirely and the file documents why it must not come back.
+
 ### Bug- and Perf-Audit 2026-09-03
 A pass over the recent additions, nothing user-facing except the two behaviour fixes at the top.
 - **Crew win no longer waits on a living Pursuer** (`TorRoundLogicFixes.cs`, guard M8): the Pursuer

@@ -139,6 +139,45 @@
  *     second multiply already landed on an already-shrunk value, so it is snapped back to exactly
  *     0.76x. A hidden chip's scale is exactly 0 either way (0 * 0.76 stays 0) and is left alone.
  *
+ * 12) MapBehaviourPatch.herePoints (Patches/MapBehaviourPatch.cs:16, 24-32) leaks its SpriteRenderers
+ *     and, unlike every other entry in this file, the leak is VISIBLE: the orphans keep rendering on
+ *     the minimap forever, frozen at the position they had when they were orphaned. Playtest report
+ *     2026-09-04: "random players are on the minimap, and they are not where they are shown".
+ *
+ *     Three branches of TOR's MapBehaviour.FixedUpdate postfix fill that dictionary with cloned
+ *     HerePoint icons - the Trapper's trapped players, the Snitch's targets once their tasks are
+ *     done, and "show everyone to ghosts". Each branch only ever UPDATES the icons while its own
+ *     condition still holds, and nothing anywhere destroys them when it stops holding:
+ *       - clearAndReload() (called from resetVariables(), i.e. every round start AND every game end)
+ *         does `herePoints = new()` without destroying a single renderer. The icons stay parented
+ *         under HerePoint's parent, which lives on the HudManager and survives the round change, so
+ *         anyone who was a ghost/Snitch/Trapper in round N still sees those players' icons in round
+ *         N+1 - at their round-N positions. That is the reported bug: being dead last round is all it
+ *         takes, the role this round is irrelevant.
+ *       - The same freeze happens mid-round whenever a player stops qualifying while the dictionary
+ *         is populated. In this mod pack that is reachable without dying twice: Unknown's Collection's
+ *         Pelican revives the players it swallowed, so a ghost who saw the full map comes back alive
+ *         and keeps the whole set of frozen icons.
+ *
+ *     Two patches, because the two halves orphan the objects in different ways:
+ *       - HerePointsClearLeakPatch: Prefix on the internal MapBehaviourPatch.clearAndReload (resolved
+ *         via TargetMethod()/Prepare() like the other internal-type patches here), destroying every
+ *         renderer BEFORE TOR drops the only reference to it. After this, an orphan can no longer
+ *         outlive the dictionary at all.
+ *       - HerePointsOwnerlessCleanupPatch: Postfix on MapBehaviour.FixedUpdate at Priority.Last that
+ *         clears the dictionary out whenever NONE of the three branches owns it this frame. Runs
+ *         after TOR's own postfix (and after SnitchLogic's, which is what restores the real Snitch
+ *         mode after its map-reveal takeover), so an owner has always had its turn first. The owner
+ *         test deliberately does NOT look at Snitch.mode: SnitchLogic temporarily swaps that field to
+ *         Chat around TOR's postfix, and a mode-sensitive check that happened to observe the swapped
+ *         value would delete the live Snitch's own icons every frame. "Local player is the living
+ *         Snitch" is the safe superset - a Snitch holds that role for the whole round, so they can
+ *         never be carrying orphans from an earlier life in it.
+ *     The vent icons live in the separate `mapIcons` dictionary, which clearAndReload already
+ *     destroys correctly, and neither patch touches it. Nothing here sweeps the scene by object name:
+ *     MeetingMapPing's ping markers, LawyerLoverTracker's target marker and MapLanguageToggle's UI are
+ *     all HerePoint clones under the same parent, so a name-based sweep would take them out too.
+ *
  * VERIFIED AS FEHLBEFUND (real fields, but already correctly scoped - not touched):
  *
  *  - TORMapOptions.gameMode: NOT reset by resetVariables(), but that is correct - it is a
@@ -654,6 +693,117 @@ namespace UsefulTORStuff {
                     }
                 } catch (Exception e) {
                     ThrottledLog("ColorChip", $"shrink guard failed: {e.GetType().Name}: {e.Message}");
+                }
+            }
+        }
+
+        // ── 12) Minimap HerePoint icons must not outlive the branch that created them ──────────
+
+        // MapBehaviourPatch is internal to TOR, and both patches below need its herePoints
+        // dictionary. Its key/value types (byte / SpriteRenderer) are public, so the value can be
+        // cast to a real generic dictionary instead of going through IDictionary.
+        private static FieldInfo herePointsField;
+        private static bool herePointsFieldResolved;
+
+        // Resolving the FieldInfo must not READ the field: MapBehaviourPatch's static initializers
+        // also build a Sprite (`Vent = Helpers.loadSpriteFromResources(...)`), and a GetValue during
+        // Harmony's patch phase would drag that class's static constructor into plugin-load time.
+        // Prepare() therefore only checks that the field exists; the value is read at map time.
+        private static FieldInfo HerePointsField() {
+            if (!herePointsFieldResolved) {
+                herePointsFieldResolved = true;
+                var type = typeof(CustomOption).Assembly.GetType("TheOtherRoles.Patches.MapBehaviourPatch");
+                herePointsField = type?.GetField("herePoints", BindingFlags.Public | BindingFlags.Static);
+                if (herePointsField == null)
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        "[TorLeakFixes/HerePoints] MapBehaviourPatch.herePoints not found - stale map icon guard disabled.");
+            }
+            return herePointsField;
+        }
+
+        private static Dictionary<byte, SpriteRenderer> HerePoints() {
+            try { return HerePointsField()?.GetValue(null) as Dictionary<byte, SpriteRenderer>; } catch { return null; }
+        }
+
+        // Destroys every tracked icon and empties the dictionary. Shared by both patches so the
+        // "destroy first, then drop the reference" order can never diverge between them.
+        private static int DestroyAllHerePoints() {
+            var points = HerePoints();
+            if (points == null || points.Count == 0) return 0;
+            int destroyed = 0;
+            foreach (var entry in points) {
+                if (entry.Value == null) continue;          // already destroyed elsewhere (Unity fake-null)
+                UnityEngine.Object.Destroy(entry.Value.gameObject);
+                destroyed++;
+            }
+            points.Clear();
+            return destroyed;
+        }
+
+        // clearAndReload() replaces the dictionary with an empty one, which is the moment the only
+        // reference to each icon is dropped - so the icons have to go BEFORE TOR's body runs.
+        [HarmonyPatch]
+        static class HerePointsClearLeakPatch {
+            public static MethodBase TargetMethod() {
+                var type = typeof(CustomOption).Assembly.GetType("TheOtherRoles.Patches.MapBehaviourPatch");
+                return type?.GetMethod("clearAndReload", BindingFlags.Public | BindingFlags.Static);
+            }
+
+            public static bool Prepare(MethodBase original) => TargetMethod() != null && HerePointsField() != null;
+
+            public static void Prefix() {
+                try {
+                    int destroyed = DestroyAllHerePoints();
+                    if (destroyed > 0)
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[TorLeakFixes/HerePoints] destroyed {destroyed} map icon(s) on clearAndReload " +
+                            "(TOR only drops the dictionary, so these would have kept rendering next round).");
+                } catch (Exception e) {
+                    ThrottledLog("HerePoints", $"clearAndReload cleanup failed: {e.GetType().Name}: {e.Message}");
+                }
+            }
+        }
+
+        // Mid-round safety net: the icons are only ever refreshed while their branch's condition
+        // holds. The moment it stops holding (a Pelican revives a ghost, a Snitch/Trapper dies into a
+        // state that owns nothing) they freeze in place instead of disappearing.
+        [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.FixedUpdate))]
+        static class HerePointsOwnerlessCleanupPatch {
+            public static bool Prepare() => HerePointsField() != null;
+
+            // Mirrors TOR's own three branch conditions, with one deliberate widening: the Snitch test
+            // ignores Snitch.mode, because SnitchLogic's map-reveal takeover temporarily swaps that
+            // field to Chat around TOR's postfix (see the header). Being the living Snitch is enough
+            // to count as an owner - the role lasts the whole round, so a Snitch can never be holding
+            // icons from an earlier state of the same round.
+            private static bool LocalPlayerOwnsMapIcons() {
+                var local = PlayerControl.LocalPlayer;
+                if (local == null || local.Data == null) return false;
+                if (Trapper.trapper != null && local.PlayerId == Trapper.trapper.PlayerId) return true;
+                if (Snitch.snitch != null && local.PlayerId == Snitch.snitch.PlayerId
+                    && !Snitch.snitch.Data.IsDead) return true;
+                // "Show location of all players on the map for ghosts", MapBehaviourPatch.cs:100.
+                return local.Data.IsDead
+                       && (!local.Data.Role.IsImpostor
+                           || (CustomOptionHolder.deadImpsBlockSabotage != null
+                               && CustomOptionHolder.deadImpsBlockSabotage.getBool()));
+            }
+
+            // Priority.Last: after TOR's own postfix and after SnitchLogic's (which restores the real
+            // Snitch mode and draws its own icons), so an owner has always had its turn this frame.
+            [HarmonyPriority(Priority.Last)]
+            public static void Postfix() {
+                try {
+                    var points = HerePoints();
+                    if (points == null || points.Count == 0) return;   // normal case: nothing to do
+                    if (LocalPlayerOwnsMapIcons()) return;
+                    int destroyed = DestroyAllHerePoints();
+                    if (destroyed > 0)
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[TorLeakFixes/HerePoints] removed {destroyed} stale map icon(s) - no branch " +
+                            "owns them any more, they would have stayed frozen at their last position.");
+                } catch (Exception e) {
+                    ThrottledLog("HerePoints", $"ownerless cleanup failed: {e.GetType().Name}: {e.Message}");
                 }
             }
         }
