@@ -105,13 +105,36 @@ namespace UsefulTORStuff {
 
                 bool child = orig.name.StartsWith("- ", StringComparison.Ordinal);
                 var tr = UTSLocalization.TrOrNull("tor.option." + field.Name);
-                opt.name = tr != null ? (child ? "- " + tr : tr) : orig.name;
+                // 2026-09-06: keep TOR's <color> tag. TOR carries a role's colour ONLY as a tag inside
+                // the option name (cs(Sheriff.color, "Sheriff")), and every table - the English one
+                // included - stores the plain word. Dropping the tag turned every role and modifier
+                // white in TOR's own lobby settings tabs and in any text the overlay renderer does
+                // not rebuild. The translation replaces the words, the markup around them stays.
+                opt.name = tr != null ? KeepColorTag(orig.name, child ? "- " + tr : tr) : orig.name;
 
                 if (!string.IsNullOrEmpty(orig.heading))
                     opt.heading = headingMap.TryGetValue(orig.heading, out var h) ? h : orig.heading;
 
                 opt.selections = TranslateSelections(orig.selections, valueMap);
             }
+        }
+
+        // Re-wraps a translated option name in the <color=#RRGGBBAA>...</color> tag the original
+        // carried. Anything before the tag (TOR's "- " child prefix) is kept in front of it; a
+        // translation that brings its own markup is returned untouched; an original without a
+        // tag returns the translation as is.
+        internal static string KeepColorTag(string original, string translated) {
+            if (string.IsNullOrEmpty(original) || string.IsNullOrEmpty(translated)) return translated;
+            if (translated.IndexOf("<color", StringComparison.OrdinalIgnoreCase) >= 0) return translated;
+            int at = original.IndexOf("<color=", StringComparison.OrdinalIgnoreCase);
+            if (at < 0) return translated;
+            int end = original.IndexOf('>', at);
+            if (end < 0 || original.IndexOf("</color>", end, StringComparison.OrdinalIgnoreCase) < 0) return translated;
+            string tag = original.Substring(at, end - at + 1);
+            string prefix = original.Substring(0, at);            // e.g. "- "
+            string core = translated.StartsWith(prefix, StringComparison.Ordinal) && prefix.Length > 0
+                ? translated.Substring(prefix.Length) : translated;
+            return prefix + tag + core + "</color>";
         }
 
         private static object[] TranslateSelections(object[] originals, Dictionary<string, string> valueMap) {
