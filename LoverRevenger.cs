@@ -455,6 +455,15 @@ namespace UsefulTORStuff {
             pendingArmed = false;
             pendingLover = null;
             var lover = Helpers.playerById(loverId);
+            // AUDIT-2026-09-11: the success paths below used to log nothing at all, so a report like
+            // "I was Revenger and had no kill button" could not be diagnosed after the fact - the log
+            // could not even show whether the roll succeeded, whether IsKiller() misclassified the
+            // player, or whether EnsureRevengerButton ran. This one line makes every future occurrence
+            // provable from the log instead of guessed at.
+            UsefulTORStuffPlugin.Logger?.LogInfo(
+                $"[LoverRevenger] ApplyDecision lover={lover?.Data?.PlayerName ?? loverId.ToString()} "
+                + $"becomeRevenger={becomeRevenger} killerId={revKillerId} mode={mode} "
+                + $"isKiller={(lover != null && IsKiller(lover))} isLocal={lover == PlayerControl.LocalPlayer}");
             if (lover == null) return;
 
             if (becomeRevenger) {
@@ -475,7 +484,15 @@ namespace UsefulTORStuff {
                     // A non-killer Revenger awakens NOW (mid-game). Guarantee the kill button exists at
                     // this exact moment - the HudManager.Start creation can be long gone by here, which is
                     // what left non-killers with no button. Killers use their own kill button (no second).
-                    if (!IsKiller(lover)) EnsureRevengerButton(HudManager.Instance);
+                    if (!IsKiller(lover)) {
+                        EnsureRevengerButton(HudManager.Instance);
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[LoverRevenger] EnsureRevengerButton done, button={(revengerButton != null)} "
+                            + $"actionButton={(revengerButton?.actionButton != null)}");
+                    } else {
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            "[LoverRevenger] Local player classified as IsKiller() - no dedicated button granted, expecting their own kill button to trigger the win.");
+                    }
                 }
             } else if (!lover.Data.IsDead) {
                 // Roll failed: the delayed Lover suicide happens now (every client kills locally).
@@ -771,16 +788,26 @@ namespace UsefulTORStuff {
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
 
                 // 1) Resolve a pending Revenger decision.
+                // AUDIT-2026-09-11: WrapUp/WrapUpAndSpawn (the only two callers of OnMeetingEnd) run on
+                // EVERY meeting end including a skip/tie, but this whole method used to log nothing on
+                // its success paths - a delayed decision that silently expired (pendingLover already
+                // gone) looked identical in the log to one that never got a chance to run at all. Logged
+                // here so "I was Revenger and had no kill button" can be traced to a concrete branch.
                 bool justAwakened = false;
                 if (pendingArmed) {
                     if (pendingLover == null || pendingLover.Data == null
                         || pendingLover.Data.IsDead || pendingLover.Data.Disconnected) {
                         // Surviving Lover already gone -> nothing to decide.
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[LoverRevenger] OnMeetingEnd: pending decision for {pendingLover?.Data?.PlayerName} dropped (lover already dead/disconnected/gone).");
                         pendingArmed = false; pendingLover = null;
                     } else {
                         int sel = RevengerChance != null ? UTSGate.Sel(RevengerChance) : 0;
                         bool become = active && rnd.Next(1, 101) <= sel * 10;
                         byte mode = (byte)(RevengerMode != null ? UTSGate.Sel(RevengerMode) : 0);
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[LoverRevenger] OnMeetingEnd: resolving pending decision for {pendingLover.Data?.PlayerName} "
+                            + $"(active={active}, chance selection={sel}, killerId={pendingKillerId}) -> becomeRevenger={become}");
                         SendDecision(pendingLover.PlayerId, become, pendingKillerId, mode);
                         justAwakened = become;
                     }

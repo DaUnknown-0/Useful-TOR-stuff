@@ -14,7 +14,8 @@
  *  - Assignment: a postfix on RoleManagerSelectRolesPatch.getSelectionForRoleId multiplies the
  *    Tiebreaker spawn count by the quantity (exactly how Invert/Sunglasses/... already do it), so TOR
  *    assigns the modifier to up to `quantity` players. A host-authoritative top-up on assignModifiers
- *    covers TOR's chance path under-assigning at quantity > 1.
+ *    covers TOR's chance path under-assigning at quantity > 1 - onto modifier-less players only, so
+ *    TOR's one-modifier-per-player rule survives the top-up.
  *  - Tracking: a postfix on RPCProcedure.setModifier collects every Tiebreaker into `tiebreakers`
  *    (TOR's single field only keeps the last one). Cleared each round on resetVariables.
  *  - Display: a postfix on RoleInfo.getRoleInfoForPlayer adds the Tiebreaker RoleInfo for EVERY
@@ -44,6 +45,7 @@ using System.Reflection;
 using HarmonyLib;
 using Hazel;
 using TheOtherRoles;
+using TheOtherRoles.Utilities;
 using static TheOtherRoles.TheOtherRoles;
 using Types = TheOtherRoles.CustomOption.CustomOptionType;
 
@@ -248,11 +250,21 @@ namespace UsefulTORStuff {
                 int want = Qty();
                 if (tiebreakers.Count == 0 || tiebreakers.Count >= want) return; // chance gate / already enough
 
-                // TOR assigns the Tiebreaker modifier from the full player pool (any alignment),
-                // so just exclude players who already hold it.
+                // TOR assigns the Tiebreaker modifier from the full player pool (any alignment), but
+                // ONE modifier per player: assignModifiersToPlayers draws everything from a shared
+                // pool that drops each player after their first modifier, and the Lovers pair is
+                // taken out of it up front. This top-up runs after that pass, so it has to re-apply
+                // the same rule by hand - anyone already carrying a modifier is out (an earlier build
+                // only excluded existing Tiebreakers and stacked Tiebreaker on top of VIP & co.).
+                // Same for the Guesser gamemode's "no modifiers for Guessers" option, which TOR
+                // applies by pruning the pool before assignment (RoleAssignmentPatch.cs:425-426).
+                bool guessersBarred = HandleGuesser.isGuesserGm
+                    && CustomOptionHolder.guesserGamemodeHaveModifier != null
+                    && !CustomOptionHolder.guesserGamemodeHaveModifier.getBool();
                 var eligible = PlayerControl.AllPlayerControls.ToArray()
                     .Where(p => p != null && p.Data != null && !p.Data.Disconnected && !p.Data.IsDead)
-                    .Where(p => !tiebreakers.Any(t => t != null && t.PlayerId == p.PlayerId))
+                    .Where(p => !HasAnyModifier(p))
+                    .Where(p => !guessersBarred || !HandleGuesser.isGuesser(p.PlayerId))
                     .ToList();
 
                 int toAdd = Math.Min(want - tiebreakers.Count, eligible.Count);
@@ -267,6 +279,42 @@ namespace UsefulTORStuff {
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TiebreakerMultiple] top-up failed: {e}");
             }
+        }
+
+        // Does the player already carry any of TOR's twelve modifiers? Runs on the host right after
+        // TOR's own assignment, so TOR's statics are the truth for all of them (Bait/Bloody/VIP are
+        // read directly: getRoleInfoForPlayer hides that family from a living local player while
+        // "VIP, Bait & Bloody Are Hidden" is on). The RoleInfo pass on top catches the holders only
+        // this plugin knows about - MultiModifiers' extra Minis/Armored live in its private lists and
+        // reach getRoleInfoForPlayer via postfix, never TOR's single statics - limited to TOR's
+        // modifier id range so a foreign display sentinel (ChanceMod's Chance tag, which by design
+        // rides on top of a TOR modifier) does not count.
+        private static bool HasAnyModifier(PlayerControl p) {
+            byte id = p.PlayerId;
+            try {
+                if (tiebreakers.Any(t => t != null && t.PlayerId == id)) return true;
+                if (Bait.bait != null && Bait.bait.Any(x => x != null && x.PlayerId == id)) return true;
+                if (Bloody.bloody != null && Bloody.bloody.Any(x => x != null && x.PlayerId == id)) return true;
+                if (Vip.vip != null && Vip.vip.Any(x => x != null && x.PlayerId == id)) return true;
+                if (AntiTeleport.antiTeleport != null && AntiTeleport.antiTeleport.Any(x => x != null && x.PlayerId == id)) return true;
+                if (Sunglasses.sunglasses != null && Sunglasses.sunglasses.Any(x => x != null && x.PlayerId == id)) return true;
+                if (Invert.invert != null && Invert.invert.Any(x => x != null && x.PlayerId == id)) return true;
+                if (Chameleon.chameleon != null && Chameleon.chameleon.Any(x => x != null && x.PlayerId == id)) return true;
+                if (Lovers.lover1 != null && Lovers.lover1.PlayerId == id) return true;
+                if (Lovers.lover2 != null && Lovers.lover2.PlayerId == id) return true;
+                if (Tiebreaker.tiebreaker != null && Tiebreaker.tiebreaker.PlayerId == id) return true;
+                if (Mini.mini != null && Mini.mini.PlayerId == id) return true;
+                if (Armored.armored != null && Armored.armored.PlayerId == id) return true;
+                if (Shifter.shifter != null && Shifter.shifter.PlayerId == id) return true;
+
+                foreach (var ri in RoleInfo.getRoleInfoForPlayer(p, true))
+                    if (ri != null && ri.isModifier && ri.roleId >= RoleId.Lover && ri.roleId <= RoleId.Shifter) return true;
+            } catch (Exception e) {
+                // Unknown state: treat as "has one" - a skipped top-up is harmless, a stacked one is the bug.
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[TiebreakerMultiple] modifier check failed for {id}, skipping: {e.Message}");
+                return true;
+            }
+            return false;
         }
 
         // Broadcast + locally apply an extra Tiebreaker modifier via TOR's own SetModifier RPC, so
