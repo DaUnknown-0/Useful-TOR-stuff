@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Playtest fixes 2026-09-11
+- **Opening the meeting map no longer drops a ping marker** (`MapLanguageToggle.cs` `ShowPatch`,
+  `MeetingMapPing.cs` `DiscardOpeningClick`): the click latch (`ClickFrame`) records the mouse-DOWN
+  frame, but `MapBehaviour.Show()` fires on the button's pointer-UP, which lands one or more frames
+  later. Discarding the opening click by comparing against `Time.frameCount` at `Show()`-time missed
+  that gap, so the click that opened the map fell through as unhandled and placed a marker right
+  where the player clicked. Both discard sites now latch the actual `ClickFrame` value instead.
+
 ### Playtest fixes 2026-09-04
 - **Minimap icons no longer survive the round** (`TorLeakFixes.cs` item 12): TOR's
   `MapBehaviourPatch.clearAndReload` replaces its `herePoints` dictionary without destroying the

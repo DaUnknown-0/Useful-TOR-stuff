@@ -128,7 +128,14 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.Show))]
         private static class ShowPatch {
             public static void Postfix() {
-                handledClickFrame = Time.frameCount; // the frame the latch writes for this click, whichever Update ran first
+                // NOT Time.frameCount: UI buttons fire OnClick/Show() on pointer-UP, which can
+                // land one or more frames after the press that ClickFrame latched on pointer-
+                // DOWN. Discarding by Time.frameCount missed that gap and let the very click
+                // that opened the map fall through as an unhandled click once the map's own
+                // FixedUpdate started running (map ping bug: opening the map dropped a marker
+                // at the click position). ClickFrame is still exactly that opening click's
+                // latched value at this point, whichever frame it was recorded on.
+                handledClickFrame = ClickFrame;
                 MeetingMapPing.DiscardOpeningClick();
             }
         }

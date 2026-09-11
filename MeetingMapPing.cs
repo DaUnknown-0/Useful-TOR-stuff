@@ -153,7 +153,12 @@ namespace UsefulTORStuff {
         // "map became active" signal - see the comment there) the moment the map is opened, so
         // the very click that opened it is never reprocessed here as a ping placement.
         internal static void DiscardOpeningClick() {
-            lastHandledClickFrame = Time.frameCount; // same frame the HudManager.Update latch stamps, independent of Update order
+            // Same click that opened the map, not Time.frameCount: MapBehaviour.Show() runs on
+            // the button's pointer-UP, which can be several frames after the pointer-DOWN frame
+            // ClickFrame latched. Comparing against Time.frameCount here missed that gap and let
+            // the opening click fall through as unhandled once the map's FixedUpdate started -
+            // dropping a ping marker right where the player clicked to open the map.
+            lastHandledClickFrame = MapLanguageToggle.ClickFrame;
         }
 
         private static void HandleClick(MapBehaviour map) {
