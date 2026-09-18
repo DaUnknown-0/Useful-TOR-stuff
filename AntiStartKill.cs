@@ -201,7 +201,7 @@ namespace UsefulTORStuff {
         private static System.Reflection.FieldInfo fiPropHunt;
         private static bool propHuntResolved;
 
-        private static bool IsPropHuntGM() {
+        internal static bool IsPropHuntGM() {
             try {
                 if (!propHuntResolved) {
                     propHuntResolved = true;

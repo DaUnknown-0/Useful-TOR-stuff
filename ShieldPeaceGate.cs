@@ -80,7 +80,8 @@ namespace UsefulTORStuff {
         // are TOR's own and are checked by the caller directly.
         public static bool IsKillProtected(byte playerId) {
             try {
-                return NewcomerShield.IsShielded(playerId) || AntiStartKill.IsProtected(playerId);
+                return NewcomerShield.IsShielded(playerId) || AntiStartKill.IsProtected(playerId)
+                       || EarlyDeathShield.IsShielded(playerId);
             } catch { return false; }
         }
 

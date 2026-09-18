@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Revenger kill button (playtest 2026-09-18)
+- **The Revenger button no longer hides under another ability button** (`LoverRevenger.cs`): it
+  always sat at `upperRowRight`, the slot TOR also uses for the Engineer's repair and the Hacker's
+  button (and UC's Poisoner/Pelican). A Revenger keeps his base role's buttons, so the kill button
+  was drawn underneath and could be neither seen nor clicked. It now takes the first slot no other
+  visible button occupies, and logs the slot it ended up in.
+- **The host's Revenger decision now also switches the feature on locally**: each client used to
+  decide on its own at intro end whether the Revenger is usable, based on its own version
+  handshake table. One missing handshake on the Revenger's machine left him without a button
+  while everybody else saw him as the Revenger.
+
+### New: early-death shield (pink)
+- **Death-time history** (`DeathTimeHistory.cs`): every client now records, per player, how much of
+  each round's gameplay time (meetings excluded) they survived before somebody else killed them.
+  Only kills by another player count (Kill, Guess, Bomb, Arson, Witch curse); rounds that ended in
+  an exile, a misfire, a failed guess, a lover/lawyer suicide or a disconnect are left out for that
+  player. The last 20 rounds per player are kept in `BepInEx/config/UTSDeathTimes.txt` and survive
+  restarts. Identity is the friend code, or the name on servers without friend codes.
+- **Protect Players Who Often Die Early** (`EarlyDeathShield.cs`, options 1383-1388, General tab):
+  the host shields whoever survives far less of a round than the lobby average (threshold 40-80 %
+  of the average, default 60 %; at least 3 players with enough rounds needed for an average;
+  minimum rounds and maximum shielded players configurable). Same lifetime and enforcement as the
+  newcomer shield: no kills before the first meeting, optional vote/guess block in that meeting,
+  peaceful abilities still work. Pink outline, visible to everyone already in the lobby, stacks
+  with the other shields in the colour cycle.
+- **Host override** (`EarlyDeathShieldUI.cs`): lobby panel with every player's rounds and average,
+  force the shield on or off per player or hand it back to the numbers ("Auto"). Overrides are
+  saved with the history.
+
 ### Playtest fixes 2026-09-11
 - **Opening the meeting map no longer drops a ping marker** (`MapLanguageToggle.cs` `ShowPatch`,
   `MeetingMapPing.cs` `DiscardOpeningClick`): the click latch (`ClickFrame`) records the mouse-DOWN

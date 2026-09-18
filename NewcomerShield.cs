@@ -685,7 +685,7 @@ namespace UsefulTORStuff {
         // Mirrors TOR's own condition for showing the sidekick button (Buttons.cs:1036) rather than
         // inventing a second rule: same flag, same owner check, same alive check. A Sidekick is
         // deliberately NOT covered - he cannot recruit, so nothing about him is peaceful here.
-        private static bool JackalCanRecruitNow() {
+        internal static bool JackalCanRecruitNow() {
             try {
                 var local = PlayerControl.LocalPlayer;
                 return Jackal.canCreateSidekick

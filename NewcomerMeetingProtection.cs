@@ -46,11 +46,29 @@ using UnityEngine;
 namespace UsefulTORStuff {
     public static class NewcomerMeetingProtection {
 
-        // The one question this file asks. Note what it does NOT ask: AntiStartKill - see the header.
-        // Both callers add their own half of the option on top (BlocksVotes / BlocksGuesses), so a
-        // host who wants only one of the two gets only that one.
-        private static bool IsProtected(byte playerId) {
-            try { return NewcomerShield.IsShielded(playerId); } catch { return false; }
+        // The questions this file asks. Note what it does NOT ask: AntiStartKill - see the header.
+        // Two shields reach into the first meeting, the newcomer's (gold) and the early-death one
+        // (pink, EarlyDeathShield.cs), and each carries its own "Shield During The First Meeting"
+        // option - so the vote and the guess block are answered per shield, not for both at once.
+        // The returned key is the chat line for the blocked voter/guesser; null = not protected.
+        private static string VoteBlockKey(byte playerId) {
+            try {
+                if (NewcomerShield.BlocksVotes && NewcomerShield.IsShielded(playerId))
+                    return "uts.newcomershield.vote_blocked";
+                if (EarlyDeathShield.BlocksVotes && EarlyDeathShield.IsShielded(playerId))
+                    return "uts.earlydeath.vote_blocked";
+            } catch { }
+            return null;
+        }
+
+        private static string GuessBlockKey(byte playerId) {
+            try {
+                if (NewcomerShield.BlocksGuesses && NewcomerShield.IsShielded(playerId))
+                    return "uts.newcomershield.kill_blocked";
+                if (EarlyDeathShield.BlocksGuesses && EarlyDeathShield.IsShielded(playerId))
+                    return "uts.earlydeath.kill_blocked";
+            } catch { }
+            return null;
         }
 
         private static void NotifyLocal(string key) {
@@ -73,8 +91,8 @@ namespace UsefulTORStuff {
             public static bool Prefix([HarmonyArgument(0)] byte srcPlayerId, [HarmonyArgument(1)] byte suspectIdx) {
                 try {
                     if (suspectIdx == SkipVote) return true;
-                    if (!NewcomerShield.BlocksVotes) return true;
-                    if (!IsProtected(suspectIdx)) return true;
+                    string key = VoteBlockKey(suspectIdx);
+                    if (key == null) return true;
 
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         $"[NewcomerMeetingProtection] refused a vote by {srcPlayerId} against protected "
@@ -84,7 +102,7 @@ namespace UsefulTORStuff {
                     // lobby, so an ungated message would put a line in the host's chat for every
                     // remote vote as well.
                     var me = PlayerControl.LocalPlayer;
-                    if (me != null && me.PlayerId == srcPlayerId) NotifyLocal("uts.newcomershield.vote_blocked");
+                    if (me != null && me.PlayerId == srcPlayerId) NotifyLocal(key);
 
                     return false;   // the vote never happens: no state written, nothing to undo
                 } catch { return true; }
@@ -99,11 +117,10 @@ namespace UsefulTORStuff {
             public static void Postfix(MeetingHud __instance) {
                 try {
                     if (__instance == null || __instance.playerStates == null) return;
-                    if (!NewcomerShield.BlocksVotes) return;      // votes are allowed: leave the UI alone
-                    if (!NewcomerShield.Active) return;           // nothing shielded: nothing to grey
+                    if (!NewcomerShield.Active && !EarlyDeathShield.Active) return;   // nothing to grey
                     foreach (var pva in __instance.playerStates) {
                         if (pva == null || pva.Buttons == null) continue;
-                        if (!IsProtected((byte)pva.TargetPlayerId)) continue;
+                        if (VoteBlockKey((byte)pva.TargetPlayerId) == null) continue;
                         // Same handle TOR uses to hide vote buttons; disabling the collider is what
                         // actually stops the click, the tint is what explains it.
                         var buttons = pva.Buttons.transform;
@@ -149,14 +166,14 @@ namespace UsefulTORStuff {
                 if (buttonTarget < 0 || buttonTarget >= __instance.playerStates.Length) return true;
                 var pva = __instance.playerStates[buttonTarget];
                 if (pva == null) return true;
-                if (!NewcomerShield.BlocksGuesses) return true;
                 byte targetId = (byte)pva.TargetPlayerId;
-                if (!IsProtected(targetId)) return true;
+                string key = GuessBlockKey(targetId);
+                if (key == null) return true;
 
                 // The same feedback TOR gives for a Medic-shielded guess: the fail cue plus a line
                 // to read, rather than a click that silently does nothing.
                 try { SoundEffectsManager.play("fail"); } catch { }
-                NotifyLocal("uts.newcomershield.kill_blocked");
+                NotifyLocal(key);
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[NewcomerMeetingProtection] refused to open the guess UI on protected newcomer {targetId}.");
                 return false;
@@ -171,8 +188,7 @@ namespace UsefulTORStuff {
         static class GuesserShootPatch {
             public static bool Prefix([HarmonyArgument(1)] byte dyingTargetId) {
                 try {
-                    if (!NewcomerShield.BlocksGuesses) return true;
-                    if (!IsProtected(dyingTargetId)) return true;
+                    if (GuessBlockKey(dyingTargetId) == null) return true;
                     if (!UsefulVersionHandshake.EveryoneHasMod()) {
                         UsefulTORStuffPlugin.Logger?.LogWarning(
                             $"[NewcomerMeetingProtection] a protected newcomer ({dyingTargetId}) was guessed, but "

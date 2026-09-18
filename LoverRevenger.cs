@@ -467,6 +467,13 @@ namespace UsefulTORStuff {
             if (lover == null) return;
 
             if (becomeRevenger) {
+                // The host only sends becomeRevenger=true when ITS gate was open, so the feature is
+                // usable - full stop. Each client latches `active` on its own at intro end, and its
+                // EveryoneHasMod() reads its OWN handshake table (exact version + build GUID for every
+                // client). A single missing or late handshake on the Revenger's machine left `active`
+                // false there, and every button check (LocalIsRevenger) starts with `active`: the
+                // Revenger existed for everyone else but had no button on his own screen.
+                active = true;
                 revenger = lover;
                 revengerMode = mode;
                 killerId = revKillerId;
@@ -895,6 +902,71 @@ namespace UsefulTORStuff {
                 revengerButton.Timer = revengerButton.MaxTimer;
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] button creation failed: {e}");
+            }
+        }
+
+        // ====================================================================
+        // Slot: never underneath another ability button.
+        //
+        // The button used to sit at upperRowRight unconditionally. A Revenger keeps his base role's
+        // buttons (only the role INFO is replaced), and TOR puts the Engineer's repair and the
+        // Hacker's button in that very slot (Buttons.cs), as do the UC Poisoner and Pelican. Two
+        // clones of the kill button on the same spot: the Revenger button was drawn underneath and
+        // could not be seen or clicked. Now it takes the first slot no other VISIBLE custom button
+        // occupies, the same slot grid PlayerTuning/ChanceMod use for the granted vent button.
+        // PositionOffset is read by CustomButton.Update every frame, so setting it is enough.
+        // Priority.Low: after TOR's own HudManager.Update postfix has updated (and shown) the rest.
+        // ====================================================================
+        private static readonly Vector3[] CandidateSlots = {
+            CustomButton.ButtonPositions.upperRowRight,
+            CustomButton.ButtonPositions.upperRowCenter,
+            CustomButton.ButtonPositions.upperRowLeft,
+            CustomButton.ButtonPositions.upperRowFarLeft,
+            CustomButton.ButtonPositions.lowerRowRight,
+            CustomButton.ButtonPositions.lowerRowCenter,
+            CustomButton.ButtonPositions.lowerRowLeft,
+            CustomButton.ButtonPositions.highRowRight,
+        };
+        private const float SlotEps = 0.25f;
+        private static readonly List<Vector3> occupiedSlots = new List<Vector3>();
+        private static bool slotLogged;
+
+        private static bool SlotTaken(Vector3 slot) {
+            foreach (var o in occupiedSlots)
+                if (Mathf.Abs(o.x - slot.x) < SlotEps && Mathf.Abs(o.y - slot.y) < SlotEps) return true;
+            return false;
+        }
+
+        [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
+        [HarmonyPriority(Priority.Low)]
+        static class RevengerButtonSlotPatch {
+            public static void Postfix() {
+                try {
+                    if (revengerButton == null || revengerButton.actionButton == null) return;
+                    if (!LocalUsesRevengerButton()) { slotLogged = false; return; }
+                    if (MeetingHud.Instance != null || ExileController.Instance != null) return;
+
+                    occupiedSlots.Clear();
+                    foreach (var b in CustomButton.buttons) {
+                        if (b == null || b == revengerButton || b.mirror) continue;
+                        if (b.actionButtonGameObject == null || !b.actionButtonGameObject.activeSelf) continue;
+                        occupiedSlots.Add(b.PositionOffset);
+                    }
+                    if (!SlotTaken(revengerButton.PositionOffset) && slotLogged) return;
+
+                    Vector3 before = revengerButton.PositionOffset;
+                    foreach (var slot in CandidateSlots) {
+                        if (SlotTaken(slot)) continue;
+                        revengerButton.PositionOffset = slot;
+                        break;
+                    }
+                    if (!slotLogged) {
+                        slotLogged = true;
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[LoverRevenger] Revenger button active at slot {revengerButton.PositionOffset} "
+                            + $"(was {before}, {occupiedSlots.Count} other visible button(s)).");
+                    }
+                } catch { }
             }
         }
 

@@ -6,7 +6,8 @@
  * UTSShieldOutlines - THE one shield painter, with a colour cycle for stacked shields.
  *
  * A player can hold several kill shields at once: the Medic's (cyan), TOR's "shield last game
- * first kill" (blue), the NewcomerShield (gold) and the AntiStartKill spawn protection (green) -
+ * first kill" (blue), the NewcomerShield (gold), the AntiStartKill spawn protection (green) and
+ * the EarlyDeathShield (pink) -
  * plus the Armored hint TOR shows to ghosts (yellow). The body sprite has exactly ONE outline
  * slot, so before this file whoever painted last simply won and the other shields were invisible.
  * Now every player's visible shields are collected into a list and, when there is more than one,
@@ -28,7 +29,7 @@
  *  - Armored:    ghosts only, unbroken armour - TOR's rule. TOR shows it only when no other
  *                shield is visible; here it joins the cycle instead, which is strictly more
  *                information for the ghost.
- *  - Newcomer / AntiStartKill: everyone. Both lists are public knowledge (announced at round
+ *  - Newcomer / AntiStartKill / EarlyDeath: everyone. Both lists are public knowledge (announced at round
  *                start), so showing them leaks nothing.
  * During a Camouflager camo or the mushroom sabotage NOTHING is painted - all players look
  * identical, and any outline would single one of them out. TOR hides its shields there for
@@ -107,7 +108,7 @@ namespace UsefulTORStuff {
 
                 // Cheap early-out: nothing shielded anywhere and nothing of ours left on screen.
                 PlayerControl firstKill = FirstKillShielded();
-                bool anyShield = NewcomerShield.Active || AntiStartKill.Active
+                bool anyShield = NewcomerShield.Active || AntiStartKill.Active || EarlyDeathShield.Active
                     || Medic.shielded != null || firstKill != null
                     || Armored.armored != null;
                 if (!anyShield && painted.Count == 0) return;
@@ -152,7 +153,7 @@ namespace UsefulTORStuff {
         }
 
         // Fills `colors` with every shield visible on `target` for the local player, in a FIXED
-        // order (cyan, blue, yellow, gold, green) so the cycle sequence is stable.
+        // order (cyan, blue, yellow, gold, green, pink) so the cycle sequence is stable.
         private static void CollectColors(PlayerControl target, PlayerControl local, PlayerControl firstKill) {
             colors.Clear();
             if (target.Data == null || target.Data.IsDead || target.Data.Disconnected) return;
@@ -178,6 +179,8 @@ namespace UsefulTORStuff {
             if (NewcomerShield.IsShielded(displayedId)) colors.Add(NewcomerShield.ShieldColor);
 
             if (AntiStartKill.IsProtected(displayedId)) colors.Add(AntiStartKill.ShieldColor);
+
+            if (EarlyDeathShield.IsShielded(displayedId)) colors.Add(EarlyDeathShield.ShieldColor);
         }
 
         // PlayerIds are per connection; never carry paint bookkeeping into another lobby.

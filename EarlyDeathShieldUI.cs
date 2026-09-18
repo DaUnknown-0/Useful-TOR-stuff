@@ -2,38 +2,35 @@
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
- * NewcomerShieldUI - the host's lobby panel for the newcomer kill shield.
+ * EarlyDeathShieldUI - the host's lobby panel for the pink early-death shield, and the driver of
+ * both the shield and the death-time clock.
  *
- * Shows every player in the lobby with the shield they would get next round, and lets the host flip
- * that by hand. The automatic rule (friend code never seen this session) covers the normal case;
- * this is for the ones it cannot know about - somebody who reinstalled, or a player the group simply
- * agrees should get a free round.
- *
- * Host only, and only in the lobby. A screen-space canvas like UTSModSyncUI, for the same reason:
- * there is no HudManager in the lobby screen, so the world-space overlay pattern does not apply.
+ * Every lobby player with their recorded rounds, their average survived share, and whether they get
+ * the shield next round. The host can force the shield on or off per player; "Auto" hands the
+ * decision back to the numbers. Same screen-space canvas shape as NewcomerShieldUI; its lobby
+ * button sits one row above the newcomer's when both are shown.
  */
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace UsefulTORStuff {
 
-    public class NewcomerShieldUI : MonoBehaviour {
-        public static NewcomerShieldUI Instance { get; private set; }
+    public class EarlyDeathShieldUI : MonoBehaviour {
+        public static EarlyDeathShieldUI Instance { get; private set; }
 
-        public NewcomerShieldUI(IntPtr ptr) : base(ptr) { }
+        public EarlyDeathShieldUI(IntPtr ptr) : base(ptr) { }
 
         private static readonly Dictionary<Color, Sprite> solidSprites = new Dictionary<Color, Sprite>();
 
         private static readonly Color ColBackdrop = new Color(0f, 0f, 0f, 0.85f);
         private static readonly Color ColPanel = new Color(0.1f, 0.12f, 0.16f, 0.98f);
         private static readonly Color ColRow = new Color(1f, 1f, 1f, 0.05f);
-        private static readonly Color ColAccent = new Color(0.45f, 0.85f, 1f);
-        private static readonly Color ColShield = new Color(0.62f, 1f, 0.63f);
+        private static readonly Color ColAccent = new Color(1f, 0.45f, 0.85f);
+        private static readonly Color ColShield = new Color(1f, 0.55f, 0.88f);
         private static readonly Color ColMuted = new Color(0.65f, 0.65f, 0.7f);
         private static readonly Color ColBtnGrey = new Color(0.3f, 0.3f, 0.38f, 0.95f);
 
@@ -51,9 +48,7 @@ namespace UsefulTORStuff {
 
         private GameObject panelRoot;
         private GameObject lobbyButton;
-
-        // Read by EarlyDeathShieldUI to stack its own lobby button one row above this one.
-        public static bool ButtonShown { get; private set; }
+        private RectTransform lobbyButtonRect;
         private TMPro.TextMeshProUGUI lobbyButtonText;
         private float nextPoll;
 
@@ -62,67 +57,50 @@ namespace UsefulTORStuff {
             Instance = this;
         }
 
-        // public, like every other Unity message in this plugin (see UTSModSyncUI).
         public void Update() {
-            // The feature's own driver: lobby preview and round-start assignment. It lives on this
-            // MonoBehaviour and NOT on a Harmony postfix precisely so no other mod's throwing patch
-            // can ever keep it from running (see the NewcomerShield header). Every frame, before
-            // this component's own poll throttle; Tick throttles itself.
-            NewcomerShield.Tick();
+            // The drivers, every frame and before any early return (both throttle themselves where
+            // needed; the clock must not, it measures meeting boundaries).
+            DeathTimeHistory.Tick();
+            EarlyDeathShield.Tick();
 
-            // The F1 settings overlay covers the whole screen and this button sits on top of its
-            // text. Checked before the poll throttle below so it steps aside in the same frame F1 is
-            // pressed instead of lingering for up to half a second.
             if (lobbyButton != null && lobbyButton.activeSelf && SettingsOverlayView.OverlayOpen()) {
                 lobbyButton.SetActive(false);
-                ButtonShown = false;
                 return;
             }
 
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
 
-            // LobbyScreen.Exists, never GameStartManager.Instance: that getter CONSTRUCTS a blank
-            // GameStartManager when none exists (LobbyScreen in LobbyLeakGuard.cs has the whole
-            // story), and this component polling it from boot onwards is how v1.3.3.15 planted the
-            // phantom that degraded every session since.
             if (panelRoot != null && !LobbyScreen.Exists) Close();
 
             bool show = ShouldShow() && !SettingsOverlayView.OverlayOpen();
             if (show && lobbyButton == null) BuildLobbyButton();
-            ButtonShown = show && lobbyButton != null;
             if (lobbyButton == null) return;
             if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
-            if (show && lobbyButtonText != null) lobbyButtonText.text = ButtonLabel();
+            if (!show) return;
+            if (lobbyButtonText != null) lobbyButtonText.text = ButtonLabel();
+            // One row above the newcomer button while that one is shown, in its place otherwise.
+            if (lobbyButtonRect != null)
+                lobbyButtonRect.anchoredPosition = new Vector2(28, NewcomerShieldUI.ButtonShown ? 138 : 84);
         }
 
         [HideFromIl2Cpp]
         private bool ShouldShow() {
             try {
-                if (!LobbyScreen.Exists) return false;                       // lobby only
+                if (!LobbyScreen.Exists) return false;
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return false;
-                return NewcomerShield.Enabled != null && NewcomerShield.Enabled.getBool();
+                return EarlyDeathShield.Enabled != null && EarlyDeathShield.Enabled.getBool();
             } catch { return false; }
         }
 
         [HideFromIl2Cpp]
-        private int CountShielded() {
-            int n = 0;
-            try {
-                foreach (var p in PlayerControl.AllPlayerControls.ToArray())
-                    if (p != null && NewcomerShield.WouldShield(p)) n++;
-            } catch { }
-            return n;
-        }
-
-        [HideFromIl2Cpp]
         private string ButtonLabel() =>
-            UTSLocalization.Tr("uts.newcomershield.lobby_button", CountShielded());
+            UTSLocalization.Tr("uts.earlydeath.lobby_button", EarlyDeathShield.Evaluate().ShieldCount);
 
         [HideFromIl2Cpp]
         private void BuildLobbyButton() {
             try {
-                lobbyButton = new GameObject("UTSNewcomerShieldButton");
+                lobbyButton = new GameObject("UTSEarlyDeathShieldButton");
                 DontDestroyOnLoad(lobbyButton);
 
                 var canvas = lobbyButton.AddComponent<Canvas>();
@@ -136,12 +114,12 @@ namespace UsefulTORStuff {
 
                 var btn = new GameObject("Btn");
                 btn.transform.SetParent(lobbyButton.transform, false);
-                var rt = btn.AddComponent<RectTransform>();
-                // Bottom left, one row above the mod sync button so the two never overlap.
-                rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.zero; rt.pivot = Vector2.zero;
-                rt.anchoredPosition = new Vector2(28, 84);
-                rt.sizeDelta = new Vector2(330, 46);
-                btn.AddComponent<Image>().sprite = Solid(new Color(0.2f, 0.5f, 0.4f, 0.95f));
+                lobbyButtonRect = btn.AddComponent<RectTransform>();
+                lobbyButtonRect.anchorMin = Vector2.zero; lobbyButtonRect.anchorMax = Vector2.zero;
+                lobbyButtonRect.pivot = Vector2.zero;
+                lobbyButtonRect.anchoredPosition = new Vector2(28, 84);
+                lobbyButtonRect.sizeDelta = new Vector2(330, 46);
+                btn.AddComponent<Image>().sprite = Solid(new Color(0.55f, 0.2f, 0.45f, 0.95f));
 
                 var to = new GameObject("T");
                 to.transform.SetParent(btn.transform, false);
@@ -156,7 +134,7 @@ namespace UsefulTORStuff {
 
                 btn.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)Toggle);
             } catch (Exception ex) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[NewcomerShield] lobby button failed: {ex.Message}");
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[EarlyDeathShield] lobby button failed: {ex.Message}");
                 lobbyButton = null;
             }
         }
@@ -175,10 +153,10 @@ namespace UsefulTORStuff {
         [HideFromIl2Cpp]
         private void Open() {
             try {
-                // Shares the screen centre with the early-death panel: only one at a time.
-                EarlyDeathShieldUI.Instance?.Close();
+                // Newcomer and early-death panel share the screen centre: only one at a time.
+                NewcomerShieldUI.Instance?.Close();
 
-                panelRoot = new GameObject("UTSNewcomerShieldUI");
+                panelRoot = new GameObject("UTSEarlyDeathShieldUI");
                 DontDestroyOnLoad(panelRoot);
 
                 var canvas = panelRoot.AddComponent<Canvas>();
@@ -198,42 +176,50 @@ namespace UsefulTORStuff {
                 backdrop.AddComponent<Image>().sprite = Solid(ColBackdrop);
                 backdrop.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)Close);
 
-                var players = PlayerControl.AllPlayerControls.ToArray()
-                    .Where(p => p != null && p.Data != null && !p.Data.Disconnected).ToList();
-                float height = Mathf.Clamp(230 + players.Count * 52, 320, 780);
+                var ev = EarlyDeathShield.Evaluate();
+                float height = Mathf.Clamp(260 + ev.Rows.Count * 52, 350, 820);
 
                 var panel = new GameObject("Panel");
                 panel.transform.SetParent(panelRoot.transform, false);
                 var prt = panel.AddComponent<RectTransform>();
                 prt.anchorMin = new Vector2(0.5f, 0.5f); prt.anchorMax = new Vector2(0.5f, 0.5f);
                 prt.pivot = new Vector2(0.5f, 0.5f);
-                prt.sizeDelta = new Vector2(820, height);
+                prt.sizeDelta = new Vector2(900, height);
                 panel.AddComponent<Image>().sprite = Solid(ColPanel);
 
-                Label(panel, UTSLocalization.Tr("uts.newcomershield.title"), 28, TMPro.FontStyles.Bold,
+                Label(panel, UTSLocalization.Tr("uts.earlydeath.title"), 28, TMPro.FontStyles.Bold,
                       ColAccent, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1),
                       new Vector2(0, -18), new Vector2(-40, 40), TMPro.TextAlignmentOptions.Center);
-                Label(panel, UTSLocalization.Tr("uts.newcomershield.subtitle"), 14,
+                Label(panel, UTSLocalization.Tr("uts.earlydeath.subtitle"), 14,
                       TMPro.FontStyles.Normal, ColMuted,
                       new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1),
                       new Vector2(0, -58), new Vector2(-60, 40), TMPro.TextAlignmentOptions.Top);
 
-                float y = -104;
-                foreach (var p in players) {
-                    BuildRow(panel, p, y);
+                string average = ev.HasAverage
+                    ? UTSLocalization.Tr("uts.earlydeath.average",
+                          Mathf.RoundToInt(ev.LobbyMean * 100f), ev.ThresholdPercent,
+                          Mathf.RoundToInt(ev.LobbyMean * ev.ThresholdPercent))
+                    : UTSLocalization.Tr("uts.earlydeath.no_average", 3, ev.MinRounds);
+                Label(panel, average, 15, TMPro.FontStyles.Bold, Color.white,
+                      new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1),
+                      new Vector2(0, -100), new Vector2(-60, 26), TMPro.TextAlignmentOptions.Top);
+
+                float y = -134;
+                foreach (var v in ev.Rows) {
+                    BuildRow(panel, v, ev, y);
                     y -= 52;
                 }
 
-                MakeButton(panel, UTSLocalization.Tr("uts.newcomershield.close"),
+                MakeButton(panel, UTSLocalization.Tr("uts.earlydeath.close"),
                            new Vector2(0, 20), new Vector2(240, 44), ColBtnGrey, Close);
             } catch (Exception ex) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[NewcomerShield] panel failed: {ex}");
+                UsefulTORStuffPlugin.Logger?.LogError($"[EarlyDeathShield] panel failed: {ex}");
                 Close();
             }
         }
 
         [HideFromIl2Cpp]
-        private void BuildRow(GameObject parent, PlayerControl p, float y) {
+        private void BuildRow(GameObject parent, EarlyDeathShield.Verdict v, EarlyDeathShield.Evaluation ev, float y) {
             var holder = new GameObject("Row");
             holder.transform.SetParent(parent.transform, false);
             var rt = holder.AddComponent<RectTransform>();
@@ -242,38 +228,49 @@ namespace UsefulTORStuff {
             rt.sizeDelta = new Vector2(-50, 46);
             holder.AddComponent<Image>().sprite = Solid(ColRow);
 
-            string name = p.Data?.PlayerName ?? "?";
-            Label(holder, name, 17, TMPro.FontStyles.Bold, Color.white,
+            Label(holder, v.Name, 17, TMPro.FontStyles.Bold, Color.white,
                   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
-                  new Vector2(14, 0), new Vector2(300, 0), TMPro.TextAlignmentOptions.Left);
+                  new Vector2(14, 0), new Vector2(220, 0), TMPro.TextAlignmentOptions.Left);
 
-            bool shielded = NewcomerShield.WouldShield(p);
-            bool manual = NewcomerShield.IsManual(p);
-            string state = shielded
-                ? UTSLocalization.Tr(manual ? "uts.newcomershield.state_manual" : "uts.newcomershield.state_new")
-                : UTSLocalization.Tr("uts.newcomershield.state_known");
-            Label(holder, state, 14, TMPro.FontStyles.Normal, shielded ? ColShield : ColMuted,
+            string stats = v.Qualified
+                ? UTSLocalization.Tr("uts.earlydeath.stats", v.Stat.Rounds, Mathf.RoundToInt(v.Stat.Mean * 100f))
+                : UTSLocalization.Tr("uts.earlydeath.stats_few", v.Stat.Rounds, ev.MinRounds);
+            Label(holder, stats, 14, TMPro.FontStyles.Normal, v.Qualified ? Color.white : ColMuted,
                   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
-                  new Vector2(322, 0), new Vector2(260, 0), TMPro.TextAlignmentOptions.Left);
+                  new Vector2(240, 0), new Vector2(230, 0), TMPro.TextAlignmentOptions.Left);
 
-            var captured = p;
-            MakeButton(holder, UTSLocalization.Tr(shielded
-                           ? "uts.newcomershield.btn_unprotect" : "uts.newcomershield.btn_protect"),
-                       new Vector2(-14, 0), new Vector2(190, 36),
-                       shielded ? new Color(0.5f, 0.25f, 0.25f, 0.95f) : new Color(0.2f, 0.55f, 0.3f, 0.95f),
-                       () => { NewcomerShield.ToggleManual(captured); Rebuild(); },
+            string state = v.Override == DeathTimeHistory.OverrideOn ? "uts.earlydeath.state_forced"
+                         : v.Override == DeathTimeHistory.OverrideOff ? "uts.earlydeath.state_excluded"
+                         : v.Shield ? "uts.earlydeath.state_auto" : "uts.earlydeath.state_none";
+            Label(holder, UTSLocalization.Tr(state), 14, TMPro.FontStyles.Normal, v.Shield ? ColShield : ColMuted,
+                  new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
+                  new Vector2(476, 0), new Vector2(140, 0), TMPro.TextAlignmentOptions.Left);
+
+            var captured = v;
+            MakeButton(holder, UTSLocalization.Tr(v.Shield
+                           ? "uts.earlydeath.btn_unprotect" : "uts.earlydeath.btn_protect"),
+                       new Vector2(-14, 0), new Vector2(130, 36),
+                       v.Shield ? new Color(0.5f, 0.25f, 0.25f, 0.95f) : new Color(0.55f, 0.2f, 0.45f, 0.95f),
+                       () => { EarlyDeathShield.ToggleOverride(captured); Rebuild(); },
                        anchorMin: new Vector2(1, 0.5f), anchorMax: new Vector2(1, 0.5f),
                        pivot: new Vector2(1, 0.5f));
+
+            if (v.Override != DeathTimeHistory.OverrideAuto)
+                MakeButton(holder, UTSLocalization.Tr("uts.earlydeath.btn_auto"),
+                           new Vector2(-154, 0), new Vector2(76, 36), ColBtnGrey,
+                           () => { EarlyDeathShield.ClearOverride(captured); Rebuild(); },
+                           anchorMin: new Vector2(1, 0.5f), anchorMax: new Vector2(1, 0.5f),
+                           pivot: new Vector2(1, 0.5f));
         }
 
-        // The rows carry state, so a change redraws the whole panel rather than patching labels.
         [HideFromIl2Cpp]
         private void Rebuild() {
+            EarlyDeathShield.RefreshPreview();
             Close();
             Open();
         }
 
-        // ---- tiny UGUI helpers (same shape as UTSModSyncUI) ----
+        // ---- tiny UGUI helpers (same shape as NewcomerShieldUI) ----
         [HideFromIl2Cpp]
         private static TMPro.TextMeshProUGUI Label(GameObject parent, string text, float size,
                 TMPro.FontStyles style, Color color, Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot,

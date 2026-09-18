@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.7";
+    public const string PluginVersion = "1.4.7.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -71,6 +71,11 @@ public class UsefulTORStuffPlugin : BasePlugin
     // Module byte for the spawn-area kill protection (AntiStartKill). 241 was the last free byte
     // below the newcomer shield's 242; new feature, so it exists ONLY on channel 240.
     public const byte AntiStartKillRpcId = 241;
+
+    // Module byte for the pink early-death shield (EarlyDeathShield). 241-255 are all taken, so it
+    // steps below the block; module bytes live inside channel 240 and cannot collide with foreign
+    // callIds. New feature, so it exists ONLY on channel 240.
+    public const byte EarlyDeathShieldRpcId = 239;
 
     public static ManualLogSource Logger { get; private set; }
 
@@ -198,6 +203,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Spawn-area kill protection receiver (module byte 241). Same pattern.
         AntiStartKill.RegisterRpc();
+
+        // Early-death shield receiver (module byte 239). Same pattern.
+        EarlyDeathShield.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -362,6 +370,13 @@ public class UsefulTORStuffPlugin : BasePlugin
         // attribute-based and picked up by PatchAll below.
         AntiStartKill.CreateOptions();
 
+        // Early-death shield (options 1383-1388, General tab): the pink shield. DeathTimeHistory
+        // records on every client how much of each round a player survived before somebody else
+        // killed them; the host shields whoever sits far below the lobby average, with the newcomer
+        // shield's lifetime and enforcement. Lobby preview + host overrides in EarlyDeathShieldUI.
+        // All patches are attribute-based and picked up by PatchAll below.
+        EarlyDeathShield.CreateOptions();
+
         // Both kill shields above gate TOR's targeting helper, which knows nothing about WHY a player
         // is being targeted. This frees the peaceful abilities (Medic, Shifter, Morphling, Tracker,
         // Deputy, Eraser, Arsonist, Pursuer) from both gates by marking their targeting methods, and
@@ -431,6 +446,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Host-only lobby panel for the newcomer kill shield (who gets a free first round).
         AddComponent<NewcomerShieldUI>();
+
+        // Host-only lobby panel for the early-death shield; also drives the death-time clock.
+        AddComponent<EarlyDeathShieldUI>();
 
         // Memory heartbeat for the crash log (see CrashDiagnostics.cs).
         AddComponent<CrashDiagnosticsTicker>();
