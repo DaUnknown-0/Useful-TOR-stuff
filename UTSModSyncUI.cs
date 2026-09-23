@@ -111,6 +111,26 @@ namespace UsefulTORStuff {
 
             if (lobbyButton.activeSelf != shouldShow) lobbyButton.SetActive(shouldShow);
             if (shouldShow && lobbyButtonText != null) lobbyButtonText.text = LobbyButtonLabel();
+            if (shouldShow && !UTSModSync.NoticeShown) PostNotice();
+        }
+
+        // Once per lobby, a local chat line pointing at the button: the button alone sits in a
+        // corner and was easy to miss (2026-09-23). Only this client sees it.
+        [HideFromIl2Cpp]
+        private static void PostNotice() {
+            try {
+                // Never through HudManager.Instance blindly: the getter constructs a blank one when
+                // none exists (same trap as GameStartManager, see LobbyScreen).
+                if (!DestroyableSingleton<HudManager>.InstanceExists) return;
+                var hud = HudManager.Instance;
+                if (hud == null || hud.Chat == null || PlayerControl.LocalPlayer == null) return;
+                UTSModSync.NoticeShown = true;
+                hud.Chat.AddChat(PlayerControl.LocalPlayer,
+                    UTSLocalization.Tr("uts.modsync.notice_chat", UTSModSync.ActionableCount()));
+            } catch (Exception ex) {
+                UTSModSync.NoticeShown = true;
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[ModSync] chat notice failed: {ex.Message}");
+            }
         }
 
         [HideFromIl2Cpp]

@@ -19,6 +19,15 @@
  * The sender is identified by the TRANSPORT (UTSRpc.Sender), never by anything in the payload, so a
  * client cannot file its inventory under the host's id and fake a download suggestion for others.
  *
+ * DELIVERY (2026-09-23): the inventory used to go out once per lobby and on OnPlayerJoined only, so
+ * the same ordering holes the version handshake had (see UsefulVersionHandshake, "RE-BROADCAST WHEN
+ * SOMEBODY IS STILL MISSING") left a guest without the host's inventory - no sync button at all - or
+ * the host without a guest's, which the host view needs. Two cheap rules close that:
+ *   - an inventory from a sender we had none of yet is answered with ours, once per sender and
+ *     lobby (host answers guests, guests answer the host; guests do not answer each other);
+ *   - while the counterpart is still missing (a guest: the host; the host: any guest), ours is
+ *     re-sent every 2 s, five times per arrival, then silence for players without the mod.
+ *
  * NO dual-send: this module is new, older builds never had a legacy callId for it and correctly
  * ignore unknown module bytes (UTSRpc.HandleRpcPatch). A host on an older build therefore simply
  * produces no suggestions, which is the intended graceful degradation.
@@ -52,6 +61,17 @@ namespace UsefulTORStuff {
             new Dictionary<int, ClientInventory>();
 
         private static bool sentThisLobby;
+        private static bool replyPending;
+        private static float nextReplyAt;
+        private const int ResharesPerArrival = 5;
+        private const float ReshareIntervalSeconds = 2f;
+        private static int resharesLeft;
+        private static float nextReshareAt;
+
+        private static void ArmReshares() {
+            resharesLeft = ResharesPerArrival;
+            nextReshareAt = 0f;
+        }
 
         // The host's inventory, or null when the host never sent one (no mod / older build).
         // This is the ONLY inventory that may produce download suggestions (rule V2).
@@ -179,8 +199,42 @@ namespace UsefulTORStuff {
             try { unknown = reader.ReadPackedInt32(); } catch { }
             inv.UnknownCount = Math.Max(0, Math.Min(unknown, 999));
 
+            bool isNew = !inventories.ContainsKey(clientId);
             inventories[clientId] = inv;
             UTSModSync.InvalidateCache();
+            UTSModCheck.Invalidate();
+
+            // First word from this sender: answer with ours, so a newcomer never waits for a
+            // re-broadcast. Only across the host line - guests' inventories are display material
+            // for each other and not worth a message per pair.
+            var ac = AmongUsClient.Instance;
+            if (isNew && ac != null && clientId != ac.ClientId && (ac.AmHost || clientId == ac.HostId))
+                replyPending = true;
+        }
+
+        private static void ReshareIfCounterpartMissing() {
+            try {
+                if (resharesLeft <= 0 || UnityEngine.Time.realtimeSinceStartup < nextReshareAt) return;
+                var ac = AmongUsClient.Instance;
+                if (ac == null || PlayerControl.LocalPlayer == null) return;
+                bool missing = false;
+                if (ac.AmHost) {
+                    for (int i = 0; i < ac.allClients.Count; i++) {
+                        var c = ac.allClients[i];
+                        if (c == null || c.Character == null || c.Id == ac.ClientId) continue;
+                        if (!inventories.ContainsKey(c.Id)) { missing = true; break; }
+                    }
+                } else {
+                    missing = !inventories.ContainsKey(ac.HostId);
+                }
+                if (!missing) { resharesLeft = 0; return; }
+                resharesLeft--;
+                nextReshareAt = UnityEngine.Time.realtimeSinceStartup + ReshareIntervalSeconds;
+                Share();
+            } catch (Exception ex) {
+                resharesLeft = 0;
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[ModSync] re-broadcast failed: {ex.Message}");
+            }
         }
 
         // ---- lifecycle ----
@@ -191,20 +245,24 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 inventories.Clear();
                 sentThisLobby = false;
+                replyPending = false;
+                ArmReshares();
                 UTSModSync.ResetOnGameJoined();
+                UTSModCheck.Invalidate();
             }
         }
 
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnPlayerJoined))]
         static class OnPlayerJoinedPatch {
             public static void Postfix() {
+                ArmReshares();
                 if (PlayerControl.LocalPlayer != null) Share();
             }
         }
 
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Start))]
         static class GameStartManagerStartPatch {
-            public static void Postfix() { sentThisLobby = false; }
+            public static void Postfix() { sentThisLobby = false; ArmReshares(); }
         }
 
         // One broadcast per lobby, mirroring UsefulVersionHandshake's own versionSent latch.
@@ -212,9 +270,15 @@ namespace UsefulTORStuff {
         [HarmonyPriority(Priority.Low)]
         static class GameStartManagerUpdatePatch {
             public static void Postfix() {
-                if (PlayerControl.LocalPlayer == null || sentThisLobby) return;
-                sentThisLobby = true;
-                Share();
+                if (PlayerControl.LocalPlayer == null) return;
+                if (!sentThisLobby) { sentThisLobby = true; Share(); return; }
+                float now = UnityEngine.Time.realtimeSinceStartup;
+                if (replyPending && now >= nextReplyAt) {
+                    replyPending = false;
+                    nextReplyAt = now + 1f;          // several arrivals at once cost one answer
+                    Share();
+                }
+                ReshareIfCounterpartMissing();
             }
         }
     }

@@ -37,11 +37,21 @@ namespace UsefulTORStuff {
         public readonly string RepositoryOwner;
         public readonly string RepositoryName;
         public readonly string AssetName;
+        // Compact label for the host's Mod-Check lines (the display names are too long for a row).
+        public readonly string ShortName;
+        // Runs on the host only (HostFix): a guest never needs it, so it is never offered to one and
+        // never counts as "missing" in the host view.
+        public readonly bool HostOnly;
+        // Only matters while the mod publishes its handshake column (Unknown's Atlas: only while an
+        // Atlas map is chosen). The host view ignores it otherwise; the sync still offers it.
+        public readonly bool BoardGated;
 
         public CatalogEntry(byte id, string guid, string displayName,
-                            string owner, string repo, string assetName) {
+                            string owner, string repo, string assetName,
+                            string shortName = null, bool hostOnly = false, bool boardGated = false) {
             Id = id; Guid = guid; DisplayName = displayName;
             RepositoryOwner = owner; RepositoryName = repo; AssetName = assetName;
+            ShortName = shortName ?? displayName; HostOnly = hostOnly; BoardGated = boardGated;
         }
 
         // Built from the compiled-in coordinates, never from anything received.
@@ -65,22 +75,22 @@ namespace UsefulTORStuff {
         // --- The table. APPEND ONLY. See the header. ---
         private static readonly CatalogEntry[] entries = {
             new CatalogEntry(1, UsefulTORStuffPlugin.PluginGuid, UsefulTORStuffPlugin.PluginName,
-                             "DaUnknown-0", "Useful-TOR-stuff", "UsefulTORStuff.dll"),
+                             "DaUnknown-0", "Useful-TOR-stuff", "UsefulTORStuff.dll", "Forgotten Fixes"),
             new CatalogEntry(2, "com.tormod.chancemodifier", "TOR - Unknown Chaos",
-                             "DaUnknown-0", "TOR-Chance", "TOR-ChanceModifier.dll"),
+                             "DaUnknown-0", "TOR-Chance", "TOR-ChanceModifier.dll", "Chaos"),
             new CatalogEntry(3, "com.tormod.unknownscollection", "Unknown's Collection",
-                             "DaUnknown-0", "UnknownsCollection", "UnknownsCollection.dll"),
+                             "DaUnknown-0", "UnknownsCollection", "UnknownsCollection.dll", "Unknown's"),
             new CatalogEntry(4, "com.trackerteam.hostfix", "TOR - Hostfix",
-                             "DaUnknown-0", "TOR-Host-Fix", "HostFixPlugin.dll"),
+                             "DaUnknown-0", "TOR-Host-Fix", "HostFixPlugin.dll", "Hostfix", hostOnly: true),
             // Pulled from distribution for a few hours on 2026-08-29 while its memory was under
             // suspicion, and put back the same evening once measured: a Mira world build costs the
             // process +38 MB and is released at round end (919 MB peak in a round that started at
             // 714 MB). The OutOfMemoryException that had implicated it came from a failing
             // SortingLayer.layers interop call, not from a full heap; that call is gone.
             new CatalogEntry(5, "com.tormod.nightfall", "Nightfall",
-                             "DaUnknown-0", "Nightfall", "Nightfall.dll"),
+                             "DaUnknown-0", "Nightfall", "Nightfall.dll", "Nightfall"),
             new CatalogEntry(6, "com.daunknown0.atlas", "Unknown's Atlas",
-                             "DaUnknown-0", "UnknownsAtlas", "UnknownsAtlas.dll"),
+                             "DaUnknown-0", "UnknownsAtlas", "UnknownsAtlas.dll", "Atlas", boardGated: true),
         };
 
         // Reserved: "a mod outside this catalog". Counted in the inventory so the local player can

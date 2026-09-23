@@ -20,6 +20,8 @@
  *              -> single click only, and the channel toggle is NOT flipped permanently.
  *   Enable     installed but switched off locally -> tell the user to enable it, never download.
  *   HostMissing this client runs something the host does not -> display only, no action exists.
+ *   HostOnly   mods that only ever run on the host (HostFix) are never offered to a guest at all:
+ *              before 2026-09-23 every guest of a HostFix host was told to install it.
  *
  * Version comparison always goes through UsefulTORStuffUpdater.SemCompare: plain Version.CompareTo
  * would rank the prerelease 1.0.0.4 above the finalized 1.0.0 and invert half of these decisions.
@@ -83,7 +85,11 @@ namespace UsefulTORStuff {
         public static void ResetOnGameJoined() {
             cache = null;
             cacheValid = false;
+            NoticeShown = false;
         }
+
+        // The one-time chat hint for this lobby (UTSModSyncUI) has been posted.
+        public static bool NoticeShown;
 
         // True when the host published an inventory at all. False means "host has no mod sync"
         // (no Useful TOR Stuff, or a build older than module byte 255) - the feature stays silent
@@ -124,6 +130,7 @@ namespace UsefulTORStuff {
 
             foreach (var localRow in local) {
                 var entry = localRow.Catalog;
+                if (entry.HostOnly) continue;
                 var hostEntry = host.Get(entry.Id);
 
                 // A mod the host has installed but switched off does not shape the round, so it is

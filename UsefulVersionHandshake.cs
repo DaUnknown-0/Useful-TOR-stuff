@@ -454,7 +454,12 @@ namespace UsefulTORStuff {
                     InnerNet.ClientData client = clients[i];
                     var nameText = client?.Character?.cosmetics?.nameText;
                     if (nameText == null) continue;
-                    if (ClientMismatched(client.Id, tintStatsScratch)) {
+                    // The host tints by the same rule as his Mod-Check lines (UTSModCheck: compared
+                    // with the host, exact versions, host-only mods ignored); guests keep the board rule.
+                    bool mismatched = AmongUsClient.Instance.AmHost
+                        ? UTSModCheck.HasIssues(client.Id)
+                        : ClientMismatched(client.Id, tintStatsScratch);
+                    if (mismatched) {
                         nameText.color = Palette.ImpostorRed;
                         tintedClients.Add(client.Id);
                     } else if (tintedClients.Remove(client.Id)) {
@@ -472,6 +477,33 @@ namespace UsefulTORStuff {
         private static string BuildCombinedModCheck(out bool anyWarn) {
             anyWarn = false;
             if (AmongUsClient.Instance == null) return "";
+
+            // 2026-09-23: only the players with a problem, each with exact versions and whether the
+            // Mod-Sync can fix it (UTSModCheck). The old per-mod table below stays as the fallback
+            // for the one case the new view cannot serve: the evaluation itself failing.
+            try {
+                var issues = UTSModCheck.Current(out int checkedPlayers);
+                if (issues.Count == 0) return UTSLocalization.Tr("uts.versionhandshake.modcheck_all_ok");
+                anyWarn = true;
+                string red = "#" + UnityEngine.ColorUtility.ToHtmlStringRGBA(Palette.ImpostorRed);
+                var sbNew = new StringBuilder(UTSLocalization.Tr("uts.modcheck.summary", issues.Count, checkedPlayers));
+                foreach (var p in issues) {
+                    sbNew.Append($"<color={red}>{p.Name}</color>  ");
+                    sbNew.Append(string.Join(" <color=#888888FF>|</color> ", p.Issues));
+                    string hint = p.Fix switch {
+                        ModCheckFix.Sync => "uts.modcheck.hint_sync",
+                        ModCheckFix.SyncOff => "uts.modcheck.hint_sync_off",
+                        ModCheckFix.Manual => "uts.modcheck.hint_manual",
+                        _ => null
+                    };
+                    if (hint != null) sbNew.Append("  ").Append(UTSLocalization.Tr(hint));
+                    sbNew.Append("\n");
+                }
+                return sbNew.ToString() + "</size>";
+            } catch (Exception ex) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[ModCheck] host view failed, old board used: {ex.Message}");
+                anyWarn = false;
+            }
 
             var reg = AppDomain.CurrentDomain.GetData(HandshakeRegistryKey) as string ?? "";
             var guids = reg.Split(',').Where(g => g.Length > 0).Distinct().OrderBy(g => g).ToList();
@@ -693,7 +725,9 @@ namespace UsefulTORStuff {
                 // Collection, ...) we OWN the combined per-player overview — draw it here (host-only
                 // unless ShowToAllPlayers). It replaces the mods' standalone version lists; Chance
                 // suppresses its own block while we are loaded.
-                bool combinedShown = OtherModsPublished();
+                // Since 2026-09-23 always: the view also reads the mod inventory, so it has something
+                // to say even when no other mod publishes a handshake (Nightfall, Atlas versions).
+                bool combinedShown = true;
                 if (combinedShown && (ShowToAllPlayers || AmongUsClient.Instance.AmHost)) {
                     if (refresh || cachedCombined == null) cachedCombined = BuildCombinedModCheck(out _);
                     if (cachedCombined != "")
