@@ -79,6 +79,8 @@ namespace UsefulTORStuff {
             // SortingLayer.layers interop call, not from a full heap; that call is gone.
             new CatalogEntry(5, "com.tormod.nightfall", "Nightfall",
                              "DaUnknown-0", "Nightfall", "Nightfall.dll"),
+            new CatalogEntry(6, "com.daunknown0.atlas", "Unknown's Atlas",
+                             "DaUnknown-0", "UnknownsAtlas", "UnknownsAtlas.dll"),
         };
 
         // Reserved: "a mod outside this catalog". Counted in the inventory so the local player can

@@ -169,7 +169,8 @@ namespace UsefulTORStuff
                     "com.tormod.chancemodifier",
                     "com.trackerteam.hostfix",
                     "com.tormod.usefultorstuff",
-                    "com.tormod.nightfall"
+                    "com.tormod.nightfall",
+                    "com.daunknown0.atlas"
                 };
 
                 foreach (var guid in knownGuids)
@@ -448,9 +449,12 @@ namespace UsefulTORStuff
                         return instance != null && m != null ? (bool)m.Invoke(instance, null) : true;
                     };
                 }
-                else if (modInfo.Guid == "com.tormod.nightfall")
+                else if (modInfo.Guid == "com.tormod.nightfall" || modInfo.Guid == "com.daunknown0.atlas")
                 {
-                    var tn = "Nightfall.NightfallUpdater, Nightfall";
+                    // Nightfall and Unknown's Atlas ship the same updater surface under their own type
+                    var tn = modInfo.Guid == "com.daunknown0.atlas"
+                        ? "UnknownsAtlas.AtlasUpdater, UnknownsAtlas"
+                        : "Nightfall.NightfallUpdater, Nightfall";
                     modInfo.HasUpdate = () => {
                         var type = Type.GetType(tn);
                         var instance = type?.GetProperty("Instance")?.GetValue(null);
