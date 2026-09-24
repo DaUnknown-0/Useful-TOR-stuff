@@ -115,12 +115,12 @@ namespace UsefulTORStuff {
                         var e = inv.Get(entry.Id);
                         if (e == null || e.State == LocalModState.Missing) {
                             p.Issues.Add(UTSLocalization.Tr("uts.modcheck.missing", label));
-                            syncable = true;
+                            if (entry.AllowsVersion(hostVersion)) syncable = true;   // pinned (Submerged): only its version
                         } else if (e.State == LocalModState.Disabled) {
                             p.Issues.Add(UTSLocalization.Tr("uts.modcheck.off", label));
                         } else if (!Same(e.Version, hostVersion)) {
                             p.Issues.Add(UTSLocalization.Tr("uts.modcheck.version", label, Ver(e.Version), Ver(hostVersion)));
-                            syncable = true;
+                            if (entry.AllowsVersion(hostVersion)) syncable = true;
                         } else if (code == "mod") {
                             p.Issues.Add(UTSLocalization.Tr("uts.modcheck.modified", label, Ver(e.Version)));
                         }

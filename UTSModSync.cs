@@ -22,6 +22,8 @@
  *   HostMissing this client runs something the host does not -> display only, no action exists.
  *   HostOnly   mods that only ever run on the host (HostFix) are never offered to a guest at all:
  *              before 2026-09-23 every guest of a HostFix host was told to install it.
+ *   Pinned     entries with a PinnedVersion (Submerged 2025.1.30) are only offered when the host runs
+ *              exactly that version, and only when their RequiresGuid (Reactor) is loaded locally.
  *
  * Version comparison always goes through UsefulTORStuffUpdater.SemCompare: plain Version.CompareTo
  * would rank the prerelease 1.0.0.4 above the finalized 1.0.0 and invert half of these decisions.
@@ -164,6 +166,13 @@ namespace UsefulTORStuff {
                     else if (diff < 0) row.Action = SyncAction.Downgrade;
                     else row.Action = SyncAction.None;
                 }
+
+                // Pinned entries: nothing to offer unless the host runs the pinned version, and a
+                // mod whose dependency is missing here could not load after the restart anyway.
+                if (row.IsDownloadable
+                    && (!entry.AllowsVersion(row.HostVersion)
+                        || (entry.RequiresGuid != null && !UTSModCatalog.IsLoaded(entry.RequiresGuid))))
+                    row.Action = SyncAction.None;
 
                 row.NeedsConfirm = row.Action == SyncAction.Downgrade
                                 || (row.IsDownloadable && IsTestBuild(row.HostVersion) && !showTest);

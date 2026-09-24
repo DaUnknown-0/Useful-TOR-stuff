@@ -45,14 +45,28 @@ namespace UsefulTORStuff {
         // Only matters while the mod publishes its handshake column (Unknown's Atlas: only while an
         // Atlas map is chosen). The host view ignores it otherwise; the sync still offers it.
         public readonly bool BoardGated;
+        // A mod from outside this family (Submerged). It never registers in ModManagerRegistry, so
+        // "loaded by BepInEx" already means "running", with the chainloader's 3-part version.
+        public readonly bool External;
+        // Only this exact version may be synced (host must run it, download must be it). Null = any.
+        public readonly Version PinnedVersion;
+        // Plugin that must already be loaded locally before this mod is offered (Submerged needs
+        // Reactor; a DLL that cannot load would only cost the guest a restart for nothing).
+        public readonly string RequiresGuid;
 
         public CatalogEntry(byte id, string guid, string displayName,
                             string owner, string repo, string assetName,
-                            string shortName = null, bool hostOnly = false, bool boardGated = false) {
+                            string shortName = null, bool hostOnly = false, bool boardGated = false,
+                            bool external = false, Version pinnedVersion = null, string requiresGuid = null) {
             Id = id; Guid = guid; DisplayName = displayName;
             RepositoryOwner = owner; RepositoryName = repo; AssetName = assetName;
             ShortName = shortName ?? displayName; HostOnly = hostOnly; BoardGated = boardGated;
+            External = external; PinnedVersion = pinnedVersion; RequiresGuid = requiresGuid;
         }
+
+        // True when a version may be synced for this entry (always, unless the entry is pinned).
+        public bool AllowsVersion(Version v) =>
+            PinnedVersion == null || (v != null && UsefulTORStuffUpdater.SemCompare(v, PinnedVersion) == 0);
 
         // Built from the compiled-in coordinates, never from anything received.
         public string ReleasesApiUrl =>
@@ -91,6 +105,14 @@ namespace UsefulTORStuff {
                              "DaUnknown-0", "Nightfall", "Nightfall.dll", "Nightfall"),
             new CatalogEntry(6, "com.daunknown0.atlas", "Unknown's Atlas",
                              "DaUnknown-0", "UnknownsAtlas", "UnknownsAtlas.dll", "Atlas", boardGated: true),
+            // The Submerged map (SubmergedAmongUs/Submerged, added 2026-09-24). Pinned to v2025.1.30, the
+            // release built for Among Us 2024.11.26 that was tested with TOR and our mods (UTS
+            // SubmergedSelfTest); newer releases target newer game versions. Its licence allows
+            // redistribution of the unmodified DLL, which is all the sync does (from its own
+            // GitHub release). Needs Reactor, which the TOR package ships.
+            new CatalogEntry(7, "Submerged", "Submerged",
+                             "SubmergedAmongUs", "Submerged", "Submerged.dll", "Submerged",
+                             external: true, pinnedVersion: new Version(2025, 1, 30), requiresGuid: "gg.reactor.api"),
         };
 
         // Reserved: "a mod outside this catalog". Counted in the inventory so the local player can
@@ -178,7 +200,10 @@ namespace UsefulTORStuff {
                 var row = new LocalEntry { Catalog = e, State = LocalModState.Missing, Version = null };
                 if (loaded.TryGetValue(e.Guid, out var approx)) {
                     // Registered = running, and its version is the exact one (4 components included).
-                    if (running.TryGetValue(e.Guid, out var exact) && exact != null) {
+                    if (e.External) {
+                        row.State = LocalModState.Active;
+                        row.Version = approx;
+                    } else if (running.TryGetValue(e.Guid, out var exact) && exact != null) {
                         row.State = LocalModState.Active;
                         row.Version = exact;
                     } else {
@@ -201,6 +226,12 @@ namespace UsefulTORStuff {
 
             cachedLocal = list;
             cachedUnknownCount = unknownCount;
+            // Once per process (the result is cached): what this client reports to the host.
+            try {
+                UsefulTORStuffPlugin.Logger?.LogInfo("[ModSync] local inventory: " + string.Join(", ",
+                    list.Select(r => $"{r.Catalog.ShortName} {r.State}{(r.Version != null ? " " + r.Version : "")}"))
+                    + $"; unknown plugins {unknownCount}");
+            } catch { }
             return list;
         }
 
@@ -225,6 +256,15 @@ namespace UsefulTORStuff {
                 // Mini.RegionInstall ships with practically every modded install and has nothing to
                 // do with the round; whatever exact id it uses, it is not something to offer.
                 || guid.IndexOf("regioninstall", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // Loaded by BepInEx at all (running or not). Cached with the inventory's lifetime in mind:
+        // the plugin set cannot change while the game runs.
+        private static Dictionary<string, Version> cachedLoaded;
+        public static bool IsLoaded(string guid) {
+            if (string.IsNullOrEmpty(guid)) return false;
+            if (cachedLoaded == null) cachedLoaded = LoadedPlugins();
+            return cachedLoaded.ContainsKey(guid);
         }
 
         public static LocalModState StateOf(CatalogEntry e, out Version version) {

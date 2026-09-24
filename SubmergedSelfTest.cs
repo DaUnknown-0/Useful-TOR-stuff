@@ -617,6 +617,15 @@ namespace UsefulTORStuff {
                 Log("INFO", "env", "systems: " + string.Join(", ", sys));
                 Log("INFO", "env", $"tasks: common {ship.CommonTasks?.Length}, long {ship.LongTasks?.Length}, short {ship.ShortTasks?.Length}; consoles {Object.FindObjectsOfType<Console>().Length}");
                 Log("INFO", "env", $"onUpper {OnUpper()}, me at ({Me.transform.position.x:F1}, {Me.transform.position.y:F1}), players {PlayerControl.AllPlayerControls.Count}");
+                // Mod-Sync: Submerged must show up as a running catalog mod with its pinned version
+                try {
+                    UTSModCatalog.LocalInventory(out _);
+                    var sub = UTSModCatalog.ByGuid("Submerged");
+                    var state = UTSModCatalog.StateOf(sub, out var subVer);
+                    bool ok = sub != null && state == LocalModState.Active && sub.AllowsVersion(subVer)
+                              && sub.RequiresGuid != null && UTSModCatalog.IsLoaded(sub.RequiresGuid);
+                    Log(ok ? "PASS" : "FAIL", "modsync", $"Submerged catalog id {sub?.Id}, state {state}, version {subVer}, pinned {sub?.PinnedVersion}, Reactor loaded {UTSModCatalog.IsLoaded("gg.reactor.api")}");
+                } catch (Exception e) { Log("FAIL", "modsync", e.Message); }
                 try {
                     Log("INFO", "env", $"UTS Sabotage Tuning {(SabotageTuning.Enabled != null ? UTSGate.Bool(SabotageTuning.Enabled).ToString() : "n/a")}, Siphoner block key {AppDomain.CurrentDomain.GetData("TORMods.SiphonerSabotageBlockUntil")}");
                 } catch { }

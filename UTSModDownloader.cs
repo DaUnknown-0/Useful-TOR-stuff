@@ -120,6 +120,12 @@ namespace UsefulTORStuff {
             job.State = JobState.Working;
             job.Progress = 0f;
 
+            // Pinned entries (Submerged): never fetch any other version, whatever the row said.
+            if (!job.Catalog.AllowsVersion(job.TargetVersion)) {
+                Fail(job, "uts.modsync.error_no_matching_release");
+                yield break;
+            }
+
             // ---- 1. release list (URL built from the catalog, never received) ----
             var www = new UnityWebRequest();
             www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
