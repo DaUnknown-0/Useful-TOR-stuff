@@ -26,6 +26,7 @@
  *   - A LocalDumps entry for "Among Us.exe" is written under HKEY_CURRENT_USER. Per-user, no
  *     elevation, no effect on any other program: WER consults the per-process key only for that
  *     executable. DumpType 1 is a minidump (10-20 MB here), DumpCount 5 keeps it from piling up.
+ *     FullCrashDumps switches to DumpType 2 (full memory, ~1.5 GB) with DumpCount 2.
  *     Deleting the key restores the old behaviour; the plugin never deletes it itself.
  *
  * And a third thing, for the crash class no dump explains well: a 32-bit process running out of
@@ -52,6 +53,7 @@ namespace UsefulTORStuff {
     public static class CrashDiagnostics {
         private static ConfigEntry<bool> appendLog;
         private static ConfigEntry<bool> werDumps;
+        private static ConfigEntry<bool> fullDumps;
         private static ConfigEntry<float> memoryLogInterval;
         private static ConfigEntry<int> memoryWarnMb;
         private static ConfigEntry<bool> breakdown;
@@ -64,6 +66,10 @@ namespace UsefulTORStuff {
             werDumps = config.Bind("CrashDiagnostics", "WriteCrashDumps", true,
                 "Register Among Us.exe for Windows Error Reporting LocalDumps under HKEY_CURRENT_USER " +
                 "so a hard crash leaves a minidump in %LOCALAPPDATA%\\CrashDumps. Per-user, no admin.");
+            fullDumps = config.Bind("CrashDiagnostics", "FullCrashDumps", false,
+                "With WriteCrashDumps: keep a FULL memory dump instead of a minidump (about 1.5 GB each, only " +
+                "the newest 2 are kept). Only a full dump lets a crash inside JIT-compiled mod code be traced " +
+                "back to the method (ClrMD); switch it on while hunting a crash, off again afterwards.");
             memoryLogInterval = config.Bind("CrashDiagnostics", "MemoryLogIntervalSeconds", 30f,
                 "How often to log the process's private bytes (0 = never). The game is a 32-bit " +
                 "process; the trend before an OutOfMemory crash is the only evidence there is.");
@@ -153,16 +159,20 @@ namespace UsefulTORStuff {
                 if (key == null) return;
 
                 // Idempotent: only touch what differs, and say so once.
+                // FullCrashDumps (24.09.): the coreclr fatal-error crash starts in JIT code, which only a
+                // full dump can map back to a method; those are ~1.5 GB, so only the newest 2 are kept.
+                bool full = fullDumps?.Value == true;
+                int wantType = full ? 2 : 1, wantCount = full ? 2 : 5;
                 bool changed = false;
-                if (!(key.GetValue("DumpType") is int dt) || dt != 1) { key.SetValue("DumpType", 1, RegistryValueKind.DWord); changed = true; }
-                if (!(key.GetValue("DumpCount") is int dc) || dc < 5) { key.SetValue("DumpCount", 5, RegistryValueKind.DWord); changed = true; }
+                if (!(key.GetValue("DumpType") is int dt) || dt != wantType) { key.SetValue("DumpType", wantType, RegistryValueKind.DWord); changed = true; }
+                if (!(key.GetValue("DumpCount") is int dc) || (full ? dc != wantCount : dc < wantCount)) { key.SetValue("DumpCount", wantCount, RegistryValueKind.DWord); changed = true; }
                 if (key.GetValue("DumpFolder") == null) {
                     key.SetValue("DumpFolder", @"%LOCALAPPDATA%\CrashDumps", RegistryValueKind.ExpandString);
                     changed = true;
                 }
                 if (changed)
                     UsefulTORStuffPlugin.Logger?.LogInfo(
-                        $"[CrashDiagnostics] Windows Error Reporting will keep a minidump of {exe} in " +
+                        $"[CrashDiagnostics] Windows Error Reporting will keep a {(full ? "FULL dump (newest 2)" : "minidump")} of {exe} in " +
                         "%LOCALAPPDATA%\\CrashDumps on a hard crash (HKCU LocalDumps, per user).");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[CrashDiagnostics] could not register LocalDumps: {e.GetType().Name}: {e.Message}");
