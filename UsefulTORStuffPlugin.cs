@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.7.3";
+    public const string PluginVersion = "1.4.7.4";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -177,6 +177,9 @@ public class UsefulTORStuffPlugin : BasePlugin
         // per-frame work in this mod family actually moves. See PerfHud.cs. Only the config is bound
         // here; nothing measures until the key is pressed.
         PerfHud.Bind(Config);
+
+        // Autotest for the Submerged map (default off): Freeplay on Submerged, every system checked.
+        SubmergedSelfTest.Bind(Config);
 
         // TOR's 1032-file hat pack decoded to ~600 MB of ARGB32 on every client; this shrinks it
         // to DXT5 without a CPU copy (see HatTextureDiet.cs). Attribute patch, applied by PatchAll.

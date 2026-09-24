@@ -59,10 +59,18 @@
  * Map differences are automatic: ShipStatus.Systems only contains the systems present on the map,
  * and the menu only shows rooms that exist, so unused types simply never fire.
  *
+ * Modded maps (Submerged, 24.09.): MapRoom.room there is the map's own room id (130/134 for the
+ * two O2 panels, 133 for the reactor), not the sabotaged system, so TryMap(r.room) missed them and
+ * the overlay never greyed those buttons - O2 looked ready while its cooldown silently swallowed
+ * the click ("O2 does nothing"). TryMapRoom falls back to the button's persistent OnClick call
+ * (MapRoom.SabotageOxygen -> Oxygen ...). Submerged's O2 is its own system 130
+ * (SubmarineOxygenSystem, not LifeSuppSystemType); OxygenActive and the O2 duration cover it too.
+ *
  * IDs 1330-1345 used here (1320-1323 are SpyExtras). Keep plugin-wide unique.
  */
 
 using System;
+using System.Linq;
 using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
@@ -217,6 +225,60 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Per MapRoom (by native pointer): -1 = no sabotage button, else the SabType. MapRooms live as
+        // long as the map prefab instance, a new map brings new pointers; cleared on game join.
+        private static readonly System.Collections.Generic.Dictionary<IntPtr, int> roomTypeCache = new();
+
+        internal static bool TryMapRoom(MapRoom r, out SabType t) {
+            if (TryMap(r.room, out t)) return true;
+            if (!roomTypeCache.TryGetValue(r.Pointer, out int cached)) {
+                cached = -1;
+                try {
+                    var b = r.special != null ? r.special.GetComponent<ButtonBehavior>() : null;
+                    if (b != null)
+                        for (int i = 0; i < b.OnClick.GetPersistentEventCount() && cached < 0; i++)
+                            switch (b.OnClick.GetPersistentMethodName(i)) {
+                                case nameof(MapRoom.SabotageReactor): cached = (int)SabType.Reactor; break;
+                                case nameof(MapRoom.SabotageOxygen):  cached = (int)SabType.Oxygen;  break;
+                                case nameof(MapRoom.SabotageComms):   cached = (int)SabType.Comms;   break;
+                                case nameof(MapRoom.SabotageLights):  cached = (int)SabType.Lights;  break;
+                                case nameof(MapRoom.SabotageHeli):    cached = (int)SabType.Heli;    break;
+                            }
+                } catch { }
+                roomTypeCache[r.Pointer] = cached;
+            }
+            t = cached >= 0 ? (SabType)cached : SabType.Reactor;
+            return cached >= 0;
+        }
+
+        // Submerged's O2 (system 130, SubmarineOxygenSystem). Its IsActive and countdown are managed
+        // members of an injected class, read through TOR's loaded Submerged assembly.
+        private const SystemTypes SubmergedO2System = (SystemTypes)130;
+        private static bool subO2Resolved;
+        private static PropertyInfo subO2Instance, subO2IsActive;
+        private static FieldInfo subO2Countdown;
+
+        private static object SubmergedO2() {
+            if (!SubmergedCompatibility.IsSubmerged) return null;
+            if (!subO2Resolved) {
+                subO2Resolved = true;
+                try {
+                    var t = SubmergedCompatibility.Types?.FirstOrDefault(x => x.Name == "SubmarineOxygenSystem" && x.Namespace == "Submerged.Systems.Oxygen");
+                    if (t != null) {
+                        subO2Instance = AccessTools.Property(t, "Instance");
+                        subO2IsActive = AccessTools.Property(t, "IsActive");
+                        subO2Countdown = AccessTools.Field(t, "countdown");
+                    }
+                } catch { }
+            }
+            try { return subO2Instance?.GetValue(null); } catch { return null; }
+        }
+
+        internal static bool SubmergedO2Active() {
+            var o = SubmergedO2();
+            try { return o != null && subO2IsActive != null && (bool)subO2IsActive.GetValue(o); } catch { return false; }
+        }
+
         // PERF: resolved once per ShipStatus instance. This is asked every physics tick; the
         // Systems lookup plus TryCast used to allocate a fresh Il2Cpp wrapper each time. The
         // sabotage system is created in ShipStatus.Awake and lives as long as the ship, and the
@@ -267,6 +329,15 @@ namespace UsefulTORStuff {
             var o2 = GetRaw(ship, SystemTypes.LifeSupp)?.TryCast<LifeSuppSystemType>();
             if (o2 != null && o2.IsActive && oxygenDur != null) o2.Countdown = UTSGate.Num(oxygenDur);
 
+            // Submerged: the countdown syncs to clients with the system's own Serialize (dirty every 2 s)
+            if (oxygenDur != null && SubmergedO2Active() && subO2Countdown != null) {
+                try {
+                    var so = SubmergedO2();
+                    subO2Countdown.SetValue(so, UTSGate.Num(oxygenDur));
+                    AccessTools.Property(so.GetType(), "IsDirty")?.SetValue(so, true);
+                } catch { }
+            }
+
             var heli = GetRaw(ship, SystemTypes.HeliSabotage)?.TryCast<HeliSabotageSystem>();
             if (heli != null && heli.IsActive && heliDur != null && heliCountdownSetter != null) {
                 try { heliCountdownSetter.Invoke(heli, new object[] { UTSGate.Num(heliDur) }); } catch { }
@@ -276,6 +347,11 @@ namespace UsefulTORStuff {
         // Called from the SabotageX prefixes: block if this type is still on cooldown (client-side gate
         // for the clicking impostor). Counting is done globally on activation (CountActivation) so the
         // reduction applies for all impostors, not just whoever clicked.
+        // Autotest (SubmergedSelfTest): every per-type cooldown to ready, so a button test is not
+        // gated by the cooldown the previous test sabotage left behind.
+        internal static void DiagClearCooldowns() { for (int i = 0; i < N; i++) timer[i] = 0f; }
+        internal static float DiagCooldown(SabType t) => timer[(int)t];
+
         private static bool TryTrigger(SabType t) {
             if (SiphonerBlockActive()) return false; // Siphoner drain blocks every sabotage (even if our tuning is off)
             if (!Active) return true;             // feature off -> vanilla
@@ -291,7 +367,7 @@ namespace UsefulTORStuff {
         private static bool OxygenActive(ShipStatus s) {
             var raw = GetRaw(s, SystemTypes.LifeSupp);
             var sys = raw != null ? raw.TryCast<LifeSuppSystemType>() : null;
-            return sys != null && sys.IsActive;
+            return (sys != null && sys.IsActive) || SubmergedO2Active();
         }
         private static bool CommsActive(ShipStatus s) {
             var raw = GetRaw(s, SystemTypes.Comms);
@@ -421,7 +497,7 @@ namespace UsefulTORStuff {
                 try {
                     var sab = __instance.sabSystem;
                     if (sab == null) return;
-                    __result = !sab.AnyActive && !__instance.DoorsPreventingSabotage && !SiphonerBlockActive();
+                    __result = !sab.AnyActive && !SubmergedO2Active() && !__instance.DoorsPreventingSabotage && !SiphonerBlockActive();
                 } catch { }
             }
         }
@@ -437,7 +513,8 @@ namespace UsefulTORStuff {
 
                     if (!gameInit) { ResetAll(); gameInit = true; }
 
-                    bool active = sab.AnyActive;
+                    // Submerged's O2 (system 130) is not guaranteed to sit in the shared sabotage list
+                    bool active = sab.AnyActive || SubmergedO2Active();
                     if (active && !prevActive) {
                         // A sabotage just started -> count the use of the activated type (global) and,
                         // on the host, stamp the configured duration onto the deadly sabotage.
@@ -493,7 +570,7 @@ namespace UsefulTORStuff {
                     for (int i = 0; i < rooms.Length; i++) {
                         var r = rooms[i];
                         if (r == null || r.special == null) continue;
-                        if (!TryMap(r.room, out SabType t)) continue;
+                        if (!TryMapRoom(r, out SabType t)) continue;
                         float cm = CurrentMax(t);
                         // perc = remaining cooldown fraction (0 = ready, 1 = full cooldown).
                         float perc = cm <= 0f ? 0f : Mathf.Clamp01(timer[(int)t] / cm);
@@ -550,6 +627,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
         private static class GameJoinedPatch {
             private static void Postfix() {
+                roomTypeCache.Clear();
                 for (int i = 0; i < N; i++) lastShownSecs[i] = -1;
                 for (int i = 0; i < N; i++) usage[i] = 0;
                 gameInit = false;
