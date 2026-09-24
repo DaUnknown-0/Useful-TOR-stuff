@@ -74,6 +74,7 @@ namespace UsefulTORStuff {
             if (panelRoot != null && !LobbyScreen.Exists) Close();
 
             bool show = ShouldShow() && !SettingsOverlayView.OverlayOpen();
+            PublishNextFreeRow(show);
             if (show && lobbyButton == null) BuildLobbyButton();
             if (lobbyButton == null) return;
             if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
@@ -82,6 +83,19 @@ namespace UsefulTORStuff {
             // One row above the newcomer button while that one is shown, in its place otherwise.
             if (lobbyButtonRect != null)
                 lobbyButtonRect.anchoredPosition = new Vector2(28, NewcomerShieldUI.ButtonShown ? 138 : 84);
+        }
+
+        /*
+         * Other mods' lobby buttons (UC's colour grant) sit in the same bottom-left column. They read
+         * this key to land one row above whatever UTS shows right now instead of on a fixed row that
+         * one of these buttons may already occupy. Rows are 54 apart: 46 high plus an 8 gap.
+         */
+        public const string LobbyNextFreeRowKey = "UTS.LobbyButtons.NextFreeY";
+
+        [HideFromIl2Cpp]
+        private static void PublishNextFreeRow(bool earlyDeathShown) {
+            int rows = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (earlyDeathShown ? 1 : 0);
+            try { AppDomain.CurrentDomain.SetData(LobbyNextFreeRowKey, 84f + 54f * rows); } catch { }
         }
 
         [HideFromIl2Cpp]
