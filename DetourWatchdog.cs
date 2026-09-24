@@ -92,6 +92,21 @@
  * players - it reads no runtimeconfig and sets no environment - so it stays a per-player launch
  * option.
  *
+ * WHAT CHANGED ON 2026-09-24: DETECTION ONLY
+ * -------------------------------------------
+ * Three hard crashes in one afternoon (round start at 17:01, two lobby joins at 18:03 / 18:04) each
+ * came seconds after "[DetourWatchdog] repaired 2 method(s) (...): repair #3 this session, of which 1
+ * followed a DETECTED drop". The Windows event log names coreclr.dll+0x1C4572; with Microsoft's
+ * symbols that address is EEPolicy::HandleFatalError, i.e. the runtime killing the process, and the
+ * ORIGINAL exception on the stack was an EXECUTE violation at an address in no module (twice) - a jump
+ * into code that is no longer there. That is what a re-detour does to a caller still bound to the
+ * previous wrapper or trampoline: Unpatch + Patch retires the old native code while tiered code may
+ * still jump to it. So the watchdog no longer writes code at all by default: the canary keeps
+ * DETECTING and logging drops (evidence for the tiering bug), the lobby-entry / round-start / canary
+ * repairs only run with the new, separately named key RepairPatches (default off). The key is new on
+ * purpose: Config.Bind keeps the stored value of an existing key, so flipping the default of
+ * "Enabled" would have left every existing install repairing.
+ *
  * WHY THIS LIVES IN UsefulTORStuff, AND WHY IT IS NOT AN IN-GAME OPTION
  * --------------------------------------------------------------------
  * A forced regeneration rebuilds the wrapper from the WHOLE registry, so healing here also restores
@@ -118,7 +133,9 @@ namespace UsefulTORStuff {
         private const float LegacyInterval = 5f;   // shipped once, measured too slow - see Bind()
 
         private static ConfigEntry<bool> enabled;
+        private static ConfigEntry<bool> repairPatches;
         private static ConfigEntry<float> checkInterval;
+        private static bool Repair => repairPatches?.Value == true;
 
         // Bumped by the canary postfix below. The probe reads it, calls the method, reads it again.
         private static long canaryTicks;
@@ -159,8 +176,12 @@ namespace UsefulTORStuff {
         // ────────────────────────────────────────────────────────────────────────────────────
         public static void Bind(ConfigFile config) {
             enabled = config.Bind("DetourWatchdog", "Enabled", true,
-                "Detect and repair Harmony patches that stop executing mid-session. Client-local, " +
-                "no effect on other players. Turn off only to reproduce the underlying bug.");
+                "Detect (and log) Harmony patches that stop executing mid-session. Since 1.4.7.7 this " +
+                "only detects; repairing is the separate RepairPatches switch. Client-local.");
+            repairPatches = config.Bind("DetourWatchdog", "RepairPatches", false,
+                "Diagnostics only: repair a lost patch by re-detouring the method (Unpatch + Patch). " +
+                "Linked to hard crashes on 2026-09-24 (coreclr fatal error seconds after the third " +
+                "repair of a session) - leave off.");
             // 0.5s, not the 5s this started with. Measured 2026-08-17: a repair at lobby entry held
             // for less than the gap to the next check, because getRoleInfoForPlayer is called
             // constantly and drops its patches again within seconds of every repair - the log reads
@@ -214,7 +235,8 @@ namespace UsefulTORStuff {
 
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[DetourWatchdog] armed, watching {watched.Count} method(s), " +
-                    $"checking every {checkInterval?.Value ?? 5f:0.#}s.");
+                    $"checking every {checkInterval?.Value ?? 5f:0.#}s, " +
+                    (Repair ? "REPAIRING lost patches (RepairPatches = true)." : "detection only (no code writes)."));
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[DetourWatchdog] initialize failed: {e}");
             }
@@ -300,6 +322,18 @@ namespace UsefulTORStuff {
                 }
                 if (canaryTicks != before) return;   // the postfix ran: nothing is wrong
 
+                // Detection only (default since 2026-09-24): log the drop, never write code.
+                if (!Repair) {
+                    if (Time.time < nextCanaryHeal) return;
+                    nextCanaryHeal = Time.time + CanaryHealCooldown;
+                    detectedDrops++;
+                    if (detectedDrops <= 10 || detectedDrops % 25 == 0)
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[DetourWatchdog] drop detected on {watched[0].Label} (#{detectedDrops} this session) - " +
+                            "not repaired (RepairPatches is off).");
+                    return;
+                }
+
                 // A real drop: the method was called and its registered postfix did not execute. This
                 // is the one condition worth a native write mid-session, and even then not more often
                 // than the cooldown allows - see the header for what a repair can cost.
@@ -339,7 +373,7 @@ namespace UsefulTORStuff {
         // Repairs the two methods whose failure is known to hurt, regardless of detection. Used only
         // at round boundaries, where a rebuild is invisible; everything else is repaired on demand.
         private static void HealCritical(string reason) {
-            if (healer == null) return;
+            if (healer == null || !Repair) return;
             var sw = Stopwatch.StartNew();
             int ok = 0;
             for (int i = 0; i < watched.Count && i < 2; i++)
