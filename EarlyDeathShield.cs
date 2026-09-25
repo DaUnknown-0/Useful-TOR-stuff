@@ -78,6 +78,8 @@ namespace UsefulTORStuff {
         private const byte RpcId = UsefulTORStuffPlugin.EarlyDeathShieldRpcId;
         private const byte SubSetShields = 0;   // count, ids...
         private const byte SubClear      = 1;
+        private const byte SubStats      = 2;   // host -> all: the lobby statistics (read-only viewer)
+        private const byte SubRequest    = 3;   // anyone -> host: please send the statistics now
 
         public static bool Active => shielded.Count > 0;
         public static bool IsShielded(byte playerId) => shielded.Contains(playerId);
@@ -223,6 +225,129 @@ namespace UsefulTORStuff {
             DeathTimeHistory.SetOverride(v.Code, v.Name, DeathTimeHistory.OverrideAuto);
         }
 
+        // ====================================================================
+        // Statistics for everyone (User 25.09.: every player can look at everyone's numbers in the
+        // lobby, their own and the average included). Only the host's records decide the shield,
+        // so the viewer shows exactly those: the host sends its evaluation, nobody shows local data.
+        // ====================================================================
+        public sealed class StatsRow {
+            public byte PlayerId;
+            public int Rounds;
+            public float Mean;
+            public bool Qualified;
+            public bool Shield;
+            // host override, shown openly to everyone (User 25.09.): DeathTimeHistory.OverrideAuto/On/Off
+            public int Override;
+        }
+
+        public sealed class StatsTable {
+            public readonly List<StatsRow> Rows = new List<StatsRow>();
+            public bool HasAverage;
+            public float LobbyMean;
+            public int ThresholdPercent;
+            public int MinRounds;
+            public float ReceivedAt;
+        }
+
+        /// <summary>Latest statistics from the host (the host itself fills it when sending).</summary>
+        public static StatsTable LastStats { get; private set; }
+        /// <summary>Autotest: Beispielzahlen fuer alle anwesenden Figuren (Freeplay-Dummies).</summary>
+        public static void DiagSampleStats() {
+            var t = new StatsTable { HasAverage = true, ThresholdPercent = 60, MinRounds = 5, ReceivedAt = Time.realtimeSinceStartup };
+            float[] means = { 0.62f, 0.31f, 0.78f, 0.55f, 0.47f, 0.69f, 0.24f, 0.58f };
+            int i = 0;
+            foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
+                if (p == null) continue;
+                bool few = i == 5;
+                int ov = i == 3 ? DeathTimeHistory.OverrideOn : i == 1 ? DeathTimeHistory.OverrideOff : DeathTimeHistory.OverrideAuto;
+                bool auto = means[i % means.Length] < 0.3f && !few;
+                t.Rows.Add(new StatsRow { PlayerId = p.PlayerId, Rounds = few ? 2 : 6 + i * 2, Mean = means[i % means.Length],
+                                          Qualified = !few, Override = ov,
+                                          Shield = ov == DeathTimeHistory.OverrideOn || (ov == DeathTimeHistory.OverrideAuto && auto) });
+                i++;
+            }
+            var q = t.Rows.Where(r => r.Qualified).ToList();
+            t.LobbyMean = q.Count > 0 ? q.Average(r => r.Mean) : 0f;
+            LastStats = t;
+        }
+
+        /// <summary>New lobby: numbers of the last one are not valid any more.</summary>
+        public static void ClearStats() { LastStats = null; lastStatsKey = "?"; }
+        private static string lastStatsKey = "?";
+        private static bool statsRequested;
+
+        public static StatsTable TableOf(Evaluation ev) {
+            var t = new StatsTable {
+                HasAverage = ev.HasAverage, LobbyMean = ev.LobbyMean,
+                ThresholdPercent = ev.ThresholdPercent, MinRounds = ev.MinRounds,
+                ReceivedAt = Time.realtimeSinceStartup
+            };
+            foreach (var r in ev.Rows)
+                t.Rows.Add(new StatsRow { PlayerId = r.PlayerId, Rounds = r.Stat.Rounds, Mean = r.Stat.Mean,
+                                          Qualified = r.Qualified, Shield = r.Shield, Override = r.Override });
+            return t;
+        }
+
+        private static string StatsKey(Evaluation ev) =>
+            string.Join(";", ev.Rows.Select(r => $"{r.PlayerId}:{r.Stat.Rounds}:{Mathf.RoundToInt(r.Stat.Mean * 1000f)}:{(r.Qualified ? 1 : 0)}{(r.Shield ? 1 : 0)}{r.Override}"))
+            + $"|{(ev.HasAverage ? Mathf.RoundToInt(ev.LobbyMean * 1000f) : -1)}|{ev.ThresholdPercent}|{ev.MinRounds}";
+
+        private static void SendStats(Evaluation ev) {
+            try {
+                MessageWriter w = UTSRpc.Begin(RpcId);
+                w.Write(SubStats);
+                int n = Math.Min(ev.Rows.Count, 255);
+                w.Write((byte)n);
+                for (int i = 0; i < n; i++) {
+                    var r = ev.Rows[i];
+                    w.Write(r.PlayerId);
+                    w.Write((byte)Math.Min(r.Stat.Rounds, 255));
+                    w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt(r.Stat.Mean * 1000f), 0, 1000));
+                    w.Write((byte)((r.Qualified ? 1 : 0) | (r.Shield ? 2 : 0)
+                                   | (r.Override == DeathTimeHistory.OverrideOn ? 4 : 0)
+                                   | (r.Override == DeathTimeHistory.OverrideOff ? 8 : 0)));
+                }
+                w.Write(ev.HasAverage);
+                w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt(ev.LobbyMean * 1000f), 0, 1000));
+                w.Write((byte)ev.ThresholdPercent);
+                w.Write((byte)Math.Min(ev.MinRounds, 255));
+                AmongUsClient.Instance.FinishRpcImmediately(w);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[EarlyDeathShield] stats send failed: {e.Message}");
+            }
+            LastStats = TableOf(ev);
+        }
+
+        /// <summary>Viewer opened: ask the host for fresh numbers (the host answers within half a second).</summary>
+        public static void RequestStats() {
+            if (AmHost()) { statsRequested = true; nextTick = 0f; return; }
+            try {
+                MessageWriter w = UTSRpc.Begin(RpcId);
+                w.Write(SubRequest);
+                AmongUsClient.Instance.FinishRpcImmediately(w);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[EarlyDeathShield] stats request failed: {e.Message}");
+            }
+        }
+
+        private static StatsTable ReadStats(MessageReader reader) {
+            var t = new StatsTable { ReceivedAt = Time.realtimeSinceStartup };
+            int n = reader.ReadByte();
+            for (int i = 0; i < n; i++) {
+                var r = new StatsRow { PlayerId = reader.ReadByte(), Rounds = reader.ReadByte(), Mean = reader.ReadUInt16() / 1000f };
+                byte f = reader.ReadByte();
+                r.Qualified = (f & 1) != 0; r.Shield = (f & 2) != 0;
+                r.Override = (f & 4) != 0 ? DeathTimeHistory.OverrideOn
+                           : (f & 8) != 0 ? DeathTimeHistory.OverrideOff : DeathTimeHistory.OverrideAuto;
+                t.Rows.Add(r);
+            }
+            t.HasAverage = reader.ReadBoolean();
+            t.LobbyMean = reader.ReadUInt16() / 1000f;
+            t.ThresholdPercent = reader.ReadByte();
+            t.MinRounds = reader.ReadByte();
+            return t;
+        }
+
         // ---- RPC ----
         private static void SendSetShields(List<byte> ids) {
             try {
@@ -261,6 +386,14 @@ namespace UsefulTORStuff {
                     }
                     case SubClear:
                         if (UTSRpc.RequireHost("EarlyDeathShield.Clear")) ApplyClear();
+                        break;
+                    case SubStats: {
+                        var table = ReadStats(reader);
+                        if (UTSRpc.RequireHost("EarlyDeathShield.Stats")) LastStats = table;
+                        break;
+                    }
+                    case SubRequest:
+                        if (AmHost()) { statsRequested = true; nextTick = 0f; }
                         break;
                 }
             } catch (Exception e) {
@@ -387,14 +520,22 @@ namespace UsefulTORStuff {
 
         // Forces the next preview tick to resend even an unchanged list - after an override click
         // the host wants to see the outline change at once, not half a second later.
-        public static void RefreshPreview() { lastPreviewKey = "?"; nextTick = 0f; }
+        public static void RefreshPreview() { lastPreviewKey = "?"; lastStatsKey = "?"; nextTick = 0f; }
 
         private static void LobbyPreviewTick() {
             try {
                 var ids = new List<byte>();
                 if (IsEnabled()) {
-                    foreach (var r in Evaluate().Rows)
+                    var ev = Evaluate();
+                    foreach (var r in ev.Rows)
                         if (r.Shield) ids.Add(r.PlayerId);
+                    // statistics for everyone's viewer: on change, and right away when somebody asks
+                    string sk = StatsKey(ev);
+                    if (sk != lastStatsKey || statsRequested) {
+                        lastStatsKey = sk;
+                        statsRequested = false;
+                        SendStats(ev);
+                    }
                 }
                 ids.Sort();
                 string key = string.Join(",", ids);

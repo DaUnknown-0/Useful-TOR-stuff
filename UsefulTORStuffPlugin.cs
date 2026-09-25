@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.7.8";
+    public const string PluginVersion = "1.4.7.9";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -161,6 +161,8 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Read-only tracer for the decon-door / emergency-meeting reports; see DeconDiag.cs for
         // what each log line proves. The patch is attribute-based (PatchAll below).
         DeconDiag.Bind(Config);
+        EarlyDeathShieldUI.DiagViewer = Config.Bind("Diagnostics", "EarlyDeath Viewer Test", false,
+            "Autotest only: opens the early-death statistics viewer in freeplay with sample numbers.");
 
         // Repair path for Harmony patches that stop executing mid-session (see DetourWatchdog.cs for
         // the measurements). Only the config entries are bound here; arming happens after PatchAll,
