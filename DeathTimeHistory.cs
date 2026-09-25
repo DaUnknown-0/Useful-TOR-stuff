@@ -10,8 +10,8 @@
  * rolling history per player that the EarlyDeathShield reads to decide who keeps dying early.
  *
  * WHAT ONE ROUND CONTRIBUTES
- * One number per player: the SHARE of the round's gameplay time they survived before somebody
- * else killed them (0.0 = killed right after the intro, 1.0 = alive at the end). A share and not
+ * One number per player: the SHARE of the round's gameplay time they survived before they died
+ * (0.0 = killed right after the intro, 1.0 = alive at the end). A share and not
  * seconds, because rounds differ wildly in length: dying after two minutes of a three minute round
  * is a normal round, after two minutes of a fifteen minute round it is an early death.
  *
@@ -20,11 +20,17 @@
  * between "gameplaySeconds" and "meetingSeconds".
  *
  * WHICH DEATHS COUNT
- * Only kills by somebody else (the user's choice): TOR's GameHistory entry must name a killer who
- * is not the victim, with a reason of Kill, Guess, Bomb, Arson or WitchExile. A round that ended in
- * a way that says nothing about being hunted (voted out, a misfire, a failed guess, a lover or
- * lawyer suicide, a shift gone wrong, a disconnect, an unexplained death) is left out for that
- * player entirely - counting it as "survived" would be as wrong as counting it as "killed".
+ * Every death the player did not cause themselves (the user's rule, 2026-09-25): kills, correct
+ * guesses, Bomber, Arsonist and Witch curse by somebody else, being voted out, and a Lover or Lawyer
+ * dying along with their partner or client. Left out are the self-inflicted ones - a Sheriff or
+ * Thief misfire, a failed guess, a bomb of one's own, a shift gone wrong (TOR names the victim as
+ * their own killer for all of these) - plus disconnects and deaths without a known killer. A left
+ * out round is skipped for that player entirely: counting it as "survived" would be as wrong as
+ * counting it as "killed". (Until v1.4.9.1 being voted out was left out as well.)
+ *
+ * A player can own several GameHistory entries (TOR adds one per MurderPlayer, even on somebody
+ * already exiled - seen 2026-09-25: an exile followed 12 s later by a "Kill" without a killer).
+ * The FIRST entry is the actual death, so that one decides.
  *
  * GameHistory is read in an OnGameEnd PREFIX: TOR's own OnGameEnd postfix ends with
  * resetVariables(), which replaces the list (see project memory "TrackerExport-Schnappschuss").
@@ -298,18 +304,27 @@ namespace UsefulTORStuff {
             } catch { return null; }
         }
 
-        private static bool IsForeignKill(DeadPlayer dp) {
-            if (dp.killerIfExisting == null || dp.player == null) return false;
-            if (dp.killerIfExisting.PlayerId == dp.player.PlayerId) return false;   // misfire, failed guess
+        private static bool CountsAsDeath(DeadPlayer dp) {
+            if (dp.player == null) return false;
             switch (dp.deathReason) {
+                // No killer by nature (TOR records exiles with none), never self-inflicted.
+                case DeadPlayer.CustomDeathReason.Exile:
+                    return true;
+                // Dying with the partner or client: TOR records the suicide with the victim as killer
+                // (or a Guesser), but the cause lies with whoever got the partner killed or voted out.
+                case DeadPlayer.CustomDeathReason.LoverSuicide:
+                case DeadPlayer.CustomDeathReason.LawyerSuicide:
+                    return true;
                 case DeadPlayer.CustomDeathReason.Kill:
                 case DeadPlayer.CustomDeathReason.Guess:
                 case DeadPlayer.CustomDeathReason.Bomb:
                 case DeadPlayer.CustomDeathReason.Arson:
                 case DeadPlayer.CustomDeathReason.WitchExile:
-                    return true;
+                    // Sheriff/Thief misfire, failed guess, own bomb: the victim is their own killer.
+                    // No killer at all: nothing reliable to say.
+                    return dp.killerIfExisting != null && dp.killerIfExisting.PlayerId != dp.player.PlayerId;
                 default:
-                    return false;   // Exile, Shift, Lover/Lawyer suicide, Disconnect
+                    return false;   // Shift gone wrong (self-inflicted), Disconnect
             }
         }
 
@@ -343,14 +358,14 @@ namespace UsefulTORStuff {
             var list = TorDeadPlayers();
             if (list != null)
                 foreach (var dp in list)
-                    if (dp?.player != null) deaths[dp.player.PlayerId] = dp;
+                    if (dp?.player != null && !deaths.ContainsKey(dp.player.PlayerId)) deaths[dp.player.PlayerId] = dp;
 
             EnsureLoaded();
             int killed = 0, survived = 0, skipped = 0;
             foreach (var kv in participants) {
                 float share;
                 if (deaths.TryGetValue(kv.Key, out var dp)) {
-                    if (!IsForeignKill(dp)) { skipped++; continue; }
+                    if (!CountsAsDeath(dp)) { skipped++; continue; }
                     share = (float)Math.Clamp(GameplayAt(dp.timeOfDeath) / length, 0.0, 1.0);
                     killed++;
                 } else {
@@ -369,7 +384,7 @@ namespace UsefulTORStuff {
             roundStart = null;   // one record per round, even if OnGameEnd fires twice
 
             UsefulTORStuffPlugin.Logger?.LogInfo(
-                $"[DeathTimeHistory] round recorded ({length:F0}s gameplay): {killed} killed, "
+                $"[DeathTimeHistory] round recorded ({length:F0}s gameplay): {killed} died, "
                 + $"{survived} survived, {skipped} left out.");
         }
     }

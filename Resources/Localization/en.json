@@ -1100,7 +1100,7 @@
   "uts.earlydeath.vote_blocked": "This player often dies early and cannot be voted out before the first meeting is over.",
   "uts.earlydeath.lobby_button": "Early-death shield ({0})",
   "uts.earlydeath.title": "Early-death shield",
-  "uts.earlydeath.subtitle": "Players who get killed much earlier than the lobby average cannot be killed before the first meeting. Host overrides are saved.",
+  "uts.earlydeath.subtitle": "Players who die much earlier than the lobby average (killed or voted out, self-inflicted deaths aside) cannot be killed before the first meeting. Host overrides are saved.",
   "uts.earlydeath.average": "Lobby average: survives {0}% of a round. Shield below {1}% of that ({2}%).",
   "uts.earlydeath.no_average": "No lobby average yet: needs {0} players with at least {1} recorded rounds.",
   "uts.earlydeath.stats": "{0} rounds, survives {1}%",

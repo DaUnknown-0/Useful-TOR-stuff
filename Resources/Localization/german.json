@@ -1088,7 +1088,7 @@
  "uts.earlydeath.vote_blocked": "Dieser Spieler stirbt oft früh und kann erst nach dem ersten Meeting rausgewählt werden.",
  "uts.earlydeath.lobby_button": "Frühtod-Schutz ({0})",
  "uts.earlydeath.title": "Frühtod-Schutz",
- "uts.earlydeath.subtitle": "Wer deutlich früher als der Lobby-Schnitt gekillt wird, kann vor dem ersten Meeting nicht getötet werden. Host-Overrides bleiben gespeichert.",
+ "uts.earlydeath.subtitle": "Wer deutlich früher als der Lobby-Schnitt stirbt (gekillt oder rausgewählt, selbstverschuldete Tode ausgenommen), kann vor dem ersten Meeting nicht getötet werden. Host-Overrides bleiben gespeichert.",
  "uts.earlydeath.average": "Lobby-Schnitt: überlebt {0}% einer Runde. Schutz unter {1}% davon ({2}%).",
  "uts.earlydeath.no_average": "Noch kein Lobby-Schnitt: braucht {0} Spieler mit mindestens {1} erfassten Runden.",
  "uts.earlydeath.stats": "{0} Runden, überlebt {1}%",
