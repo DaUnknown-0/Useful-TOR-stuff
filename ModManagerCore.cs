@@ -25,9 +25,10 @@ namespace UsefulTORStuff
         public Func<string> GetReleaseNotes;
         // Stößt einen erneuten GitHub-Release-Check an (beim Öffnen des Mod Managers).
         public Action TriggerCheck;
-        // Test/Stable-Kanalwechsel (für den "Testversionen anzeigen"-Schalter). HasChannelRelease(true)
-        // = es gibt einen Stable-Release (vX.Y.Z), (false) = es gibt einen Test-Release (vX.Y.Z.W).
-        // TriggerChannelSwitch(stable) lädt den neusten Release des Kanals erzwungen (auch als Downgrade).
+        // Test/Stable-Kanalwechsel (für den "Testversionen anzeigen"-Schalter). HasChannelRelease(stable)
+        // = der Wechsel würde eine ANDERE Version installieren; TriggerChannelSwitch(stable) installiert
+        // das Kanalziel (Stable: neuster Stable, auch als Downgrade; Test: neuster Release beider Kanäle,
+        // also nie hinter einen neueren Stable zurück).
         public Func<bool, bool> HasChannelRelease;
         public Action<bool> TriggerChannelSwitch;
         // True when the mod's updater successfully fetched its GitHub release list. Lets the UI show

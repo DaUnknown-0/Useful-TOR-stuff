@@ -25,8 +25,10 @@
  *   Pinned     entries with a PinnedVersion (Submerged 2025.1.30) are only offered when the host runs
  *              exactly that version, and only when their RequiresGuid (Reactor) is loaded locally.
  *
- * Version comparison always goes through UsefulTORStuffUpdater.SemCompare: plain Version.CompareTo
- * would rank the prerelease 1.0.0.4 above the finalized 1.0.0 and invert half of these decisions.
+ * Version comparison always goes through UsefulTORStuffUpdater.SemCompare, the one place that defines
+ * the order of the tags: a test version vX.Y.Z.W follows its stable vX.Y.Z (1.4.11 < 1.4.11.1 < 1.4.12).
+ * Until 2026-09-25 it ranked the stable above its test versions, so a host on 1.4.11.1 counted as a
+ * downgrade for a guest on 1.4.11.
  */
 
 using System;

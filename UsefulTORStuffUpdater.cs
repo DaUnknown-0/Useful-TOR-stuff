@@ -459,34 +459,22 @@ namespace UsefulTORStuff {
             })));
         }
 
-        // ---- Channel awareness + semantic version comparison ----
-        // Semantic comparison where a STABLE vX.Y.Z SUPERSEDES its prereleases vX.Y.Z.W (unlike
-        // System.Version, which wrongly orders 1.0.0.4 > 1.0.0). >0 means a is newer than b: compare the
-        // X.Y.Z base first; on a tie the finalized stable beats any prerelease, and among prereleases the
-        // higher 4th part wins.
+        // Order of the tags as they are really cut: a test version vX.Y.Z.W FOLLOWS the stable vX.Y.Z
+        // it builds on and comes before vX.Y.(Z+1), e.g. 1.4.9 < 1.4.9.1 < 1.4.9.2 < 1.4.10 (checked
+        // against all tags of the six mods on 2026-09-25: never a test version before its stable). A
+        // missing 4th part counts as 0. >0 means a is newer than b. Until 2026-09-25 a stable was taken
+        // to supersede its test versions, which made "test versions ON" downgrade every mod whose newest
+        // release was a stable (UC 1.2.7 -> 1.2.6.3) and hid 1.4.11.1 from a user on 1.4.11.
         [HideFromIl2Cpp]
         public static int SemCompare(Version a, Version b) {
             int c = new Version(a.Major, System.Math.Max(0, a.Minor), System.Math.Max(0, a.Build)).CompareTo(new Version(b.Major, System.Math.Max(0, b.Minor), System.Math.Max(0, b.Build)));
             if (c != 0) return c;
-            bool aPre = a.Revision > 0, bPre = b.Revision > 0;
-            if (aPre && bPre) return a.Revision.CompareTo(b.Revision);
-            if (aPre == bPre) return 0;
-            return aPre ? -1 : 1; // prerelease older than the finalized stable of the same base
+            return System.Math.Max(0, a.Revision).CompareTo(System.Math.Max(0, b.Revision));
         }
 
-        // True when `target` is a version the user should actually install (not just "semantically newer").
-        // On the test channel, stable vX.Y.Z for a user already on prerelease vX.Y.Z.W is a channel switch,
-        // not an update — the base version did not advance. Channel switches go through TriggerChannelSwitch.
+        // True when `target` is newer than the running build (see SemCompare for the order).
         [HideFromIl2Cpp]
-        private static bool IsActualUpdate(Version target, Version current) {
-            if (SemCompare(target, current) <= 0) return false;
-            if (VersionDisplay.ShowTestVersions() && current.Revision > 0 && target.Revision <= 0) {
-                var tBase = new Version(target.Major, System.Math.Max(0, target.Minor), System.Math.Max(0, target.Build));
-                var cBase = new Version(current.Major, System.Math.Max(0, current.Minor), System.Math.Max(0, current.Build));
-                if (tBase.CompareTo(cBase) <= 0) return false;
-            }
-            return true;
-        }
+        private static bool IsActualUpdate(Version target, Version current) => SemCompare(target, current) > 0;
 
         // Channel from the TAG FORMAT: stable = vX.Y.Z (Version.Revision <= 0), test = vX.Y.Z.W (>0).
         [HideFromIl2Cpp]
@@ -503,23 +491,31 @@ namespace UsefulTORStuff {
             return null;
         }
 
+        // True when switching to this channel would install a DIFFERENT version than the running one. The
+        // Mod Manager counts and switches only these mods, so a mod that is already on its channel target
+        // neither shows up in the confirmation nor holds up the switch.
         [HideFromIl2Cpp]
-        public bool HasChannelRelease(bool stable) => LatestInChannel(stable) != null;
+        public bool HasChannelRelease(bool stable) {
+            var r = ChannelTarget(stable);
+            return r != null && SemCompare(r.Version, UsefulTORStuffPlugin.Version) != 0;
+        }
 
         // The update target follows the shared "show test versions" toggle. OFF -> newest STABLE only.
-        // ON -> newest PRERELEASE when its base is >= latest stable base (test channel target); only use
-        // stable when stable base is strictly higher (genuine new stable beyond any prerelease).
+        // ON -> the newest release of both channels (a stable newer than every test version wins).
         [HideFromIl2Cpp]
-        public GithubRelease UpdateTarget() {
+        public GithubRelease UpdateTarget() => ChannelTarget(!VersionDisplay.ShowTestVersions());
+
+        // The release a channel points at. Stable: the newest stable. Test: the newest release of BOTH
+        // channels, because a test channel must never fall back behind a newer stable.
+        [HideFromIl2Cpp]
+        public GithubRelease ChannelTarget(bool stable) {
             if (Releases == null) return null;
-            var stable = LatestInChannel(true);
-            if (!VersionDisplay.ShowTestVersions()) return stable;
+            var st = LatestInChannel(true);
+            if (stable) return st;
             var pre = LatestInChannel(false);
-            if (pre == null) return stable;
-            if (stable == null) return pre;
-            var stableBase = new Version(stable.Version.Major, System.Math.Max(0, stable.Version.Minor), System.Math.Max(0, stable.Version.Build));
-            var preBase = new Version(pre.Version.Major, System.Math.Max(0, pre.Version.Minor), System.Math.Max(0, pre.Version.Build));
-            return stableBase.CompareTo(preBase) > 0 ? stable : pre;
+            if (pre == null) return st;
+            if (st == null) return pre;
+            return SemCompare(pre.Version, st.Version) > 0 ? pre : st;
         }
 
         // Callback-Methoden für ModManagerRegistry: Prüft ob ein Update verfügbar ist.
@@ -543,11 +539,11 @@ namespace UsefulTORStuff {
                 StartDownloadRelease(t, managerMode: true);
         }
 
-        // Force-install the latest release of the given channel (deliberate channel switch, may be an
-        // up- OR downgrade). Only downloads if it is REALLY a different version than the running build.
+        // Install the channel's target (see ChannelTarget), deliberately also as a downgrade (test -> stable).
+        // Only downloads when it is REALLY a different version than the running build.
         [HideFromIl2Cpp]
         public void TriggerChannelSwitch(bool stable) {
-            var r = LatestInChannel(stable);
+            var r = ChannelTarget(stable);
             if (r != null && SemCompare(r.Version, UsefulTORStuffPlugin.Version) != 0)
                 StartDownloadRelease(r, managerMode: true);
         }
