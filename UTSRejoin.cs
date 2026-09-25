@@ -220,7 +220,10 @@ namespace UsefulTORStuff {
             }));
 
             var text = button.transform.GetComponentInChildren<TMPro.TMP_Text>();
-            string label = UTSLocalization.Tr("uts.modsync.rejoin_button", code);
+            // Streamer mode hides the code like the vanilla lobby screen does (TOR shows "****" there).
+            bool streamer = false;
+            try { streamer = AmongUs.Data.DataManager.Settings.Gameplay.StreamerMode; } catch { }
+            string label = UTSLocalization.Tr("uts.modsync.rejoin_button", streamer ? "######" : code);
             // The label is applied through a one-frame lerp because Among Us rewrites the cloned
             // button's text on its own first frame (same trick the updaters use).
             StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(label))));
