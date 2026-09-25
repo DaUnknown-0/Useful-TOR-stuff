@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.9";
+    public const string PluginVersion = "1.4.9.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -143,6 +143,7 @@ public class UsefulTORStuffPlugin : BasePlugin
             + "host only sends which mod it runs, never where to get it. Nothing is ever downloaded "
             + "without an explicit click.");
         UTSRejoin.Bind(Config);
+        VipDeathScream.Bind(Config);
 
         MinDropDistance = Config.Bind(
             "Bloody", "MinDropDistance", 0.35f,
