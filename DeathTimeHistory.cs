@@ -192,11 +192,23 @@ namespace UsefulTORStuff {
                 var client = AmongUsClient.Instance;
                 bool inRound = client != null && ShipStatus.Instance != null && client.IsGameStarted;
                 if (!inRound) {
-                    if (roundSeen) ResetRound();
+                    // Only mark the round as left. The clock itself must survive: the game state flips to
+                    // Ended BEFORE OnGameEnd runs, and clearing roundStart here made FinishRound bail out
+                    // silently - not one round was ever recorded (playtest 2026-09-25, 6 players, Polus).
+                    // The next round start clears it instead.
+                    if (roundSeen) {
+                        roundSeen = false;
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[DeathTimeHistory] round left (state {client?.GameState}, clock {(roundStart != null ? "running" : "not started")}).");
+                    }
                     return;
                 }
 
-                if (!roundSeen) { roundSeen = true; roundSeenAt = Time.realtimeSinceStartup; }
+                if (!roundSeen) {
+                    ResetRound();
+                    roundSeen = true;
+                    roundSeenAt = Time.realtimeSinceStartup;
+                }
 
                 if (roundStart == null) {
                     if (introOverSeen) StartRound(introOverAt);
@@ -223,6 +235,8 @@ namespace UsefulTORStuff {
                 if (string.IsNullOrEmpty(code)) continue;
                 participants[p.PlayerId] = new Participant { Code = code, Name = p.Data.PlayerName };
             }
+            UsefulTORStuffPlugin.Logger?.LogInfo(
+                $"[DeathTimeHistory] round clock started ({(introOverSeen ? "intro end" : "fallback")}), {participants.Count} participant(s).");
         }
 
         private static void ResetRound() {
@@ -309,7 +323,11 @@ namespace UsefulTORStuff {
         }
 
         private static void FinishRound() {
-            if (roundStart == null || participants.Count == 0) return;
+            if (roundStart == null || participants.Count == 0) {
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[DeathTimeHistory] round not recorded: clock {(roundStart != null ? "running" : "not started")}, {participants.Count} participant(s).");
+                return;
+            }
             if (HideNSeek.isHideNSeekGM || AntiStartKill.IsPropHuntGM()) return;   // deaths are the game there
 
             DateTime end = DateTime.UtcNow;
