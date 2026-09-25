@@ -65,6 +65,26 @@ namespace UsefulTORStuff {
         // short enough that somebody who got better stops being "the one who dies early".
         public const int Window = 20;
 
+        // Sessions (user, 2026-09-25): the numbers belong to one gaming evening.
+        // - A session is alive while its newest round (any player) ended at most SessionGap ago.
+        //   Then the rounds of the last MaxAge count; a restart or a lobby change in between keeps them.
+        // - Once the newest round is older than SessionGap, the evening is over: the stats read as
+        //   empty, and the next recorded round starts from zero (older rounds are dropped, the host
+        //   overrides stay). Loading a file whose newest round is that old drops its rounds right away.
+        public static readonly TimeSpan SessionGap = TimeSpan.FromMinutes(120);
+        public static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
+        private static DateTime newestRound = DateTime.MinValue;
+
+        private static bool SessionOver() =>
+            newestRound == DateTime.MinValue || DateTime.UtcNow - newestRound > SessionGap;
+
+        private static int DropAllRounds() {
+            int n = 0;
+            foreach (var e in entries.Values) { n += e.Shares.Count; e.Shares.Clear(); }
+            newestRound = DateTime.MinValue;
+            return n;
+        }
+
         // Rounds shorter than this say nothing about anybody (an instant sabotage win, a host who
         // ended the game from the lobby menu).
         private const double MinRoundSeconds = 30;
@@ -76,7 +96,12 @@ namespace UsefulTORStuff {
         private sealed class Entry {
             public string Name = "";
             public int Override;
-            public readonly List<float> Shares = new List<float>();
+            public readonly List<Round> Shares = new List<Round>();
+        }
+
+        private struct Round {
+            public float Share;
+            public DateTime EndUtc;   // when the round ended
         }
 
         public struct Stat {
@@ -94,9 +119,11 @@ namespace UsefulTORStuff {
 
         public static Stat StatOf(string code) {
             EnsureLoaded();
-            if (string.IsNullOrEmpty(code) || !entries.TryGetValue(code, out var e) || e.Shares.Count == 0)
-                return new Stat();
-            return new Stat { Rounds = e.Shares.Count, Mean = e.Shares.Average() };
+            if (string.IsNullOrEmpty(code) || !entries.TryGetValue(code, out var e) || SessionOver()) return new Stat();
+            DateTime cut = DateTime.UtcNow - MaxAge;
+            var recent = e.Shares.Where(r => r.EndUtc >= cut).ToList();
+            if (recent.Count == 0) return new Stat();
+            return new Stat { Rounds = recent.Count, Mean = recent.Average(r => r.Share) };
         }
 
         public static int OverrideOf(string code) {
@@ -124,15 +151,19 @@ namespace UsefulTORStuff {
         }
 
         // ---- persistence ----
-        // One player per line: code, last name, override, then the shares oldest first.
-        // Tab separated (names cannot contain tabs after the Replace above, codes never do).
+        // One player per line: code, last name, override, then the rounds oldest first as
+        // "share@unix seconds of the round end". Tab separated (names cannot contain tabs after the
+        // Replace above, codes never do). Files from v1.4.10 and older hold bare shares without a time;
+        // those get the file's last write time, which is when their newest round was saved.
 
         private static void EnsureLoaded() {
             if (loaded) return;
             loaded = true;
             try {
                 if (!File.Exists(FilePath)) return;
-                int n = 0;
+                int n = 0, dropped = 0;
+                DateTime legacyTime = File.GetLastWriteTimeUtc(FilePath);
+                DateTime cut = DateTime.UtcNow - MaxAge;
                 foreach (var line in File.ReadAllLines(FilePath)) {
                     var parts = line.Split('\t');
                     if (parts.Length < 3 || string.IsNullOrEmpty(parts[0])) continue;
@@ -141,14 +172,28 @@ namespace UsefulTORStuff {
                     if (e.Override < OverrideOff || e.Override > OverrideOn) e.Override = OverrideAuto;
                     if (parts.Length > 3 && parts[3].Length > 0) {
                         foreach (var s in parts[3].Split(',')) {
-                            if (float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float f))
-                                e.Shares.Add(Mathf.Clamp01(f));
+                            var bits = s.Split('@');
+                            if (!float.TryParse(bits[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float f)) continue;
+                            DateTime at = legacyTime;
+                            if (bits.Length > 1 && long.TryParse(bits[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out long unix))
+                                at = DateTimeOffset.FromUnixTimeSeconds(unix).UtcDateTime;
+                            if (at < cut) { dropped++; continue; }
+                            e.Shares.Add(new Round { Share = Mathf.Clamp01(f), EndUtc = at });
+                            if (at > newestRound) newestRound = at;
                         }
                         while (e.Shares.Count > Window) e.Shares.RemoveAt(0);
                     }
                     n++;
                 }
-                UsefulTORStuffPlugin.Logger?.LogInfo($"[DeathTimeHistory] loaded {n} player(s).");
+                string session = "";
+                if (newestRound != DateTime.MinValue && SessionOver()) {
+                    session = $", last round {(DateTime.UtcNow - newestRound).TotalMinutes:F0} min ago - new session, "
+                        + $"{DropAllRounds()} round(s) dropped";
+                } else if (newestRound != DateTime.MinValue) {
+                    session = $", session continues (last round {(DateTime.UtcNow - newestRound).TotalMinutes:F0} min ago)";
+                }
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[DeathTimeHistory] loaded {n} player(s), {dropped} round(s) older than 24 h left out{session}.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[DeathTimeHistory] load failed: {e.Message}");
             }
@@ -159,7 +204,8 @@ namespace UsefulTORStuff {
                 var lines = new List<string>(entries.Count);
                 foreach (var kv in entries) {
                     string shares = string.Join(",",
-                        kv.Value.Shares.Select(f => f.ToString("0.###", CultureInfo.InvariantCulture)));
+                        kv.Value.Shares.Select(r => r.Share.ToString("0.###", CultureInfo.InvariantCulture) + "@"
+                            + new DateTimeOffset(r.EndUtc).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
                     lines.Add($"{kv.Key}\t{kv.Value.Name}\t{kv.Value.Override.ToString(CultureInfo.InvariantCulture)}\t{shares}");
                 }
                 // tmp + move: a crash mid-write must not cost the whole history.
@@ -361,6 +407,12 @@ namespace UsefulTORStuff {
                     if (dp?.player != null && !deaths.ContainsKey(dp.player.PlayerId)) deaths[dp.player.PlayerId] = dp;
 
             EnsureLoaded();
+            // Judged at the round's START: 110 min in the lobby plus a 15 min round is still the same evening.
+            if (newestRound != DateTime.MinValue && roundStart.Value - newestRound > SessionGap) {
+                int gone = DropAllRounds();
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[DeathTimeHistory] no round for over {SessionGap.TotalMinutes:F0} min - new session, {gone} old round(s) dropped.");
+            }
             int killed = 0, survived = 0, skipped = 0;
             foreach (var kv in participants) {
                 float share;
@@ -377,9 +429,10 @@ namespace UsefulTORStuff {
                     survived++;
                 }
                 var e = GetOrAdd(kv.Value.Code, kv.Value.Name);
-                e.Shares.Add(share);
+                e.Shares.Add(new Round { Share = share, EndUtc = end });
                 while (e.Shares.Count > Window) e.Shares.RemoveAt(0);
             }
+            newestRound = end;   // a played round keeps the session alive even if everybody was left out
             Save();
             roundStart = null;   // one record per round, even if OnGameEnd fires twice
 
