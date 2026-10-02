@@ -38,6 +38,13 @@
  *      configs would decode differently. That is a migration decision about the user's stored
  *      settings, not a bug fix to make unilaterally.
  *
+ *  TOR-H6 (Lawyer "kills himself after promotion"), REMOVED 2026-10-03. The fix let the Lawyer
+ *      survive as Pursuer when his client was voted out. That IS TOR's rule the other way round:
+ *      README "If their client gets voted out, the Lawyer dies with the client", and the suicide
+ *      block exiles Lawyer.lawyer AND Pursuer.pursuer on purpose. Host (Pursuer field) and clients
+ *      (Lawyer field) exile the same player, so there was no desync to fix; the ungated patch
+ *      created one with clients that lack this mod. Do not reintroduce it.
+ *
  *  TOR-M2 (Armored vs Sheriff, Helpers.cs:524). The operator precedence in that condition lets a
  *      Sheriff shoot through armor without consuming it. Fixing it means rewriting the middle of
  *      checkMuderAttempt, which is the single busiest decision point in the whole mod family:
@@ -165,55 +172,6 @@ namespace UsefulTORStuff {
                         cachedBountyTarget = Convert.ToByte(Enum.Parse(e, "BountyTarget"));
                 } catch { }
                 return cachedBountyTarget;
-            }
-        }
-
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        // TOR-H6) The Lawyer kills himself immediately after being promoted
-        //
-        // PlayerControl.Exiled -> ExilePlayerPatch.Postfix (PlayerControlPatch.cs:1421-1443) has two
-        // consecutive blocks for a Lawyer whose client is exiled:
-        //     promotion:  AmHost && ((target != jester && !isProsecutor) || targetWasGuessed)
-        //     suicide:    !targetWasGuessed && !isProsecutor
-        // In the ordinary case - a Lawyer with a non-Jester client, exiled by vote - BOTH are true.
-        // The host promotes the Lawyer to Pursuer and then exiles him again on the very next line;
-        // and because the promotion is an RPC, non-host clients still have Lawyer.lawyer set when
-        // they reach the suicide block, so they exile the LAWYER while the host exiles the PURSUER.
-        // A role death plus a lobby-wide disagreement about who is dead, in the role's standard case.
-        //
-        // The suicide is meant for the case where no promotion happens, which is precisely
-        // "the client was the Jester". Rather than rebuilding a 40-line method from outside, the
-        // prefix borrows TOR's own switch: setting targetWasGuessed makes the suicide block skip
-        // (it requires !targetWasGuessed) while the promotion block still fires (it accepts
-        // targetWasGuessed). A finalizer puts the flag back, so nothing downstream - the Lawyer win
-        // check reads it too - sees the temporary value. Same flip-and-restore shape LoverRevenger
-        // uses for Lovers.bothDie, finalizer included, so a throw anywhere in the chain cannot leave
-        // the flag stuck. The flip flag lives in Harmony's __state rather than a static field, so a
-        // reentrant Exiled() call cannot clobber another call's in-flight flag.
-        // ══════════════════════════════════════════════════════════════════════════════════════
-        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.Exiled))]
-        static class LawyerPromotionSuicidePatch {
-            public static void Prefix(PlayerControl __instance, out bool __state) {
-                __state = false;
-                try {
-                    if (Lawyer.lawyer == null || Lawyer.target == null) return;
-                    if (__instance == null || __instance != Lawyer.target) return;
-                    if (Lawyer.isProsecutor || Lawyer.targetWasGuessed) return;
-                    // The Jester client is the one case TOR does NOT promote, so its suicide is
-                    // intended and stays untouched.
-                    if (Jester.jester != null && Lawyer.target == Jester.jester) return;
-
-                    Lawyer.targetWasGuessed = true;
-                    __state = true;
-                } catch (Exception e) {
-                    __state = false;
-                    ThrottledLog("H6", $"prefix failed: {e.GetType().Name}: {e.Message}");
-                }
-            }
-
-            public static void Finalizer(bool __state) {
-                if (!__state) return;
-                try { Lawyer.targetWasGuessed = false; } catch { }
             }
         }
 
@@ -450,6 +408,10 @@ namespace UsefulTORStuff {
         // happened, and returning the exception as handled (by assigning null to __exception) turns
         // the throw into a normal call with a sane radius. Deliberately narrow: it only intervenes
         // when an exception actually happened, so the ordinary path is untouched.
+        //
+        // Correction (review 2026-10-02): the postfixes of THAT call still do not run, Harmony skips
+        // them once a prefix throws. The finalizer keeps the exception from spreading and answers
+        // full sight for the one frame; the vision roles resume on the next call that does not throw.
         // ══════════════════════════════════════════════════════════════════════════════════════
         [HarmonyPatch(typeof(ShipStatus), nameof(ShipStatus.CalculateLightRadius))]
         static class LightRadiusFinalizerPatch {
@@ -461,7 +423,7 @@ namespace UsefulTORStuff {
                     __result = __instance != null ? __instance.MaxLightRadius : 1f;
                 } catch { __result = 1f; }
                 ThrottledLog("M35", $"TOR's CalculateLightRadius prefix threw ({__exception.GetType().Name}) - "
-                                    + "swallowed so the vision postfixes still run.");
+                                    + "swallowed, full sight for this call (its vision postfixes were skipped).");
                 return null;   // handled
             }
         }

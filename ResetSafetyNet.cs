@@ -20,10 +20,14 @@
  * read after. Those three hooks are on GAME methods (Il2Cpp), which tiering never touches.
  * When the canary stayed silent, every resetVariables postfix of every mod is run from here, taken
  * from Harmony's own patch list (so manual patches count too).
- *  - At a round start: right away (client: after TOR's handling of the RPC, the same order as
- *    normal; host: before TOR's postfix when the drop is already known, after it otherwise).
- *  - At the game end: only noted. Running them there would come after the end-screen postfixes
- *    and could wipe what those just recorded; the next round start does it.
+ *  - At the game end: only noted, then run once the lobby is back (polled from the HUD update):
+ *    after the end screen, before the next roles are handed out. Running them at OnGameEnd would
+ *    come after the end-screen postfixes and could wipe what those just recorded.
+ *  - At a round start, client: right away, after TOR's handling of the reset RPC (the order of a
+ *    working detour; nothing has been assigned yet at that point).
+ *  - At a round start, host: before TOR's postfix when the drop is already known. A drop first seen
+ *    AFTER TOR's postfix is not run there (Opus review 2026-10-02): the extra Jester / Tiebreaker /
+ *    Mini / Armored have just been picked and would be wiped on the host only. Noted for the lobby.
  */
 
 using System;
@@ -104,7 +108,31 @@ namespace UsefulTORStuff {
                 try {
                     if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
                     dropKnown = !canaryRan;
-                    if (dropKnown && !ranThisRoundStart) RunAll("round start, host");
+                    // NOT run here (Opus review 2026-10-02): this is after TOR's postfix has handed out
+                    // the roles and after the extra Jester / Tiebreaker / Mini / Armored were picked;
+                    // their resets would wipe those on the host only while the clients keep them. The
+                    // host plays this one round with whatever leaked; the lobby after it cleans up.
+                    if (dropKnown && !ranThisRoundStart) {
+                        pendingLobbyRun = true;
+                        UsefulTORStuffPlugin.Logger?.LogWarning(
+                            "[ResetSafetyNet] resetVariables ran without its postfixes at this round start (host); not run now, after the role assignment - they run in the next lobby.");
+                    }
+                } catch { }
+            }
+        }
+
+        // ---- the lobby after a game: the safe moment (end screen done, next roles not handed out) ----
+        // Polled from the HUD update instead of a new detour on a lobby method.
+        private static bool pendingLobbyRun;
+
+        [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
+        static class LobbyRunPatch {
+            public static void Postfix() {
+                try {
+                    if (!pendingLobbyRun || !LobbyScreen.Exists || ShipStatus.Instance != null) return;
+                    pendingLobbyRun = false;
+                    RunAll("lobby after the game");
+                    dropKnown = false;   // handled; the next call of resetVariables measures again
                 } catch { }
             }
         }
@@ -136,8 +164,10 @@ namespace UsefulTORStuff {
             [HarmonyPriority(Priority.Last)]
             public static void Postfix() {
                 dropKnown = !canaryRan;
-                if (dropKnown)
-                    UsefulTORStuffPlugin.Logger?.LogWarning("[ResetSafetyNet] resetVariables postfixes did not run at the game end; they run at the next round start.");
+                if (dropKnown) {
+                    pendingLobbyRun = true;
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[ResetSafetyNet] resetVariables postfixes did not run at the game end; they run once the lobby is back.");
+                }
             }
         }
     }

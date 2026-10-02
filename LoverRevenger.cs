@@ -374,6 +374,13 @@ namespace UsefulTORStuff {
             p != null && p.Data != null && (Helpers.isKiller(p)
                 || p == Sheriff.sheriff || p == Sheriff.formerSheriff);
 
+        // IsKiller of the Revenger, taken ONCE before he awakens (Opus review 2026-10-02). Asked later it
+        // is wrong: from the awakening on, RoleInfoPatch below hands out only the Revenger's own RoleInfo,
+        // which is neutral, and TOR's Helpers.isKiller counts every neutral (but Jester, Arsonist,
+        // Vulture, Lawyer, Pursuer) as a killer. So every crew Revenger looked like a killer with his own
+        // button and never got the Revenger button.
+        private static bool revengerOwnKill;
+
         private static PlayerControl PartnerOf(PlayerControl p) {
             if (p == Lovers.lover1) return Lovers.lover2;
             if (p == Lovers.lover2) return Lovers.lover1;
@@ -543,6 +550,7 @@ namespace UsefulTORStuff {
                 // false there, and every button check (LocalIsRevenger) starts with `active`: the
                 // Revenger existed for everyone else but had no button on his own screen.
                 active = true;
+                revengerOwnKill = IsKiller(lover);   // BEFORE revenger is set, see the field
                 revenger = lover;
                 revengerMode = mode;
                 killerId = revKillerId;
@@ -560,7 +568,7 @@ namespace UsefulTORStuff {
                     // A non-killer Revenger awakens NOW (mid-game). Guarantee the kill button exists at
                     // this exact moment - the HudManager.Start creation can be long gone by here, which is
                     // what left non-killers with no button. Killers use their own kill button (no second).
-                    if (!IsKiller(lover)) {
+                    if (!revengerOwnKill) {
                         EnsureRevengerButton(HudManager.Instance);
                         UsefulTORStuffPlugin.Logger?.LogInfo(
                             $"[LoverRevenger] EnsureRevengerButton done, button={(revengerButton != null)} "
@@ -708,6 +716,7 @@ namespace UsefulTORStuff {
         static class ResetPatch {
             public static void Postfix() {
                 hostActive = null;
+                revengerOwnKill = false;
                 blockLoggedFor = byte.MaxValue;
                 decisionAt = -100f;
                 revenger = null;
@@ -959,9 +968,12 @@ namespace UsefulTORStuff {
             public static void Postfix() => OnMeetingEnd();
         }
 
+        // Airship: the postfix runs before the exile (coroutine), so the killer would still count as
+        // alive. Deferred until the cutscene is done, see AirshipWrapUpDefer.
         [HarmonyPatch(typeof(AirshipExileController), nameof(AirshipExileController.WrapUpAndSpawn))]
         static class AirshipExileWrapUpPatch {
-            public static void Postfix() => OnMeetingEnd();
+            public static void Postfix(AirshipExileController __instance) =>
+                AirshipWrapUpDefer.Arm(__instance, "LoverRevenger", OnMeetingEnd);
         }
 
         // ====================================================================
@@ -975,7 +987,7 @@ namespace UsefulTORStuff {
         // killer triggers the win), so ONLY non-killer Revengers get the dedicated Revenger button +
         // target outline. This is what guarantees "only one kill button".
         private static bool LocalUsesRevengerButton() =>
-            LocalIsRevenger() && !IsKiller(PlayerControl.LocalPlayer);
+            LocalIsRevenger() && !revengerOwnKill;
 
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         static class HudUpdateTargetPatch {
@@ -1129,7 +1141,7 @@ namespace UsefulTORStuff {
                 try {
                     if (!active || revengerWon || revenger == null) return;
                     if (__instance != revenger || __instance != PlayerControl.LocalPlayer) return; // own kill only, once
-                    if (!IsKiller(revenger)) return;               // non-killers use the Revenger button
+                    if (!revengerOwnKill) return;                  // non-killers use the Revenger button
                     if (target == null || target.PlayerId != killerId) return; // only the Lover's killer wins
                     SendWin(revenger.PlayerId);
                 } catch (Exception e) {

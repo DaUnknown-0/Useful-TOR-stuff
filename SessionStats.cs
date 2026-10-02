@@ -214,7 +214,12 @@ namespace UsefulTORStuff {
 
             var winners = new HashSet<string>();
             try {
-                foreach (var w in EndGameResult.CachedWinners.ToArray())
+                // Unknown's Collection's Bug: during its two-phase end screen CachedWinners still holds
+                // the team the Bug robbed; the real sole winner comes through this AppDomain key
+                // (review 2026-10-02). Null or absent in every other game.
+                var sole = AppDomain.CurrentDomain.GetData("UC.EndGame.SoleWinner") as string;
+                if (!string.IsNullOrEmpty(sole)) winners.Add(sole);
+                else foreach (var w in EndGameResult.CachedWinners.ToArray())
                     if (w != null && !string.IsNullOrEmpty(w.PlayerName)) winners.Add(w.PlayerName);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] winner list not readable ({e.Message}) - round not recorded.");

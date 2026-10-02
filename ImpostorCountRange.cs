@@ -371,15 +371,17 @@ namespace UsefulTORStuff {
         // ---- secrecy: intro team hide when the Spy stays possible at 1 impostor ------------------
 
         // TOR hides the intro lineup when the Spy is enabled AND 2+ impostors spawned
-        // (IntroPatch.setupIntroTeamIcons). At 1 rolled impostor that very difference would
-        // leak the count, so we apply the same only-yourself lineup. Priority.Low: runs after
-        // TOR's prefix so we overwrite whatever it built.
+        // (IntroPatch.setupIntroTeamIcons; with UTS only during a draft, see TorAuditFixes B2). Any
+        // difference between counts would leak the roll, so we apply the only-yourself lineup at
+        // every count. Priority.Low: runs after TOR's prefix so we overwrite whatever it built.
         private static void HideTeamIfSpyPossible(ref Il2CppSystem.Collections.Generic.List<PlayerControl> team) {
             try {
                 if (!FeatureEnabled || EffectiveMax < 2) return;
                 if (CustomOptionHolder.spySpawnRate.getSelection() == 0) return;
                 if (PlayerControl.LocalPlayer == null) return;
-                if (CountAssignedImpostors() > 1) return; // TOR's own hide already applied
+                // No "TOR already hides at 2+" shortcut any more (review 2026-10-02): TorAuditFixes B2
+                // limits TOR's hide to the draft, as TOR's own comment promises, so without a draft
+                // 2+ impostors showed the whole lobby and 1 showed only yourself. Hide at every count.
 
                 var solo = new Il2CppSystem.Collections.Generic.List<PlayerControl>();
                 solo.Add(PlayerControl.LocalPlayer);

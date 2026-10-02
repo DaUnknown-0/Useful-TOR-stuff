@@ -213,7 +213,10 @@ namespace UsefulTORStuff {
             private static byte VampireSetBittenRpcId {
                 get {
                     if (cachedRpcId != 0) return cachedRpcId;
-                    cachedRpcId = 121; // documented fallback: RPC.cs enum position of VampireSetBitten
+                    // documented fallback: RPC.cs enum position of VampireSetBitten. The role block starts
+                    // at EngineerFixLights = 120, VampireSetBitten is its 14th entry -> 133 (was 121,
+                    // which is EngineerFixSubmergedOxygen; Sonnet review 2026-10-02).
+                    cachedRpcId = 133;
                     try {
                         var e = typeof(CustomOption).Assembly.GetType("TheOtherRoles.CustomRPC");
                         if (e != null && Enum.IsDefined(e, "VampireSetBitten"))

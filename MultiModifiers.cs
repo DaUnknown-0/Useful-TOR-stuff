@@ -406,11 +406,14 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Airship: deferred until the cutscene coroutine is done, otherwise vanilla's
+        // ReEnableGameplay resets the extra Mini's kill timer afterwards (see AirshipWrapUpDefer).
         [HarmonyPatch(typeof(AirshipExileController), nameof(AirshipExileController.WrapUpAndSpawn))]
         static class AirshipExileWrapUpPatch {
             public static void Postfix(AirshipExileController __instance) {
                 var np = __instance.initData?.networkedPlayer;
-                OnExileWrapUp(np != null ? np.Object : null);
+                var exiled = np != null ? np.Object : null;
+                AirshipWrapUpDefer.Arm(__instance, "MultiModifiers", () => OnExileWrapUp(exiled));
             }
         }
 
