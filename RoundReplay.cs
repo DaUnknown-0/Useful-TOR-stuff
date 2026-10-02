@@ -82,6 +82,7 @@ namespace UsefulTORStuff {
             public byte Actor = 255;
             public byte Target = 255;    // the victim of a death, the body of a cleaning
             public List<byte> Seen;      // host only: who could see the spot (null = not recorded)
+            public bool Generic;         // a UC ability seen only as its module; a client report replaces it
         }
 
         private static readonly List<Track> tracks = new List<Track>();
@@ -123,6 +124,7 @@ namespace UsefulTORStuff {
             if (meeting && !inMeeting) events.Add(MeetingEvent());
             inMeeting = meeting;
             if (!meeting) clock += Time.deltaTime;
+            DeviceTick();
 
             while (sampledUpTo <= clock && samples < MaxSamples) {
                 Sample();
@@ -571,6 +573,8 @@ namespace UsefulTORStuff {
             EvVent => new Color(0.4f, 0.9f, 0.5f),
             EvSabotage => new Color(1f, 0.45f, 0.1f),
             EvLook => new Color(0.4f, 0.85f, 1f),
+            EvTask => new Color(0.55f, 0.6f, 0.7f),
+            EvDevice => new Color(0.85f, 0.95f, 0.35f),
             _ => new Color(0.7f, 0.7f, 0.7f),
         };
 
@@ -735,6 +739,18 @@ namespace UsefulTORStuff {
             } else if (diagStep == 1 && left < 7f) {
                 diagStep = 2;
                 try { RPCProcedure.camouflagerCamouflage(); } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] diag camouflage: {e.Message}"); }
+            } else if (diagStep == 2 && left < 6f) {
+                diagStep = 3;
+                // a task through the game's own RPC, and the first usable ability button
+                try {
+                    var lp = PlayerControl.LocalPlayer;
+                    var task = lp.myTasks.ToArray().FirstOrDefault(t => t != null && !t.IsComplete);
+                    if (task != null) lp.RpcCompleteTask(task.Id);
+                } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] diag task: {e.Message}"); }
+                try {
+                    var b = TheOtherRoles.Objects.CustomButton.buttons.FirstOrDefault(x => x != null && !string.IsNullOrEmpty(x.buttonText) && x.buttonText != "END" && x.HasButton() && x.CouldUse());
+                    if (b != null) { b.Timer = -1f; b.onClickEvent(); UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag: clicked '{b.buttonText}'."); }
+                } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] diag button: {e.Message}"); }
             }
             if (Time.realtimeSinceStartup < diagAt) return;
             diagAt = 0f;
@@ -806,7 +822,7 @@ namespace UsefulTORStuff {
             if (diagIngameT2 >= 0f) { diagSecond = true; diagSecondFrame = Time.frameCount + 5; }
             UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag: host data {HostData}, events by kind: " +
                 string.Join(", ", events.GroupBy(e => e.Kind).Select(g => $"{g.Key}x{g.Count()}")));
-            foreach (var e in events.Where(e => e.Kind != EvMeeting).Take(12))
+            foreach (var e in events.Where(e => e.Kind != EvMeeting).Take(20))
                 UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag event {e.T:F1}s k{e.Kind}: {PlainText(e.Text)} | seen {(e.Seen == null ? "-" : string.Join(",", e.Seen))}");
             foreach (var t in tracks) {
                 int k = t.R.Count - 1;

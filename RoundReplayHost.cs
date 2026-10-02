@@ -116,6 +116,7 @@ namespace UsefulTORStuff {
             hostRec = (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) || (DiagViewer != null && DiagViewer.Value);
             invisible.Clear(); sabActive.Clear(); roomsClosed = new HashSet<SystemTypes>(); ucLast.Clear();
             pendingMeeting = null; rpcSender = null;
+            ReportsBegin();
             doorLog.Clear(); doorOpen = null; bodiesGone.Clear();
             recMapId = -1;
             try {
@@ -266,7 +267,10 @@ namespace UsefulTORStuff {
                 if (on == sabActive.Contains(st)) continue;
                 if (on) sabActive.Add(st); else sabActive.Remove(st);
                 string what = UTSLocalization.Tr(SabKey(st));
-                Note(EvSabotage, 255, RoomCenter(ship, st), UTSLocalization.Tr(on ? "uts.replay.ev.sab_on" : "uts.replay.ev.sab_off", what), witnesses: false);
+                byte by = on ? SaboteurOf(st) : (byte)255;
+                string text = by != 255 ? UTSLocalization.Tr("uts.replay.ev.sab_on_by", what, WhoId(by))
+                                        : UTSLocalization.Tr(on ? "uts.replay.ev.sab_on" : "uts.replay.ev.sab_off", what);
+                Note(EvSabotage, by, RoomCenter(ship, st), text, witnesses: false);
             }
         }
 
@@ -421,7 +425,7 @@ namespace UsefulTORStuff {
             "jackalCreatesSidekick", "setFutureErased", "setFutureShifted", "setFutureShielded", "setFutureSpelled",
             "placePortal", "usePortal", "placeJackInTheBox", "lightsOut", "placeCamera", "sealVent", "cleanBody",
             "setBlanked", "setTrap", "triggerTrap", "placeBomb", "defuseBomb", "yoyoMarkLocation", "yoyoBlink",
-            "engineerFixLights", "engineerUsedRepair", "setInvisible", "breakArmor",
+            "engineerFixLights", "engineerUsedRepair", "setInvisible", "breakArmor", "swapperSwap", "guesserShoot",
         };
 
         internal static void TryPatch(Harmony harmony) {
@@ -438,6 +442,7 @@ namespace UsefulTORStuff {
                 }
             }
             UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] {ok}/{TorTaps.Length} TOR ability taps.");
+            RegisterReports();
         }
 
         private static void TorTapPrefix(MethodBase __originalMethod, object[] __args) {
@@ -449,11 +454,27 @@ namespace UsefulTORStuff {
                     if ((byte)__args[1] == byte.MaxValue) invisible.Remove(who); else invisible.Add(who);
                     return;
                 }
-                if (!recording || !hostRec || inMeeting) return;
                 var sender = rpcSender ?? PlayerControl.LocalPlayer;
                 if (sender == null) return;
+                // this client's own procedures: its button click is described already, no report
+                if (PlayerControl.LocalPlayer != null && sender.PlayerId == PlayerControl.LocalPlayer.PlayerId) localTaps++;
+                if (!recording || !hostRec) return;
                 byte a = sender.PlayerId, target = 255;
                 byte Arg(int i) => __args.Length > i && __args[i] is byte b ? b : (byte)255;
+                // in the meeting: the Swapper's swap and every Guesser shot
+                if (name == "swapperSwap") {
+                    Note(EvAbility, a, PosOf(a), UTSLocalization.Tr("uts.replay.tor.swapperSwap", WhoId(a), WhoId(Arg(0), false), WhoId(Arg(1), false)), witnesses: false);
+                    return;
+                }
+                if (name == "guesserShoot") {
+                    byte killer = Arg(0), dying = Arg(1), guessed = Arg(2), roleId = Arg(3);
+                    string role = "?";
+                    try { role = RoleInfo.allRoleInfos.FirstOrDefault(r => (byte)r.roleId == roleId)?.name ?? "?"; } catch { }
+                    string result = UTSLocalization.Tr(dying == guessed ? "uts.replay.guess_hit" : "uts.replay.guess_miss");
+                    Note(EvAbility, killer, PosOf(killer), UTSLocalization.Tr("uts.replay.tor.guesserShoot", WhoId(killer), WhoId(guessed, false), role, result), witnesses: false, target: guessed);
+                    return;
+                }
+                if (inMeeting) return;
                 switch (name) {
                     case "vampireSetBitten": if (Arg(1) != 0) return; target = Arg(0); break;
                     case "setBlanked": if (Arg(1) == 0) return; target = Arg(0); break;
@@ -492,6 +513,7 @@ namespace UsefulTORStuff {
             if (ucLast.TryGetValue(key, out var last) && clock - last < 2f) return;     // a burst is one use
             ucLast[key] = clock;
             Note(EvAbility, sender.PlayerId, sender.transform.position, UTSLocalization.Tr("uts.replay.ev.uc", WhoId(sender.PlayerId), name));
+            if (events.Count > 0 && events[events.Count - 1].Actor == sender.PlayerId) events[events.Count - 1].Generic = true;
         }
 
         private static string UcModuleName(byte module) {
@@ -522,19 +544,17 @@ namespace UsefulTORStuff {
             public static void Prefix(CustomButton __instance, out int __state) {
                 __state = -1;
                 try {
-                    if (recording && hostRec && !inMeeting && __instance.Timer < 0f && __instance.HasButton() && __instance.CouldUse())
-                        __state = localNotes;
+                    if (recording && !inMeeting && __instance.Timer < 0f && __instance.HasButton() && __instance.CouldUse())
+                        __state = localTaps;
                 } catch { }
             }
 
             public static void Postfix(CustomButton __instance, int __state) {
                 try {
-                    if (__state < 0 || __state != localNotes) return;     // not used, or a TOR tap described it
+                    if (__state < 0 || __state != localTaps) return;      // not used, or a TOR tap described it
                     string label = __instance.buttonText;
                     if (string.IsNullOrWhiteSpace(label)) return;         // kill buttons: the death says it
-                    var lp = PlayerControl.LocalPlayer;
-                    if (lp == null) return;
-                    Note(EvAbility, lp.PlayerId, lp.transform.position, UTSLocalization.Tr("uts.replay.ev.button_used", WhoId(lp.PlayerId), label));
+                    LocalAbility(label);
                 } catch { }
             }
         }
