@@ -254,7 +254,11 @@ namespace UsefulTORStuff {
                 }
                 mapTex.Apply(false, true);
                 UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] map image from '{bg.name}', shader '{shader}', {(shader.StartsWith("Sprites/Default") ? "kept" : "recoloured")}.");
-                UnityEngine.Object.DontDestroyOnLoad(mapTex);
+                // The round ends before the end screen and the lobby load, and every scene load runs
+                // UnloadUnusedAssets: a texture nothing in the scene references is freed there.
+                // DontDestroyOnLoad does not cover assets; this flag does (User 2026-10-02: the replay
+                // silently did not open after a real round).
+                mapTex.hideFlags |= HideFlags.DontUnloadUnusedAsset;
                 RenderTexture.active = prev;
                 RenderTexture.ReleaseTemporary(rt);
                 return true;
@@ -342,7 +346,10 @@ namespace UsefulTORStuff {
 
         internal static void OpenView() {
             if (panelRoot != null) { CloseView(); return; }
-            if (!ready || mapTex == null) return;
+            if (!ready || mapTex == null) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] open refused: ready={ready}, map image {(mapTex != null ? "ok" : "missing")}.");
+                return;
+            }
             try {
                 NewcomerShieldUI.Instance?.Close();
                 EarlyDeathShieldUI.Instance?.Close();

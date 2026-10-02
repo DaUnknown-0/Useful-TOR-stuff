@@ -516,8 +516,8 @@ namespace UsefulTORStuff {
             tex.SetPixel(0, 0, color);
             tex.Apply();
             var sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
-            DontDestroyOnLoad(tex);
-            DontDestroyOnLoad(sprite);
+            tex.hideFlags |= HideFlags.DontUnloadUnusedAsset;     // survives the scene loads' asset sweep
+            sprite.hideFlags |= HideFlags.DontUnloadUnusedAsset;
             solidSprites[color] = sprite;
             return sprite;
         }
@@ -539,8 +539,8 @@ namespace UsefulTORStuff {
             tex.filterMode = FilterMode.Bilinear;
             tex.Apply(false, true);
             circle = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f));
-            DontDestroyOnLoad(tex);
-            DontDestroyOnLoad(circle);
+            tex.hideFlags |= HideFlags.DontUnloadUnusedAsset;
+            circle.hideFlags |= HideFlags.DontUnloadUnusedAsset;
             return circle;
         }
 
