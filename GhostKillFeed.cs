@@ -109,7 +109,7 @@ namespace UsefulTORStuff {
 
         private static string Hex(Color c) => ColorUtility.ToHtmlStringRGB(c);
 
-        private static string Who(PlayerControl p, bool roles) {
+        internal static string Who(PlayerControl p, bool roles) {
             if (p == null || p.Data == null) return "?";
             string name = (p.Data.PlayerName ?? "?").Replace("<", "").Replace(">", "");
             Color col = Color.white;

@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.12.3";
+    public const string PluginVersion = "1.4.12.4";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -401,8 +401,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         GhostKillFeed.CreateOptions();
 
         // Round replay in the lobby (option 1397, General tab, on by default). Records on every client,
-        // ticked by SessionStatsUI.
+        // ticked by SessionStatsUI. The host additionally records vision and abilities for the player
+        // perspective (RoundReplayHost.cs); TryPatch adds the taps on TOR's ability procedures.
         RoundReplay.CreateOptions();
+        RoundReplay.TryPatch(harmony);
 
         // Both kill shields above gate TOR's targeting helper, which knows nothing about WHY a player
         // is being targeted. This frees the peaceful abilities (Medic, Shifter, Morphling, Tracker,
