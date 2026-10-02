@@ -144,6 +144,11 @@ namespace UsefulTORStuff {
         private const byte SubRageArmed = 3; // revengerId
         private const byte SubDeniedDeath = 4; // revengerId, msgIndex (target died first -> revenge denied)
         private const byte SubActive = 5;      // active (host -> everyone at intro end; the host's gate wins)
+        private const byte SubDesync = 6;      // loverId (any client -> host: "he is already dead here")
+
+        // Host: when the last Revenger decision went out, so a desync report only counts right after it.
+        private static float decisionAt = -100f;
+        private const float DesyncWindow = 20f;
 
         // The host's own gate decision for this round, once it arrived. Every client used to latch
         // `active` from its OWN handshake table; one gap there left the Lover-death suppression off on
@@ -324,17 +329,26 @@ namespace UsefulTORStuff {
         // team could not win by kills at all (Opus audit 2026-10-02).
         public static bool ImpostorWinBlockPrefix(ref bool __result) {
             try {
-                if (RevengerAlive() && !(revenger.Data.Role != null && revenger.Data.Role.IsImpostor)) { __result = false; return false; }
+                if (RevengerAlive() && !(revenger.Data.Role != null && revenger.Data.Role.IsImpostor)) { LogBlock("Impostor"); __result = false; return false; }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] ImpostorWinBlockPrefix failed: {e}");
             }
             return true;
         }
 
+        // One log line per Revenger when his parity block first holds a win back: makes a stalled
+        // game provable from the host's log (playtest 2026-10-02, Jackal + Sidekick held back).
+        private static byte blockLoggedFor = byte.MaxValue;
+        private static void LogBlock(string team) {
+            if (revenger == null || blockLoggedFor == revenger.PlayerId) return;
+            blockLoggedFor = revenger.PlayerId;
+            UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] {team} parity win held back: Revenger {revenger.Data?.PlayerName} is alive.");
+        }
+
         public static bool JackalWinBlockPrefix(ref bool __result) {
             try {
                 bool jackalTeam = revenger == Jackal.jackal || revenger == Sidekick.sidekick;
-                if (RevengerAlive() && !jackalTeam) { __result = false; return false; }
+                if (RevengerAlive() && !jackalTeam) { LogBlock("Jackal"); __result = false; return false; }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] JackalWinBlockPrefix failed: {e}");
             }
@@ -507,6 +521,20 @@ namespace UsefulTORStuff {
                 + $"isKiller={(lover != null && IsKiller(lover))} isLocal={lover == PlayerControl.LocalPlayer}");
             if (lover == null) return;
 
+            if (becomeRevenger && lover.Data != null && lover.Data.IsDead && !AmongUsClient.Instance.AmHost) {
+                // The host still has him alive, this client does not: the partner suicide was NOT
+                // suppressed here (a patch that silently stopped running on this client). Left alone
+                // he stays a ghost here and an alive Revenger on the host, whose parity block then
+                // holds back the Jackal/Impostor win (playtest 2026-10-02). Tell the host.
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    $"[LoverRevenger] desync: {lover.Data.PlayerName} is already dead on this client - reporting to the host.");
+                try {
+                    var w = BeginRpc(SubDesync);
+                    w.Write(loverId);
+                    AmongUsClient.Instance.FinishRpcImmediately(w);
+                } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] desync report failed: {e}"); }
+            }
+
             if (becomeRevenger) {
                 // The host only sends becomeRevenger=true when ITS gate was open, so the feature is
                 // usable - full stop. Each client latches `active` on its own at intro end, and its
@@ -641,6 +669,22 @@ namespace UsefulTORStuff {
                             }
                             break;
                         }
+                        case SubDesync: {
+                            byte loverId = reader.ReadByte();
+                            // Any client may report (the one where he is dead is arbitrary), but only
+                            // the host acts, only right after a decision, and only for the Revenger
+                            // it just made: he then dies everywhere (exile, no body) and the half-dead
+                            // state is gone. Clients where he is already dead skip the kill.
+                            if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost
+                                && revenger != null && revenger.PlayerId == loverId
+                                && revenger.Data != null && !revenger.Data.IsDead
+                                && Time.time - decisionAt <= DesyncWindow) {
+                                UsefulTORStuffPlugin.Logger?.LogWarning(
+                                    $"[LoverRevenger] desync reported by {__instance?.Data?.PlayerName}: {revenger.Data.PlayerName} dies everywhere.");
+                                SendDeniedDeath(revenger.PlayerId, (byte)rnd.Next(RevengeDeniedTexts.Length));
+                            }
+                            break;
+                        }
                         case SubWin: {
                             byte revId = reader.ReadByte();
                             // Owner-authored: only the Revenger themselves (or the host) may claim
@@ -664,6 +708,8 @@ namespace UsefulTORStuff {
         static class ResetPatch {
             public static void Postfix() {
                 hostActive = null;
+                blockLoggedFor = byte.MaxValue;
+                decisionAt = -100f;
                 revenger = null;
                 revengerMode = 0;
                 killerId = byte.MaxValue;
@@ -879,6 +925,7 @@ namespace UsefulTORStuff {
                         UsefulTORStuffPlugin.Logger?.LogInfo(
                             $"[LoverRevenger] OnMeetingEnd: resolving pending decision for {pendingLover.Data?.PlayerName} "
                             + $"(active={active}, chance selection={sel}, killerId={pendingKillerId}, killerGone={killerGone}) -> becomeRevenger={become}");
+                        decisionAt = Time.time;
                         SendDecision(pendingLover.PlayerId, become, pendingKillerId, mode);
                         justAwakened = become;
                     }
