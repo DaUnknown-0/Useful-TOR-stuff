@@ -349,6 +349,7 @@ namespace UsefulTORStuff {
                 SessionStatsUI.Instance?.Close();
 
                 panelRoot = Canvas("UTSReplayUI", 9500, true);
+                LobbyPanelGuard.Track(panelRoot);
                 var backdrop = SessionStatsUI.Box(panelRoot, Vector2.zero, Vector2.zero, new Color(0f, 0f, 0f, 0.85f));
                 var brt = backdrop.GetComponent<RectTransform>();
                 brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one; brt.pivot = new Vector2(0.5f, 0.5f); brt.sizeDelta = Vector2.zero;
@@ -463,7 +464,7 @@ namespace UsefulTORStuff {
         private static void CycleSpeed() => speed = speed >= 8f ? 1f : speed * 2f;
 
         internal static void CloseView() {
-            if (panelRoot != null) UnityEngine.Object.Destroy(panelRoot);
+            if (panelRoot != null) { UnityEngine.Object.Destroy(panelRoot); LobbyPanelGuard.Closed(); }
             panelRoot = null; mapArea = null; banner = null;
             dots.Clear(); marks.Clear();
         }

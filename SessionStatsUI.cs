@@ -165,7 +165,7 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         public void Close() {
-            if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; }
+            if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; LobbyPanelGuard.Closed(); }
             ceremony = false;
         }
 
@@ -204,6 +204,7 @@ namespace UsefulTORStuff {
                 shownAt = t != null ? t.ReceivedAt : -1f;
 
                 panelRoot = new GameObject("UTSSessionStatsUI");
+                LobbyPanelGuard.Track(panelRoot);
                 DontDestroyOnLoad(panelRoot);
                 var canvas = panelRoot.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;

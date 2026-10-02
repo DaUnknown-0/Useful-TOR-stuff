@@ -181,7 +181,7 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         public void Close() {
-            if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; }
+            if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; LobbyPanelGuard.Closed(); }
             viewerOpen = false;
         }
 
@@ -193,6 +193,7 @@ namespace UsefulTORStuff {
                 SessionStatsUI.Instance?.Close();
 
                 panelRoot = new GameObject("UTSEarlyDeathShieldUI");
+                LobbyPanelGuard.Track(panelRoot);
                 DontDestroyOnLoad(panelRoot);
 
                 var canvas = panelRoot.AddComponent<Canvas>();
@@ -317,6 +318,7 @@ namespace UsefulTORStuff {
                 viewerStatsAt = st != null ? st.ReceivedAt : -1f;
 
                 panelRoot = new GameObject("UTSEarlyDeathStatsUI");
+                LobbyPanelGuard.Track(panelRoot);
                 DontDestroyOnLoad(panelRoot);
                 var canvas = panelRoot.AddComponent<Canvas>();
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;

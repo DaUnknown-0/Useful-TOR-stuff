@@ -169,7 +169,7 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         public void Close() {
-            if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; }
+            if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; LobbyPanelGuard.Closed(); }
         }
 
         [HideFromIl2Cpp]
@@ -179,6 +179,7 @@ namespace UsefulTORStuff {
                 EarlyDeathShieldUI.Instance?.Close();
 
                 panelRoot = new GameObject("UTSNewcomerShieldUI");
+                LobbyPanelGuard.Track(panelRoot);
                 DontDestroyOnLoad(panelRoot);
 
                 var canvas = panelRoot.AddComponent<Canvas>();
