@@ -386,6 +386,27 @@ namespace UsefulTORStuff {
             }
         }
 
+        // A death at a meeting's end (failed roll, Blind-Rage follow-up, revenge denied): exiled, NOT
+        // murdered. uncheckedMurderPlayer left a body on the map the moment the round resumed, and that
+        // body could be reported (User 2026-10-02: Revenger died after the second meeting, Ric reported
+        // him). TOR's own meeting-end deaths take the same road: the Witch's spell
+        // (ExileControllerPatch: lawyerPromotesToPursuer first, then uncheckedExilePlayer) and the
+        // Lover who follows an exiled partner (ExilePlayerPatch: otherLover.Exiled()).
+        // Runs locally on every client, like every other Apply* here.
+        private static void MeetingEndDeath(PlayerControl p) {
+            if (p == null || p.Data == null || p.Data.IsDead) return;
+            try {
+                // An exiled Lawyer client would take the Lawyer down with him (ExilePlayerPatch); a
+                // suicide promotes him to Pursuer instead, exactly as the Witch's exile does.
+                if (Lawyer.lawyer != null && p == Lawyer.target) RPCProcedure.lawyerPromotesToPursuer();
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[LoverRevenger] lawyer promotion failed: {e.Message}");
+            }
+            RPCProcedure.uncheckedExilePlayer(p.PlayerId);
+            OverrideLoverSuicide(p);
+            UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] {p.Data.PlayerName} dies at the meeting end (exiled, no body).");
+        }
+
         // Perform an unchecked murder on every client (local call + RPC), like the Sheriff.
         private static void RpcUncheckedMurder(byte sourceId, byte targetId) {
             try {
@@ -521,10 +542,9 @@ namespace UsefulTORStuff {
                             "[LoverRevenger] Local player classified as IsKiller() - no dedicated button granted, expecting their own kill button to trigger the win.");
                     }
                 }
-            } else if (!lover.Data.IsDead) {
-                // Roll failed: the delayed Lover suicide happens now (every client kills locally).
-                RPCProcedure.uncheckedMurderPlayer(loverId, loverId, byte.MaxValue);
-                OverrideLoverSuicide(lover);
+            } else {
+                // Roll failed (or the killer was already gone): the delayed Lover suicide happens now.
+                MeetingEndDeath(lover);
             }
         }
 
@@ -536,10 +556,7 @@ namespace UsefulTORStuff {
             rageKillDone = false;
             var rev = Helpers.playerById(revengerId);
             if (rev == null) return;
-            if (!rev.Data.IsDead) {
-                RPCProcedure.uncheckedMurderPlayer(revengerId, revengerId, byte.MaxValue);
-                OverrideLoverSuicide(rev);
-            }
+            MeetingEndDeath(rev);
             if (msgIndex < RageDeathTexts.Length)
                 PostChat(rev, UTSLocalization.Tr(RageDeathTexts[msgIndex]));
             revenger = null;
@@ -548,10 +565,7 @@ namespace UsefulTORStuff {
         private static void ApplyDeniedDeath(byte revengerId, byte msgIndex) {
             var rev = Helpers.playerById(revengerId);
             if (rev == null) return;
-            if (!rev.Data.IsDead) {
-                RPCProcedure.uncheckedMurderPlayer(revengerId, revengerId, byte.MaxValue);
-                OverrideLoverSuicide(rev);
-            }
+            MeetingEndDeath(rev);
             if (msgIndex < RevengeDeniedTexts.Length)
                 PostChat(rev, UTSLocalization.Tr(RevengeDeniedTexts[msgIndex]));
             revenger = null;
@@ -619,7 +633,11 @@ namespace UsefulTORStuff {
                             if (UTSRpc.RequireHost(__instance, "LoverRevenger.Active")) {
                                 hostActive = on;
                                 active = on;
-                                SetGuessable(on);
+                                // The host sends this at ITS intro end. A client still in its intro
+                                // may be in the middle of the Role Draft, which offers everything in
+                                // allRoleInfos: the Revenger showed up there as a pick (User
+                                // 2026-10-02). Our own IntroEndPatch lists him once the intro is over.
+                                if (IntroCutscene.Instance == null) SetGuessable(on);
                             }
                             break;
                         }
@@ -849,11 +867,18 @@ namespace UsefulTORStuff {
                         pendingArmed = false; pendingLover = null;
                     } else {
                         int sel = RevengerChance != null ? UTSGate.Sel(RevengerChance) : 0;
-                        bool become = active && rnd.Next(1, 101) <= sel * 10;
+                        // Nobody left to avenge: the killer died before this meeting ended (killed in
+                        // the round, or exiled right now). Awakening anyway made a Revenger with no
+                        // possible target who only died a meeting later (User 2026-10-02: the Maniac
+                        // bombed a Lover and died himself before the first meeting). The Lover follows
+                        // his partner now instead, as without the delay.
+                        var pk = Helpers.playerById(pendingKillerId);
+                        bool killerGone = pk == null || pk.Data == null || pk.Data.IsDead || pk.Data.Disconnected;
+                        bool become = active && !killerGone && rnd.Next(1, 101) <= sel * 10;
                         byte mode = (byte)(RevengerMode != null ? UTSGate.Sel(RevengerMode) : 0);
                         UsefulTORStuffPlugin.Logger?.LogInfo(
                             $"[LoverRevenger] OnMeetingEnd: resolving pending decision for {pendingLover.Data?.PlayerName} "
-                            + $"(active={active}, chance selection={sel}, killerId={pendingKillerId}) -> becomeRevenger={become}");
+                            + $"(active={active}, chance selection={sel}, killerId={pendingKillerId}, killerGone={killerGone}) -> becomeRevenger={become}");
                         SendDecision(pendingLover.PlayerId, become, pendingKillerId, mode);
                         justAwakened = become;
                     }

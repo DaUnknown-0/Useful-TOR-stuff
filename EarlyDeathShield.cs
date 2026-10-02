@@ -37,7 +37,10 @@
  * Deliberately the newcomer's, layer for layer (see NewcomerShield.cs for the reasoning behind each):
  *  - assigned at the end of the intro by the host, over module byte 239;
  *  - dropped when the first meeting opens, or after it when "Shield During The First Meeting" keeps
- *    it alive through that meeting (vote/guess blocks live in NewcomerMeetingProtection.cs);
+ *    it alive through that meeting (vote/guess blocks live in NewcomerMeetingProtection.cs). A
+ *    FORCED shield can last up to the 2nd or 3rd meeting instead, set per player in the lobby
+ *    panel and kept in the history file (User 2026-10-02); the meeting option then applies to
+ *    every meeting it covers;
  *  - enforcement 0: TOR's setTarget untargetable list (peaceful abilities excepted, ShieldPeaceGate);
  *  - enforcement 1: vanilla CheckMurder on the host;
  *  - enforcement 2: Helpers.checkMuderAttempt postfix on the killer's client.
@@ -72,14 +75,21 @@ namespace UsefulTORStuff {
         // Fewer qualified players than this and there is no lobby average worth comparing against.
         private const int MinQualifiedForAverage = 3;
 
-        // ---- Everyone: who is shielded in THIS round (player ids, valid until the first meeting) ----
+        // ---- Everyone: who is shielded in THIS round, and up to which meeting (1 unless forced longer) ----
         private static readonly HashSet<byte> shielded = new HashSet<byte>();
+        private static readonly Dictionary<byte, int> lastsUntil = new Dictionary<byte, int>();
 
         private const byte RpcId = UsefulTORStuffPlugin.EarlyDeathShieldRpcId;
         private const byte SubSetShields = 0;   // count, ids...
         private const byte SubClear      = 1;
         private const byte SubStats      = 2;   // host -> all: the lobby statistics (read-only viewer)
         private const byte SubRequest    = 3;   // anyone -> host: please send the statistics now
+        // host -> all, right after SubSetShields: count, (id, meetings)... A forced shield can last up
+        // to the 2nd or 3rd meeting (User 2026-10-02). A separate sub so an older build, which knows
+        // only Sub 0, still shields everyone until the first meeting as before.
+        private const byte SubMeetings   = 4;
+
+        private static int LastsUntil(byte id) => lastsUntil.TryGetValue(id, out int n) ? n : 1;
 
         public static bool Active => shielded.Count > 0;
         public static bool IsShielded(byte playerId) => shielded.Contains(playerId);
@@ -148,6 +158,7 @@ namespace UsefulTORStuff {
             public bool Qualified;
             public bool AutoPick;
             public bool Shield;
+            public int Meetings = 1;   // up to which meeting the shield lasts (forced: 1-3)
         }
 
         public sealed class Evaluation {
@@ -201,9 +212,11 @@ namespace UsefulTORStuff {
                         r.AutoPick = true;
                 }
 
-                foreach (var r in ev.Rows)
+                foreach (var r in ev.Rows) {
                     r.Shield = r.Override == DeathTimeHistory.OverrideOn
                                || (r.Override == DeathTimeHistory.OverrideAuto && r.AutoPick);
+                    r.Meetings = r.Override == DeathTimeHistory.OverrideOn ? DeathTimeHistory.ForcedMeetingsOf(r.Code) : 1;
+                }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[EarlyDeathShield] evaluation failed: {e.Message}");
             }
@@ -225,6 +238,12 @@ namespace UsefulTORStuff {
             DeathTimeHistory.SetOverride(v.Code, v.Name, DeathTimeHistory.OverrideAuto);
         }
 
+        /// <summary>Forced rows only: 1 -> 2 -> 3 -> 1 meetings.</summary>
+        public static void CycleMeetings(Verdict v) {
+            if (v == null || v.Override != DeathTimeHistory.OverrideOn) return;
+            DeathTimeHistory.SetForcedMeetings(v.Code, v.Name, v.Meetings % DeathTimeHistory.MaxForcedMeetings + 1);
+        }
+
         // ====================================================================
         // Statistics for everyone (User 25.09.: every player can look at everyone's numbers in the
         // lobby, their own and the average included). Only the host's records decide the shield,
@@ -238,6 +257,7 @@ namespace UsefulTORStuff {
             public bool Shield;
             // host override, shown openly to everyone (User 25.09.): DeathTimeHistory.OverrideAuto/On/Off
             public int Override;
+            public int Meetings = 1;
         }
 
         public sealed class StatsTable {
@@ -284,12 +304,12 @@ namespace UsefulTORStuff {
             };
             foreach (var r in ev.Rows)
                 t.Rows.Add(new StatsRow { PlayerId = r.PlayerId, Rounds = r.Stat.Rounds, Mean = r.Stat.Mean,
-                                          Qualified = r.Qualified, Shield = r.Shield, Override = r.Override });
+                                          Qualified = r.Qualified, Shield = r.Shield, Override = r.Override, Meetings = r.Meetings });
             return t;
         }
 
         private static string StatsKey(Evaluation ev) =>
-            string.Join(";", ev.Rows.Select(r => $"{r.PlayerId}:{r.Stat.Rounds}:{Mathf.RoundToInt(r.Stat.Mean * 1000f)}:{(r.Qualified ? 1 : 0)}{(r.Shield ? 1 : 0)}{r.Override}"))
+            string.Join(";", ev.Rows.Select(r => $"{r.PlayerId}:{r.Stat.Rounds}:{Mathf.RoundToInt(r.Stat.Mean * 1000f)}:{(r.Qualified ? 1 : 0)}{(r.Shield ? 1 : 0)}{r.Override}{r.Meetings}"))
             + $"|{(ev.HasAverage ? Mathf.RoundToInt(ev.LobbyMean * 1000f) : -1)}|{ev.ThresholdPercent}|{ev.MinRounds}";
 
         private static void SendStats(Evaluation ev) {
@@ -305,7 +325,8 @@ namespace UsefulTORStuff {
                     w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt(r.Stat.Mean * 1000f), 0, 1000));
                     w.Write((byte)((r.Qualified ? 1 : 0) | (r.Shield ? 2 : 0)
                                    | (r.Override == DeathTimeHistory.OverrideOn ? 4 : 0)
-                                   | (r.Override == DeathTimeHistory.OverrideOff ? 8 : 0)));
+                                   | (r.Override == DeathTimeHistory.OverrideOff ? 8 : 0)
+                                   | ((Mathf.Clamp(r.Meetings, 1, 3) - 1) << 4)));   // bits 4-5, older builds ignore them
                 }
                 w.Write(ev.HasAverage);
                 w.Write((ushort)Mathf.Clamp(Mathf.RoundToInt(ev.LobbyMean * 1000f), 0, 1000));
@@ -339,6 +360,7 @@ namespace UsefulTORStuff {
                 r.Qualified = (f & 1) != 0; r.Shield = (f & 2) != 0;
                 r.Override = (f & 4) != 0 ? DeathTimeHistory.OverrideOn
                            : (f & 8) != 0 ? DeathTimeHistory.OverrideOff : DeathTimeHistory.OverrideAuto;
+                r.Meetings = ((f >> 4) & 3) + 1;
                 t.Rows.Add(r);
             }
             t.HasAverage = reader.ReadBoolean();
@@ -349,14 +371,23 @@ namespace UsefulTORStuff {
         }
 
         // ---- RPC ----
-        private static void SendSetShields(List<byte> ids) {
+        private static void SendSetShields(List<(byte Id, int Meetings)> list) {
             try {
+                var ids = list.Select(x => x.Id).ToList();
                 MessageWriter w = UTSRpc.Begin(RpcId);
                 w.Write(SubSetShields);
                 w.Write((byte)Math.Min(ids.Count, 255));
                 for (int i = 0; i < ids.Count && i < 255; i++) w.Write(ids[i]);
                 AmongUsClient.Instance.FinishRpcImmediately(w);
                 ApplySetShields(ids);
+
+                // the meetings follow on the same reliable channel, so they always land after Sub 0
+                w = UTSRpc.Begin(RpcId);
+                w.Write(SubMeetings);
+                w.Write((byte)Math.Min(list.Count, 255));
+                for (int i = 0; i < list.Count && i < 255; i++) { w.Write(list[i].Id); w.Write((byte)list[i].Meetings); }
+                AmongUsClient.Instance.FinishRpcImmediately(w);
+                ApplyMeetings(list);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[EarlyDeathShield] send failed: {e}");
             }
@@ -387,6 +418,13 @@ namespace UsefulTORStuff {
                     case SubClear:
                         if (UTSRpc.RequireHost("EarlyDeathShield.Clear")) ApplyClear();
                         break;
+                    case SubMeetings: {
+                        int n = reader.ReadByte();
+                        var list = new List<(byte, int)>(n);
+                        for (int i = 0; i < n; i++) list.Add((reader.ReadByte(), reader.ReadByte()));
+                        if (UTSRpc.RequireHost("EarlyDeathShield.Meetings")) ApplyMeetings(list);
+                        break;
+                    }
                     case SubStats: {
                         var table = ReadStats(reader);
                         if (UTSRpc.RequireHost("EarlyDeathShield.Stats")) LastStats = table;
@@ -403,16 +441,39 @@ namespace UsefulTORStuff {
 
         private static void ApplySetShields(List<byte> ids) {
             shielded.Clear();
+            lastsUntil.Clear();      // every shield lasts one meeting until SubMeetings says more
             foreach (byte id in ids) shielded.Add(id);
             if (shielded.Count > 0)
                 UsefulTORStuffPlugin.Logger?.LogInfo(
-                    $"[EarlyDeathShield] {shielded.Count} player(s) shielded until the first meeting.");
+                    $"[EarlyDeathShield] {shielded.Count} player(s) shielded.");
+        }
+
+        private static void ApplyMeetings(List<(byte Id, int Meetings)> list) {
+            foreach (var (id, m) in list) lastsUntil[id] = Mathf.Clamp(m, 1, DeathTimeHistory.MaxForcedMeetings);
+            var longer = list.Where(x => x.Meetings > 1).ToList();
+            if (longer.Count > 0)
+                UsefulTORStuffPlugin.Logger?.LogInfo(
+                    $"[EarlyDeathShield] longer shields: {string.Join(", ", longer.Select(x => $"{x.Id} until meeting {x.Meetings}"))}.");
         }
 
         private static void ApplyClear() {
+            lastsUntil.Clear();
             if (shielded.Count == 0) return;
             shielded.Clear();
             UsefulTORStuffPlugin.Logger?.LogInfo("[EarlyDeathShield] shield list cleared by the host.");
+        }
+
+        // Drops the shields that run out at the current meeting count (every client on its own; the
+        // host also tells everyone once the list is empty, as before).
+        private static void DropExpired(bool meetingRunning) {
+            if (shielded.Count == 0) return;
+            // Ends before the meeting: gone the moment meeting N opens. Kept through it: gone once
+            // meeting N is over.
+            var gone = shielded.Where(id => meetingsSeen >= LastsUntil(id) && (!SurvivesMeeting || !meetingRunning)).ToList();
+            if (gone.Count == 0) return;
+            foreach (byte id in gone) { shielded.Remove(id); lastsUntil.Remove(id); }
+            UsefulTORStuffPlugin.Logger?.LogInfo($"[EarlyDeathShield] shield ended for {gone.Count} player(s) after meeting {meetingsSeen}, {shielded.Count} left.");
+            if (shielded.Count == 0 && AmHost()) SendClear();
         }
 
         // ====================================================================
@@ -424,7 +485,7 @@ namespace UsefulTORStuff {
         private static float roundSeenAt;
         private static bool assignedThisRound;
         private static bool introOverSeen;
-        private static bool firstMeetingSeen;
+        private static int meetingsSeen;      // meetings opened in this round
         private const float IntroFallbackSeconds = 10f;
 
         public static void Tick() {
@@ -447,14 +508,10 @@ namespace UsefulTORStuff {
 
                 if (!roundSeen) { roundSeen = true; roundSeenAt = Time.realtimeSinceStartup; }
 
-                // Same two lifetimes as the newcomer shield (see its Tick for the long version).
+                // Same two lifetimes as the newcomer shield (see its Tick for the long version), counted
+                // per player: a forced shield may run up to the 2nd or 3rd meeting.
                 bool meetingRunning = MeetingHud.Instance != null || ExileController.Instance != null;
-                bool dropNow = SurvivesMeeting ? (firstMeetingSeen && !meetingRunning)
-                                               : (MeetingHud.Instance != null);
-                if (dropNow && shielded.Count > 0) {
-                    if (client.AmHost) SendClear();
-                    else shielded.Clear();
-                }
+                DropExpired(meetingRunning);
 
                 if (assignedThisRound || !client.AmHost) return;
                 if (!IsEnabled()) { assignedThisRound = true; return; }
@@ -477,13 +534,14 @@ namespace UsefulTORStuff {
         private static void AssignShields() {
             try {
                 var ev = Evaluate();
-                var ids = new List<byte>();
+                var list = new List<(byte Id, int Meetings)>();
                 foreach (var r in ev.Rows) {
                     if (!r.Shield) continue;
                     var p = Helpers.playerById(r.PlayerId);
                     if (p == null || p.Data == null || p.Data.IsDead || p.Data.Disconnected) continue;
-                    ids.Add(r.PlayerId);
+                    list.Add((r.PlayerId, r.Meetings));
                 }
+                var ids = list.Select(x => x.Id).ToList();
 
                 // Always logged: the proof the decision ran, and the numbers behind it.
                 UsefulTORStuffPlugin.Logger?.LogInfo(
@@ -492,10 +550,10 @@ namespace UsefulTORStuff {
                     + $", {ids.Count} to shield"
                     + (ids.Count > 0 ? ": " + string.Join(", ", ev.Rows.Where(r => ids.Contains(r.PlayerId))
                           .Select(r => $"{r.Name} ({r.Stat.Mean * 100f:F0}%, {r.Stat.Rounds} rounds"
-                                       + (r.Override == DeathTimeHistory.OverrideOn ? ", forced" : "") + ")")) : "")
+                                       + (r.Override == DeathTimeHistory.OverrideOn ? $", forced until meeting {r.Meetings}" : "") + ")")) : "")
                     + ".");
 
-                if (ids.Count > 0) SendSetShields(ids);
+                if (list.Count > 0) SendSetShields(list);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[EarlyDeathShield] round start failed: {e}");
             }
@@ -505,10 +563,8 @@ namespace UsefulTORStuff {
         static class MeetingStartPatch {
             public static void Postfix() {
                 try {
-                    firstMeetingSeen = true;
-                    if (SurvivesMeeting || shielded.Count == 0) return;
-                    if (AmHost()) SendClear();
-                    else shielded.Clear();
+                    meetingsSeen++;
+                    DropExpired(true);
                 } catch { }
             }
         }
@@ -524,11 +580,11 @@ namespace UsefulTORStuff {
 
         private static void LobbyPreviewTick() {
             try {
-                var ids = new List<byte>();
+                var ids = new List<(byte Id, int Meetings)>();
                 if (IsEnabled()) {
                     var ev = Evaluate();
                     foreach (var r in ev.Rows)
-                        if (r.Shield) ids.Add(r.PlayerId);
+                        if (r.Shield) ids.Add((r.PlayerId, r.Meetings));
                     // statistics for everyone's viewer: on change, and right away when somebody asks
                     string sk = StatsKey(ev);
                     if (sk != lastStatsKey || statsRequested) {
@@ -538,7 +594,7 @@ namespace UsefulTORStuff {
                     }
                 }
                 ids.Sort();
-                string key = string.Join(",", ids);
+                string key = string.Join(",", ids.Select(x => $"{x.Id}:{x.Meetings}"));
                 if (key == lastPreviewKey) return;
                 lastPreviewKey = key;
 
@@ -630,7 +686,8 @@ namespace UsefulTORStuff {
         static class ResetPatch {
             public static void Postfix() {
                 shielded.Clear();
-                firstMeetingSeen = false;
+                lastsUntil.Clear();
+                meetingsSeen = 0;
                 lastPreviewKey = "";
             }
         }
@@ -640,7 +697,8 @@ namespace UsefulTORStuff {
             // Player ids are per connection; the overrides live on in the history file by code.
             public static void Postfix() {
                 shielded.Clear();
-                firstMeetingSeen = false;
+                lastsUntil.Clear();
+                meetingsSeen = 0;
                 lastPreviewKey = "";
             }
         }

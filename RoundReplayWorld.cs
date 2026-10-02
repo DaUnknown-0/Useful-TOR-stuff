@@ -289,7 +289,7 @@ namespace UsefulTORStuff {
 
         // ---- panel ----
         private static void WorldBuildUi(GameObject panel, float mapH) {
-            worldArea = SessionStatsUI.Box(panel, new Vector2((PanelW - MapW) / 2f, -90), new Vector2(MapW, mapH), Color.black);
+            worldArea = SessionStatsUI.Box(panel, new Vector2(MapX, MapY), new Vector2(MapW, mapH), Color.black);
             worldArea.GetComponent<Image>().raycastTarget = false;
             var pic = new GameObject("World");
             pic.transform.SetParent(worldArea.transform, false);

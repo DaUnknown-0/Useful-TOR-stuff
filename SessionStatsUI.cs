@@ -13,7 +13,7 @@
  * cumulative share at the bottom), so each slice shows between its neighbours' edges.
  *
  * Same screen-space canvas shape as EarlyDeathShieldUI; its lobby button sits in the shared
- * bottom-left column one row above the early-death button.
+ * bottom row right of the early-death button.
  */
 
 using System;
@@ -106,9 +106,9 @@ namespace UsefulTORStuff {
             if (lobbyButton == null) return;
             if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
             if (!show) return;
-            // the shared bottom-left column: above the newcomer and early-death buttons that are shown
-            int rows = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (EarlyDeathShieldUI.ButtonShown ? 1 : 0);
-            if (lobbyButtonRect != null) lobbyButtonRect.anchoredPosition = new Vector2(28, 84 + 54 * rows);
+            // the shared bottom row: right of the newcomer and early-death buttons that are shown
+            int slot = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (EarlyDeathShieldUI.ButtonShown ? 1 : 0);
+            if (lobbyButtonRect != null) lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(slot);
         }
 
         [HideFromIl2Cpp]
@@ -140,7 +140,7 @@ namespace UsefulTORStuff {
                 lobbyButtonRect = btn.AddComponent<RectTransform>();
                 lobbyButtonRect.anchorMin = Vector2.zero; lobbyButtonRect.anchorMax = Vector2.zero;
                 lobbyButtonRect.pivot = Vector2.zero;
-                lobbyButtonRect.anchoredPosition = new Vector2(28, 84);
+                lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(0);
                 lobbyButtonRect.sizeDelta = new Vector2(330, 46);
                 btn.AddComponent<Image>().sprite = Solid(ColButton);
                 var t = Label(btn, UTSLocalization.Tr("uts.sessionstats.button"), 18, TMPro.FontStyles.Bold, Color.white,

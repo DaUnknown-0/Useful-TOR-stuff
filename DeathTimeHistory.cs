@@ -93,9 +93,13 @@ namespace UsefulTORStuff {
         public const int OverrideOn = 1;
         public const int OverrideOff = -1;
 
+        // A forced shield can last up to this many meetings into the round (User 2026-10-02).
+        public const int MaxForcedMeetings = 3;
+
         private sealed class Entry {
             public string Name = "";
             public int Override;
+            public int ForcedMeetings = 1;   // only read while Override == OverrideOn
             public readonly List<Round> Shares = new List<Round>();
         }
 
@@ -140,6 +144,22 @@ namespace UsefulTORStuff {
             Save();
         }
 
+        /// <summary>Up to which meeting a FORCED shield lasts (1-3); 1 when never set.</summary>
+        public static int ForcedMeetingsOf(string code) {
+            EnsureLoaded();
+            return !string.IsNullOrEmpty(code) && entries.TryGetValue(code, out var e) ? e.ForcedMeetings : 1;
+        }
+
+        public static void SetForcedMeetings(string code, string name, int meetings) {
+            if (string.IsNullOrEmpty(code)) return;
+            EnsureLoaded();
+            var e = GetOrAdd(code, name);
+            meetings = Mathf.Clamp(meetings, 1, MaxForcedMeetings);
+            if (e.ForcedMeetings == meetings) return;
+            e.ForcedMeetings = meetings;
+            Save();
+        }
+
         private static Entry GetOrAdd(string code, string name) {
             if (!entries.TryGetValue(code, out var e)) {
                 e = new Entry();
@@ -152,7 +172,7 @@ namespace UsefulTORStuff {
 
         // ---- persistence ----
         // One player per line: code, last name, override, then the rounds oldest first as
-        // "share@unix seconds of the round end". Tab separated (names cannot contain tabs after the
+        // "share@unix seconds of the round end", then the forced shield's meetings (1-3). Tab separated (names cannot contain tabs after the
         // Replace above, codes never do). Files from v1.4.10 and older hold bare shares without a time;
         // those get the file's last write time, which is when their newest round was saved.
 
@@ -183,6 +203,9 @@ namespace UsefulTORStuff {
                         }
                         while (e.Shares.Count > Window) e.Shares.RemoveAt(0);
                     }
+                    // fifth column (since 2026-10-02): meetings of a forced shield; older files have none
+                    if (parts.Length > 4 && int.TryParse(parts[4], NumberStyles.Integer, CultureInfo.InvariantCulture, out int fm))
+                        e.ForcedMeetings = Mathf.Clamp(fm, 1, MaxForcedMeetings);
                     n++;
                 }
                 string session = "";
@@ -206,7 +229,8 @@ namespace UsefulTORStuff {
                     string shares = string.Join(",",
                         kv.Value.Shares.Select(r => r.Share.ToString("0.###", CultureInfo.InvariantCulture) + "@"
                             + new DateTimeOffset(r.EndUtc).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
-                    lines.Add($"{kv.Key}\t{kv.Value.Name}\t{kv.Value.Override.ToString(CultureInfo.InvariantCulture)}\t{shares}");
+                    lines.Add($"{kv.Key}\t{kv.Value.Name}\t{kv.Value.Override.ToString(CultureInfo.InvariantCulture)}\t{shares}"
+                              + $"\t{kv.Value.ForcedMeetings.ToString(CultureInfo.InvariantCulture)}");
                 }
                 // tmp + move: a crash mid-write must not cost the whole history.
                 string tmp = FilePath + ".tmp";

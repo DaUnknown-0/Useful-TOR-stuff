@@ -95,23 +95,28 @@ namespace UsefulTORStuff {
             if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
             if (!show) return;
             if (lobbyButtonText != null) lobbyButtonText.text = ButtonLabel();
-            // One row above the newcomer button while that one is shown, in its place otherwise.
+            // Right of the newcomer button while that one is shown, in its place otherwise.
             if (lobbyButtonRect != null)
-                lobbyButtonRect.anchoredPosition = new Vector2(28, NewcomerShieldUI.ButtonShown ? 138 : 84);
+                lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(NewcomerShieldUI.ButtonShown ? 1 : 0);
         }
 
         /*
-         * Other mods' lobby buttons (UC's colour grant) sit in the same bottom-left column. They read
-         * this key to land one row above whatever UTS shows right now instead of on a fixed row that
-         * one of these buttons may already occupy. Rows are 54 apart: 46 high plus an 8 gap.
+         * Other mods' lobby buttons (UC's colour grant) sit in the same bottom row. They read
+         * LobbyNextFreeXKey to land right of whatever UTS shows right now (Y is UTSModSyncUI.LobbyRowY).
+         * LobbyNextFreeRowKey is the old column contract: a UC that predates the row reads it as Y
+         * and lands one row above the bottom row, clear of the buttons there.
          */
         public const string LobbyNextFreeRowKey = "UTS.LobbyButtons.NextFreeY";
+        public const string LobbyNextFreeXKey = "UTS.LobbyButtons.NextFreeX";
 
         [HideFromIl2Cpp]
         private static void PublishNextFreeRow(bool earlyDeathShown) {
-            int rows = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (earlyDeathShown ? 1 : 0)
-                       + (SessionStatsUI.ButtonShown ? 1 : 0) + (RoundReplay.ButtonShown ? 1 : 0);
-            try { AppDomain.CurrentDomain.SetData(LobbyNextFreeRowKey, 84f + 54f * rows); } catch { }
+            int slots = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (earlyDeathShown ? 1 : 0)
+                        + (SessionStatsUI.ButtonShown ? 1 : 0) + (RoundReplay.ButtonShown ? 1 : 0);
+            try {
+                AppDomain.CurrentDomain.SetData(LobbyNextFreeXKey, UTSModSyncUI.LobbySlot(slots).x);
+                AppDomain.CurrentDomain.SetData(LobbyNextFreeRowKey, 84f);
+            } catch { }
         }
 
         [HideFromIl2Cpp]
@@ -150,7 +155,7 @@ namespace UsefulTORStuff {
                 lobbyButtonRect = btn.AddComponent<RectTransform>();
                 lobbyButtonRect.anchorMin = Vector2.zero; lobbyButtonRect.anchorMax = Vector2.zero;
                 lobbyButtonRect.pivot = Vector2.zero;
-                lobbyButtonRect.anchoredPosition = new Vector2(28, 84);
+                lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(0);
                 lobbyButtonRect.sizeDelta = new Vector2(330, 46);
                 btn.AddComponent<Image>().sprite = Solid(new Color(0.55f, 0.2f, 0.45f, 0.95f));
 
@@ -214,14 +219,15 @@ namespace UsefulTORStuff {
                 backdrop.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)Close);
 
                 var ev = EarlyDeathShield.Evaluate();
-                float height = Mathf.Clamp(260 + ev.Rows.Count * 52, 350, 820);
+                float step = RowStep(ev.Rows.Count, 134);
+                float height = Mathf.Clamp(134 + ev.Rows.Count * step + FooterH, 350, MaxPanelH);
 
                 var panel = new GameObject("Panel");
                 panel.transform.SetParent(panelRoot.transform, false);
                 var prt = panel.AddComponent<RectTransform>();
                 prt.anchorMin = new Vector2(0.5f, 0.5f); prt.anchorMax = new Vector2(0.5f, 0.5f);
                 prt.pivot = new Vector2(0.5f, 0.5f);
-                prt.sizeDelta = new Vector2(1000, height);
+                prt.sizeDelta = new Vector2(1120, height);   // room for the forced rows' meetings button
                 panel.AddComponent<Image>().sprite = Solid(ColPanel);
 
                 Label(panel, UTSLocalization.Tr("uts.earlydeath.title"), 28, TMPro.FontStyles.Bold,
@@ -243,8 +249,8 @@ namespace UsefulTORStuff {
 
                 float y = -134;
                 foreach (var v in ev.Rows) {
-                    BuildRow(panel, v, ev, y);
-                    y -= 52;
+                    BuildRow(panel, v, ev, y, step - 6);
+                    y -= step;
                 }
 
                 MakeButton(panel, UTSLocalization.Tr("uts.earlydeath.close"),
@@ -255,14 +261,26 @@ namespace UsefulTORStuff {
             }
         }
 
+        /*
+         * Both panels grew 52 per player up to a fixed cap (820 / 860), so a full lobby ran past it:
+         * the last row sat under the Close button and further rows fell off the panel (User
+         * 2026-10-02, 14 players). Now the rows shrink instead, so title, every row and the Close
+         * button always fit the 1080 reference height.
+         */
+        private const float MaxPanelH = 1010, FooterH = 84, FullStep = 52, MinStep = 30;
+
+        private static float RowStep(int rows, float top) =>
+            rows <= 0 ? FullStep : Mathf.Clamp((MaxPanelH - top - FooterH) / rows, MinStep, FullStep);
+
         [HideFromIl2Cpp]
-        private void BuildRow(GameObject parent, EarlyDeathShield.Verdict v, EarlyDeathShield.Evaluation ev, float y) {
+        private void BuildRow(GameObject parent, EarlyDeathShield.Verdict v, EarlyDeathShield.Evaluation ev, float y, float rowH) {
             var holder = new GameObject("Row");
             holder.transform.SetParent(parent.transform, false);
             var rt = holder.AddComponent<RectTransform>();
             rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(1, 1); rt.pivot = new Vector2(0.5f, 1);
             rt.anchoredPosition = new Vector2(0, y);
-            rt.sizeDelta = new Vector2(-50, 46);
+            rt.sizeDelta = new Vector2(-50, rowH);
+            float btnH = Mathf.Min(36f, rowH - 6f);
             holder.AddComponent<Image>().sprite = Solid(ColRow);
 
             Label(holder, v.Name, 17, TMPro.FontStyles.Bold, Color.white,
@@ -284,7 +302,7 @@ namespace UsefulTORStuff {
             var captured = v;
             MakeButton(holder, UTSLocalization.Tr(v.Shield
                            ? "uts.earlydeath.btn_unprotect" : "uts.earlydeath.btn_protect"),
-                       new Vector2(-14, 0), new Vector2(130, 36),
+                       new Vector2(-14, 0), new Vector2(130, btnH),
                        v.Shield ? new Color(0.5f, 0.25f, 0.25f, 0.95f) : new Color(0.55f, 0.2f, 0.45f, 0.95f),
                        () => { EarlyDeathShield.ToggleOverride(captured); Rebuild(); },
                        anchorMin: new Vector2(1, 0.5f), anchorMax: new Vector2(1, 0.5f),
@@ -292,8 +310,16 @@ namespace UsefulTORStuff {
 
             if (v.Override != DeathTimeHistory.OverrideAuto)
                 MakeButton(holder, UTSLocalization.Tr("uts.earlydeath.btn_auto"),
-                           new Vector2(-154, 0), new Vector2(76, 36), ColBtnGrey,
+                           new Vector2(-154, 0), new Vector2(76, btnH), ColBtnGrey,
                            () => { EarlyDeathShield.ClearOverride(captured); Rebuild(); },
+                           anchorMin: new Vector2(1, 0.5f), anchorMax: new Vector2(1, 0.5f),
+                           pivot: new Vector2(1, 0.5f));
+
+            // forced only: how long the shield lasts, 1 -> 2 -> 3 meetings (User 2026-10-02)
+            if (v.Override == DeathTimeHistory.OverrideOn)
+                MakeButton(holder, UTSLocalization.Tr("uts.earlydeath.btn_meetings", v.Meetings),
+                           new Vector2(-238, 0), new Vector2(120, btnH), new Color(0.55f, 0.2f, 0.45f, 0.95f),
+                           () => { EarlyDeathShield.CycleMeetings(captured); Rebuild(); },
                            anchorMin: new Vector2(1, 0.5f), anchorMax: new Vector2(1, 0.5f),
                            pivot: new Vector2(1, 0.5f));
         }
@@ -345,14 +371,15 @@ namespace UsefulTORStuff {
                         if (pc == null || pc.Data == null || pc.Data.Disconnected) continue;
                         rows.Add((r, pc.Data.PlayerName ?? "?", r.PlayerId == me));
                     }
-                float height = Mathf.Clamp(300 + rows.Count * 52, 380, 860);
+                float step = RowStep(rows.Count, 164);
+                float height = Mathf.Clamp(164 + rows.Count * step + FooterH, 380, MaxPanelH);
 
                 var panel = new GameObject("Panel");
                 panel.transform.SetParent(panelRoot.transform, false);
                 var prt = panel.AddComponent<RectTransform>();
                 prt.anchorMin = new Vector2(0.5f, 0.5f); prt.anchorMax = new Vector2(0.5f, 0.5f);
                 prt.pivot = new Vector2(0.5f, 0.5f);
-                prt.sizeDelta = new Vector2(900, height);
+                prt.sizeDelta = new Vector2(960, height);    // room for "forced, until meeting 2"
                 panel.AddComponent<Image>().sprite = Solid(ColPanel);
 
                 Label(panel, UTSLocalization.Tr("uts.earlydeath.viewer_title"), 28, TMPro.FontStyles.Bold,
@@ -389,8 +416,8 @@ namespace UsefulTORStuff {
 
                     float y = -164;
                     foreach (var (r, name, isMe) in rows) {
-                        BuildViewerRow(panel, r, name, isMe, st, y);
-                        y -= 52;
+                        BuildViewerRow(panel, r, name, isMe, st, y, step - 6);
+                        y -= step;
                     }
                 }
 
@@ -404,13 +431,13 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         private void BuildViewerRow(GameObject parent, EarlyDeathShield.StatsRow r, string name, bool isMe,
-                                    EarlyDeathShield.StatsTable st, float y) {
+                                    EarlyDeathShield.StatsTable st, float y, float rowH) {
             var holder = new GameObject("Row");
             holder.transform.SetParent(parent.transform, false);
             var rt = holder.AddComponent<RectTransform>();
             rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(1, 1); rt.pivot = new Vector2(0.5f, 1);
             rt.anchoredPosition = new Vector2(0, y);
-            rt.sizeDelta = new Vector2(-50, 46);
+            rt.sizeDelta = new Vector2(-50, rowH);
             holder.AddComponent<Image>().sprite = Solid(isMe ? new Color(1f, 0.45f, 0.85f, 0.14f) : ColRow);
 
             Label(holder, isMe ? $"{name} {UTSLocalization.Tr("uts.earlydeath.you_tag")}" : name, 17, TMPro.FontStyles.Bold,
@@ -425,10 +452,13 @@ namespace UsefulTORStuff {
             string state = r.Override == DeathTimeHistory.OverrideOn ? "uts.earlydeath.state_forced"
                          : r.Override == DeathTimeHistory.OverrideOff ? "uts.earlydeath.state_excluded"
                          : r.Shield ? "uts.earlydeath.state_auto" : "uts.earlydeath.state_none";
-            Label(holder, UTSLocalization.Tr(state), 14,
+            string stateText = UTSLocalization.Tr(state);
+            if (r.Override == DeathTimeHistory.OverrideOn && r.Meetings > 1)
+                stateText = UTSLocalization.Tr("uts.earlydeath.until_meeting", stateText, r.Meetings);
+            Label(holder, stateText, 14,
                   TMPro.FontStyles.Normal, r.Shield ? ColShield : ColMuted,
                   new Vector2(1, 0), new Vector2(1, 1), new Vector2(1, 0.5f),
-                  new Vector2(-14, 0), new Vector2(170, 0), TMPro.TextAlignmentOptions.Right);
+                  new Vector2(-14, 0), new Vector2(240, 0), TMPro.TextAlignmentOptions.Right);
         }
 
         [HideFromIl2Cpp]

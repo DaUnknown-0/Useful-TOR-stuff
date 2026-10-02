@@ -51,6 +51,7 @@ namespace UsefulTORStuff {
 
         private GameObject panelRoot;
         private GameObject lobbyButton;
+        private RectTransform lobbyButtonRect;
 
         // Read by EarlyDeathShieldUI to stack its own lobby button one row above this one.
         public static bool ButtonShown { get; private set; }
@@ -94,6 +95,7 @@ namespace UsefulTORStuff {
             if (lobbyButton == null) return;
             if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
             if (show && lobbyButtonText != null) lobbyButtonText.text = ButtonLabel();
+            if (show && lobbyButtonRect != null) lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(0);
         }
 
         [HideFromIl2Cpp]
@@ -137,9 +139,10 @@ namespace UsefulTORStuff {
                 var btn = new GameObject("Btn");
                 btn.transform.SetParent(lobbyButton.transform, false);
                 var rt = btn.AddComponent<RectTransform>();
-                // Bottom left, one row above the mod sync button so the two never overlap.
+                lobbyButtonRect = rt;
+                // Bottom row, first slot after the mod sync button while that one is shown.
                 rt.anchorMin = Vector2.zero; rt.anchorMax = Vector2.zero; rt.pivot = Vector2.zero;
-                rt.anchoredPosition = new Vector2(28, 84);
+                rt.anchoredPosition = UTSModSyncUI.LobbySlot(0);
                 rt.sizeDelta = new Vector2(330, 46);
                 btn.AddComponent<Image>().sprite = Solid(new Color(0.2f, 0.5f, 0.4f, 0.95f));
 
@@ -201,7 +204,10 @@ namespace UsefulTORStuff {
 
                 var players = PlayerControl.AllPlayerControls.ToArray()
                     .Where(p => p != null && p.Data != null && !p.Data.Disconnected).ToList();
-                float height = Mathf.Clamp(230 + players.Count * 52, 320, 780);
+                // Rows shrink so a full lobby still fits with the Close button (the old 780 cap pushed
+                // rows under it from about 11 players on, same fix as EarlyDeathShieldUI.RowStep).
+                float step = players.Count <= 0 ? 52f : Mathf.Clamp((1010f - 104f - 84f) / players.Count, 30f, 52f);
+                float height = Mathf.Clamp(104 + players.Count * step + 84, 320, 1010);
 
                 var panel = new GameObject("Panel");
                 panel.transform.SetParent(panelRoot.transform, false);
@@ -221,8 +227,8 @@ namespace UsefulTORStuff {
 
                 float y = -104;
                 foreach (var p in players) {
-                    BuildRow(panel, p, y);
-                    y -= 52;
+                    BuildRow(panel, p, y, step - 6);
+                    y -= step;
                 }
 
                 MakeButton(panel, UTSLocalization.Tr("uts.newcomershield.close"),
@@ -234,13 +240,13 @@ namespace UsefulTORStuff {
         }
 
         [HideFromIl2Cpp]
-        private void BuildRow(GameObject parent, PlayerControl p, float y) {
+        private void BuildRow(GameObject parent, PlayerControl p, float y, float rowH) {
             var holder = new GameObject("Row");
             holder.transform.SetParent(parent.transform, false);
             var rt = holder.AddComponent<RectTransform>();
             rt.anchorMin = new Vector2(0, 1); rt.anchorMax = new Vector2(1, 1); rt.pivot = new Vector2(0.5f, 1);
             rt.anchoredPosition = new Vector2(0, y);
-            rt.sizeDelta = new Vector2(-50, 46);
+            rt.sizeDelta = new Vector2(-50, rowH);
             holder.AddComponent<Image>().sprite = Solid(ColRow);
 
             string name = p.Data?.PlayerName ?? "?";
@@ -260,7 +266,7 @@ namespace UsefulTORStuff {
             var captured = p;
             MakeButton(holder, UTSLocalization.Tr(shielded
                            ? "uts.newcomershield.btn_unprotect" : "uts.newcomershield.btn_protect"),
-                       new Vector2(-14, 0), new Vector2(190, 36),
+                       new Vector2(-14, 0), new Vector2(190, Mathf.Min(36f, rowH - 6f)),
                        shielded ? new Color(0.5f, 0.25f, 0.25f, 0.95f) : new Color(0.2f, 0.55f, 0.3f, 0.95f),
                        () => { NewcomerShield.ToggleManual(captured); Rebuild(); },
                        anchorMin: new Vector2(1, 0.5f), anchorMax: new Vector2(1, 0.5f),

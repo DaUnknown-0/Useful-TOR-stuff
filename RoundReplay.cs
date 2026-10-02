@@ -83,6 +83,7 @@ namespace UsefulTORStuff {
             public byte Target = 255;    // the victim of a death, the body of a cleaning
             public List<byte> Seen;      // host only: who could see the spot (null = not recorded)
             public bool Generic;         // a UC ability seen only as its module; a client report replaces it
+            public string Result;        // meetings: the vote, as the replay's meeting card shows it (RoundReplayView)
         }
 
         private static readonly List<Track> tracks = new List<Track>();
@@ -344,8 +345,8 @@ namespace UsefulTORStuff {
             if (show && lobbyButton == null) BuildLobbyButton();
             if (lobbyButton == null) return;
             if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
-            int rows = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (EarlyDeathShieldUI.ButtonShown ? 1 : 0) + (SessionStatsUI.ButtonShown ? 1 : 0);
-            if (lobbyButtonRect != null) lobbyButtonRect.anchoredPosition = new Vector2(28, 84 + 54 * rows);
+            int slot = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (EarlyDeathShieldUI.ButtonShown ? 1 : 0) + (SessionStatsUI.ButtonShown ? 1 : 0);
+            if (lobbyButtonRect != null) lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(slot);
         }
 
         private static GameObject Canvas(string name, int order, bool blocking) {
@@ -370,7 +371,7 @@ namespace UsefulTORStuff {
                                                     new Color(0.2f, 0.45f, 0.35f, 0.95f), OpenView);
                 lobbyButtonRect = btn.GetComponent<RectTransform>();
                 lobbyButtonRect.anchorMin = lobbyButtonRect.anchorMax = lobbyButtonRect.pivot = Vector2.zero;
-                lobbyButtonRect.anchoredPosition = new Vector2(28, 84);
+                lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(0);
                 var label = btn.GetComponentInChildren<TMPro.TextMeshProUGUI>();
                 if (label != null) label.fontSize = 18;
             } catch (Exception e) {
@@ -379,7 +380,9 @@ namespace UsefulTORStuff {
             }
         }
 
-        private const float PanelW = 1500, PanelH = 900, MapW = 1440, MapH = 660;
+        // map on the left, the event list (RoundReplayView) on the right, filters above, controls below
+        private const float PanelW = 1760, PanelH = 1010, MapX = 30, MapY = -128, MapW = 1240, MapH = 712;
+        private const float BarX = 560, BarW = PanelW - BarX - 190;
 
         internal static void OpenView() {
             if (panelRoot != null) { CloseView(); return; }
@@ -412,11 +415,11 @@ namespace UsefulTORStuff {
 
                 // map, aspect-fitted into the map area
                 bool host = HostData;
-                float mapH = host ? MapH - 64 : MapH;     // room for the perspective row
+                float mapH = MapH - 72;     // room for the player row and the perspective line
                 float ww = Mathf.Max(0.1f, worldRect.width), wh = Mathf.Max(0.1f, worldRect.height);
                 kScale = Mathf.Min(MapW / ww, mapH / wh);
                 drawW = ww * kScale; drawH = wh * kScale;
-                mapArea = SessionStatsUI.Box(panel, new Vector2((PanelW - drawW) / 2f, -90 - (mapH - drawH) / 2f), new Vector2(drawW, drawH), new Color(0, 0, 0, 0));
+                mapArea = SessionStatsUI.Box(panel, new Vector2(MapX + (MapW - drawW) / 2f, MapY - (mapH - drawH) / 2f), new Vector2(drawW, drawH), new Color(0, 0, 0, 0));
                 var raw = new GameObject("Map");
                 raw.transform.SetParent(mapArea.transform, false);
                 var rrt = raw.AddComponent<RectTransform>();
@@ -444,6 +447,8 @@ namespace UsefulTORStuff {
                 visionImg.color = new Color(1f, 0.8f, 0.15f, 0.38f);     // warm, strong enough on light floor plans
                 visionImg.raycastTarget = false;
                 vis.SetActive(false);
+                // trail, halos and the event spot, below the dots (RoundReplayView)
+                BuildMapMarks();
 
                 dots.Clear();
                 foreach (var t in tracks) {
@@ -465,25 +470,26 @@ namespace UsefulTORStuff {
                 if (host && WorldPossible()) { WorldBuildUi(panel, mapH); WorldLoad(); }
 
                 // banner for the latest event
-                banner = SessionStatsUI.Box(panel, new Vector2(200, -96), new Vector2(PanelW - 400, host ? 50 : 36), new Color(0, 0, 0, 0.6f));
+                banner = SessionStatsUI.Box(panel, new Vector2(MapX + 100, MapY - 4), new Vector2(MapW - 200, host ? 50 : 36), new Color(0, 0, 0, 0.6f));
                 bannerText = SessionStatsUI.Label(banner, "", 17, TMPro.FontStyles.Bold, Color.white, Vector2.zero, Vector2.one,
                     new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(-16, 0), TMPro.TextAlignmentOptions.Center);
                 bannerText.enableAutoSizing = true; bannerText.fontSizeMin = 11; bannerText.fontSizeMax = 17;
                 banner.SetActive(false);
 
-                // host: whose eyes (one chip per player, "All" switches the perspective off)
+                // whose eyes (one chip per player, "All" switches the perspective off). Everyone gets the
+                // chips as the event list's player filter; light and line of sight are host data only.
                 chips.Clear();
                 seesLabel = null;
-                if (host) {
-                    float rowY = -90 - mapH - 8;
+                {
+                    float rowY = MapY - mapH - 8;
                     int n = tracks.Count + 1;
-                    float cw = Mathf.Min(150f, (PanelW - 60f - 6f * (n - 1)) / n);
+                    float cw = Mathf.Min(150f, (MapW - 6f * (n - 1)) / n);
                     for (int k = 0; k < n; k++) {
                         byte id = k == 0 ? (byte)255 : tracks[k - 1].Id;
                         Color col = k == 0 ? new Color(0.3f, 0.3f, 0.38f) : tracks[k - 1].Col;
                         string label = k == 0 ? UTSLocalization.Tr("uts.replay.persp_all") : tracks[k - 1].Name;
                         var chip = SessionStatsUI.MakeButton(panel, label, Vector2.zero, new Vector2(cw, 30), Color.white, () => persp = id);
-                        Place(chip, new Vector2(30 + k * (cw + 6f), rowY));
+                        Place(chip, new Vector2(MapX + k * (cw + 6f), rowY));
                         var txt = chip.GetComponentInChildren<TMPro.TextMeshProUGUI>();
                         if (txt != null) {
                             txt.enableAutoSizing = true; txt.fontSizeMin = 9; txt.fontSizeMax = 15;
@@ -492,45 +498,67 @@ namespace UsefulTORStuff {
                         }
                         chips.Add((id, chip.GetComponent<Image>(), col));
                     }
-                    seesLabel = SessionStatsUI.Text(panel, "", 15, TMPro.FontStyles.Normal, new Color(0.85f, 0.85f, 0.9f),
-                                                    new Vector2(30, rowY - 36), new Vector2(PanelW - 60 - 220, 24));
+                    if (host) {
+                        seesLabel = SessionStatsUI.Text(panel, "", 15, TMPro.FontStyles.Normal, new Color(0.85f, 0.85f, 0.9f),
+                                                        new Vector2(MapX, rowY - 36), new Vector2(MapW - 220, 24));
+                        seesLabel.enableWordWrapping = false;
+                        seesLabel.overflowMode = TMPro.TextOverflowModes.Ellipsis;
+                    }
                     if (worldArea != null) {
                         var vb = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(210, 26), new Color(0.3f, 0.3f, 0.38f, 0.95f), ToggleWorldView);
-                        Place(vb, new Vector2(PanelW - 30 - 210, rowY - 36));
+                        Place(vb, new Vector2(MapX + MapW - 210, rowY - 36));
                         viewLabel = vb.GetComponentInChildren<TMPro.TextMeshProUGUI>();
                         if (viewLabel != null) viewLabel.fontSize = 13;
                     }
-                    seesLabel.enableWordWrapping = false;
-                    seesLabel.overflowMode = TMPro.TextOverflowModes.Ellipsis;
                 }
 
-                // controls: play/pause, speed, timeline, time
-                float cy = -PanelH + 120;
+                // controls: play/pause, previous/next event, speed, stop at kills, timeline, time
+                float cy = -PanelH + 150;
                 var play = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(140, 40), new Color(0.16f, 0.42f, 0.6f, 0.95f), TogglePlay);
                 Place(play, new Vector2(30, cy));
                 playLabel = play.GetComponentInChildren<TMPro.TextMeshProUGUI>();
-                var sp = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(90, 40), new Color(0.3f, 0.3f, 0.38f, 0.95f), CycleSpeed);
-                Place(sp, new Vector2(180, cy));
+                var prev = SessionStatsUI.MakeButton(panel, "<", Vector2.zero, new Vector2(46, 40), new Color(0.3f, 0.3f, 0.38f, 0.95f), () => StepEvent(-1));
+                Place(prev, new Vector2(176, cy));
+                var next = SessionStatsUI.MakeButton(panel, ">", Vector2.zero, new Vector2(46, 40), new Color(0.3f, 0.3f, 0.38f, 0.95f), () => StepEvent(1));
+                Place(next, new Vector2(228, cy));
+                var sp = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(70, 40), new Color(0.3f, 0.3f, 0.38f, 0.95f), CycleSpeed);
+                Place(sp, new Vector2(280, cy));
                 speedLabel = sp.GetComponentInChildren<TMPro.TextMeshProUGUI>();
+                var ks = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(184, 40), Color.white, () => stopAtKill = !stopAtKill);
+                Place(ks, new Vector2(356, cy));
+                killStopImg = ks.GetComponent<Image>();
+                killStopLabel = ks.GetComponentInChildren<TMPro.TextMeshProUGUI>();
+                if (killStopLabel != null) { killStopLabel.enableAutoSizing = true; killStopLabel.fontSizeMin = 10; killStopLabel.fontSizeMax = 15; }
 
-                var bar = SessionStatsUI.Box(panel, new Vector2(290, cy - 14), new Vector2(PanelW - 290 - 190, 12), new Color(1f, 1f, 1f, 0.12f));
+                var bar = SessionStatsUI.Box(panel, new Vector2(BarX, cy - 14), new Vector2(BarW, 12), new Color(1f, 1f, 1f, 0.12f));
+                BuildPhases(bar);
                 var fill = SessionStatsUI.Box(bar, Vector2.zero, new Vector2(0, 12), new Color(0.45f, 0.8f, 1f, 0.9f));
+                fill.GetComponent<Image>().raycastTarget = false;
                 progressFill = fill.GetComponent<RectTransform>();
-                float barW = PanelW - 290 - 190, dur = Mathf.Max(1f, Duration);
+                float dur = Mathf.Max(1f, Duration);
+                ticks.Clear();
                 foreach (var e in events) {
                     bool big = e.Kind == EvMeeting || e.Kind == EvExile || e.Kind == EvDeath;
-                    var tick = SessionStatsUI.Box(bar, new Vector2(barW * e.T / dur - (big ? 2 : 1), big ? 6 : 2), new Vector2(big ? 4 : 2, big ? 24 : 16), TickColor(e.Kind));
+                    var tick = SessionStatsUI.Box(bar, new Vector2(BarW * e.T / dur - (big ? 2 : 1), big ? 6 : 2), new Vector2(big ? 4 : 2, big ? 24 : 16), TickColor(e.Kind));
                     tick.GetComponent<Image>().raycastTarget = false;
+                    ticks.Add((e, tick));
                 }
                 // click anywhere on the bar to jump there
-                var hit = SessionStatsUI.Box(bar, new Vector2(0, 14), new Vector2(barW, 40), new Color(0, 0, 0, 0));
+                var hit = SessionStatsUI.Box(bar, new Vector2(0, 14), new Vector2(BarW, 40), new Color(0, 0, 0, 0));
                 var hitRt = hit.GetComponent<RectTransform>();
                 hit.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
-                    if (RectTransformUtility.ScreenPointToLocalPointInRectangle(hitRt, Input.mousePosition, null, out var local))
-                        viewT = Mathf.Clamp01(local.x / barW) * Duration;
+                    if (RectTransformUtility.ScreenPointToLocalPointInRectangle(hitRt, Input.mousePosition, null, out var local)) {
+                        Seek(Mathf.Clamp01(local.x / BarW) * Duration);
+                    }
                 }));
+                BuildPhaseLabels(panel, cy);
                 timeLabel = SessionStatsUI.Text(panel, "", 16, TMPro.FontStyles.Bold, Color.white, new Vector2(PanelW - 180, cy - 8), new Vector2(160, 26));
                 timeLabel.alignment = TMPro.TextAlignmentOptions.TopRight;
+
+                // filters above the map, the event list right of it, the meeting card over the map
+                BuildFilterRow(panel);
+                BuildEventList(panel);
+                BuildMeetingCard(panel);
 
                 var close = SessionStatsUI.MakeButton(panel, UTSLocalization.Tr("uts.sessionstats.close"), new Vector2(0, 20), new Vector2(240, 44),
                                                       new Color(0.3f, 0.3f, 0.38f, 0.95f), CloseView);
@@ -551,7 +579,8 @@ namespace UsefulTORStuff {
         }
 
         private static void TogglePlay() {
-            if (!playing && viewT >= Duration - 0.01f) viewT = 0f;
+            if (CardPlayToggle()) return;
+            if (!playing && viewT >= Duration - 0.01f) Seek(0f);
             playing = !playing;
         }
 
@@ -563,6 +592,7 @@ namespace UsefulTORStuff {
             panelRoot = null; mapArea = null; banner = null;
             dots.Clear(); marks.Clear(); chips.Clear();
             seesLabel = null; visionRt = null;
+            ViewDestroy();
         }
 
         private static Color TickColor(int kind) => kind switch {
@@ -596,9 +626,14 @@ namespace UsefulTORStuff {
         private static void Animate() {
             if (mapArea == null) return;
             float dur = Duration;
-            if (playing) {
+            RefreshFilter();
+            if (Input.GetKeyDown(KeyCode.LeftArrow)) StepEvent(-1);
+            if (Input.GetKeyDown(KeyCode.RightArrow)) StepEvent(1);
+            if (playing && !CardHolding()) {
+                float before = viewT;
                 viewT += Time.unscaledDeltaTime * speed;
                 if (viewT >= dur) { viewT = dur; playing = false; }
+                CrossCheck(before);
             }
             float f = viewT / Step;
             int i = Mathf.FloorToInt(f);
@@ -628,7 +663,7 @@ namespace UsefulTORStuff {
                 c.a = vent || (look.HasValue && look.Value.Hidden) ? 0.35f : 1f;
                 if (pt != null && t != pt && !(ti < 64 && (sees & (1UL << ti)) != 0)) c.a *= 0.2f;
                 d.Img.color = c;
-                d.Dot.localScale = t == pt ? new Vector3(1.4f, 1.4f, 1f) : Vector3.one;
+                d.Dot.localScale = t.Id == persp ? new Vector3(1.4f, 1.4f, 1f) : Vector3.one;
                 string label = t.Name;
                 if (look.HasValue && t.Looks.Count > 1) {
                     var l = look.Value;
@@ -647,17 +682,17 @@ namespace UsefulTORStuff {
             }
             if (visionRt != null && visionRt.gameObject.activeSelf != visionShown) visionRt.gameObject.SetActive(visionShown);
             bool world = WorldAnimate(pt, i, u);
-            if (world) {
-                float wheel = Input.mouseScrollDelta.y;
-                if (Mathf.Abs(wheel) > 0.01f) worldZoom = Mathf.Clamp(worldZoom * (wheel > 0 ? 0.88f : 1.14f), 0.4f, 3f);
-            }
+            // the wheel scrolls the event list under the mouse, zooms the real map view otherwise
+            float wheel = Input.mouseScrollDelta.y;
+            if (Mathf.Abs(wheel) > 0.01f && !ListWheel(wheel) && world)
+                worldZoom = Mathf.Clamp(worldZoom * (wheel > 0 ? 0.88f : 1.14f), 0.4f, 3f);
             if (viewLabel != null) {
                 string vl = UTSLocalization.Tr(worldState == 1 ? "uts.replay.view_loading" : worldState == 3 ? "uts.replay.view_failed"
                                                : worldView ? "uts.replay.view_world" : "uts.replay.view_map");
                 if (viewLabel.text != vl) viewLabel.text = vl;
             }
             foreach (var (id, img, col) in chips) {
-                var cc = col; cc.a = id == persp || (id == 255 && pt == null) ? 1f : 0.35f;
+                var cc = col; cc.a = id == persp ? 1f : 0.35f;
                 if (img != null) img.color = cc;
             }
             if (seesLabel != null) {
@@ -677,8 +712,10 @@ namespace UsefulTORStuff {
                 bool on = e.T <= viewT;
                 if (m.activeSelf != on) m.SetActive(on);
             }
-            // banner: the newest event within the last 3 s of replay time
-            var ev = events.LastOrDefault(e => e.T <= viewT && viewT - e.T < 3f);
+            // banner: the newest event the filters let through, within the last 3 s of replay time
+            // (hidden while the meeting card covers the map)
+            var ev = shownEvs.LastOrDefault(e => e.T <= viewT && viewT - e.T < 3f);
+            if (CardShown()) ev = null;
             if (banner != null) {
                 if (banner.activeSelf != (ev != null)) banner.SetActive(ev != null);
                 if (ev != null) {
@@ -686,7 +723,8 @@ namespace UsefulTORStuff {
                     if (bannerText.text != text) bannerText.text = text;
                 }
             }
-            if (progressFill != null) progressFill.sizeDelta = new Vector2((PanelW - 290 - 190) * (dur > 0 ? viewT / dur : 0f), 12);
+            ViewAnimate(i, u);
+            if (progressFill != null) progressFill.sizeDelta = new Vector2(BarW * (dur > 0 ? viewT / dur : 0f), 12);
             if (timeLabel != null) timeLabel.text = $"{Clock(viewT)} / {Clock(dur)}";
             if (playLabel != null) playLabel.text = UTSLocalization.Tr(playing ? "uts.replay.pause" : "uts.replay.play");
             if (speedLabel != null) speedLabel.text = $"{speed:0}x";

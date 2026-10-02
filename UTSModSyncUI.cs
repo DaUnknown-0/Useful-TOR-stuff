@@ -66,6 +66,19 @@ namespace UsefulTORStuff {
         private TMPro.TextMeshProUGUI lobbyButtonText;
         private float nextPoll;
 
+        public static bool ButtonShown { get; private set; }
+
+        /*
+         * The lobby buttons (mod sync, newcomer shield, early-death shield, session stats, replay,
+         * UC's colour grant) share one row along the bottom edge, filled left to right. A column
+         * grew upwards into the lobby's settings button (2026-10-02). Slots are 338 apart: 330 wide
+         * plus an 8 gap. Mod sync owns the first slot only while it is shown.
+         */
+        public const float LobbyRowY = 28f, LobbySlotStep = 338f;
+
+        public static Vector2 LobbySlot(int slot) =>
+            new Vector2(28f + LobbySlotStep * ((ButtonShown ? 1 : 0) + slot), LobbyRowY);
+
         // Row label references so the polling coroutine can update progress without a rebuild.
         private class RowRefs {
             public SyncRow Row;
@@ -93,6 +106,7 @@ namespace UsefulTORStuff {
             // pressed instead of lingering for up to half a second.
             if (lobbyButton != null && lobbyButton.activeSelf && SettingsOverlayView.OverlayOpen()) {
                 lobbyButton.SetActive(false);
+                ButtonShown = false;
                 return;
             }
 
@@ -107,6 +121,7 @@ namespace UsefulTORStuff {
 
             bool shouldShow = ShouldShowLobbyButton();
             if (shouldShow && lobbyButton == null) BuildLobbyButton();
+            ButtonShown = shouldShow && lobbyButton != null;
             if (lobbyButton == null) return;
 
             if (lobbyButton.activeSelf != shouldShow) lobbyButton.SetActive(shouldShow);
