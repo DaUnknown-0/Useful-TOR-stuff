@@ -156,6 +156,16 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Second, tiering-proof reset point (playtest 2026-10-02: "4/5 shields, next game it started at
+        // 2/5"). resetVariables is a managed TOR method whose detour can silently drop, and then the
+        // charge count above carried over into the next game. IntroCutscene.OnDestroy is a game method
+        // (Il2Cpp) that tiering never touches, and no shield can be placed before the intro ends.
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        static class IntroEndResetPatch {
+            [HarmonyPriority(Priority.First)]
+            public static void Prefix() => ResetPatch.Postfix();
+        }
+
         // AUDIT-2026-08-16: clear the cached shield-button reference and its remembered text on lobby
         // change, so a stale reference from the previous lobby's HudManager can never be reused (even
         // though the actionButton == null check above would normally catch a destroyed one, it should
