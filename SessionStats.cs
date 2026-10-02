@@ -252,7 +252,13 @@ namespace UsefulTORStuff {
             public readonly List<(string Role, int Count)> Roles = new List<(string, int)>();
             public readonly List<(byte Id, int Count)> KilledBy = new List<(byte, int)>();
             public readonly List<(byte Id, int Count)> Victims = new List<(byte, int)>();
+            // A player who left the lobby (User 2026-10-02: keep them, at the bottom): his last known
+            // name; PlayerId is then a stand-in id from LeftIdBase up. Null for players who are here.
+            public string LeftName;
         }
+
+        // Stand-in ids for players who left: above every real PlayerId, below OthersId.
+        public const byte LeftIdBase = 128;
 
         // Titles of the evening (User 2026-10-02): computed by the host from the same rounds, shown in the
         // panel's second tab after every round. Order = display order.
@@ -295,7 +301,8 @@ namespace UsefulTORStuff {
             e.Reason != ReasonSurvived && IsKillReason((DeadPlayer.CustomDeathReason)e.Reason)
             && !string.IsNullOrEmpty(e.KillerCode) && e.KillerCode != e.Code;
 
-        /// <summary>The table for the players in the lobby right now (host side).</summary>
+        /// <summary>The table for everyone of this session (host side): the players in the lobby right
+        /// now, plus everyone who played a round of it and left since (stand-in ids, last known name).</summary>
         public static Table Build() {
             var t = new Table { ReceivedAt = Time.realtimeSinceStartup };
             var cur = Current();
@@ -307,8 +314,24 @@ namespace UsefulTORStuff {
                 if (!string.IsNullOrEmpty(code) && !present.ContainsKey(code)) present[code] = p.PlayerId;
             }
             var all = cur.SelectMany(r => r.Entries).ToList();
-            foreach (var kv in present) {
-                var row = new Row { PlayerId = kv.Value };
+
+            // Players who left: everyone with a counted round of this session who is not here. Name from
+            // his newest round; ids handed out in name order so they stay stable while nobody comes or goes.
+            var leftNames = new Dictionary<string, string>();
+            foreach (var r in cur.OrderBy(r => r.End))
+                foreach (var e in r.Entries)
+                    if (!string.IsNullOrEmpty(e.Code) && !present.ContainsKey(e.Code)
+                        && e.Reason != (int)DeadPlayer.CustomDeathReason.Disconnect)
+                        leftNames[e.Code] = string.IsNullOrEmpty(e.Name) ? "?" : e.Name;
+            var ids = new Dictionary<string, byte>(present);
+            byte next = LeftIdBase;
+            foreach (var kv in leftNames.OrderBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase).ThenBy(kv => kv.Key)) {
+                if (next >= OthersId) break;
+                ids[kv.Key] = next++;
+            }
+
+            foreach (var kv in ids) {
+                var row = new Row { PlayerId = kv.Value, LeftName = present.ContainsKey(kv.Key) ? null : leftNames[kv.Key] };
                 var mine = all.Where(e => e.Code == kv.Key && e.Reason != (int)DeadPlayer.CustomDeathReason.Disconnect).ToList();
                 row.Rounds = mine.Count;
                 foreach (var e in mine) {
@@ -325,12 +348,13 @@ namespace UsefulTORStuff {
                 }
                 foreach (var g in mine.GroupBy(e => e.Role).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).Take(MaxRoles))
                     row.Roles.Add((g.Key, g.Count()));
-                row.KilledBy.AddRange(Slices(mine.Where(IsKilledBySomeone).Select(e => e.KillerCode), present));
-                row.Victims.AddRange(Slices(all.Where(e => e.KillerCode == kv.Key && IsKilledBySomeone(e)).Select(e => e.Code), present));
+                if (row.LeftName != null && row.Rounds == 0) continue;
+                row.KilledBy.AddRange(Slices(mine.Where(IsKilledBySomeone).Select(e => e.KillerCode), ids));
+                row.Victims.AddRange(Slices(all.Where(e => e.KillerCode == kv.Key && IsKilledBySomeone(e)).Select(e => e.Code), ids));
                 t.Rows[row.PlayerId] = row;
             }
             t.Expected = t.Rows.Count;
-            BuildTitles(t, all, present);
+            BuildTitles(t, all, ids);
             return t;
         }
 
@@ -444,6 +468,9 @@ namespace UsefulTORStuff {
             }
             WriteSlices(w, row.KilledBy);
             WriteSlices(w, row.Victims);
+            // trailing, read only when present: older builds stop reading before it
+            string left = row.LeftName ?? "";
+            w.Write(left.Length > 32 ? left.Substring(0, 32) : left);
         }
 
         private static void WriteSlices(MessageWriter w, List<(byte Id, int Count)> list) {
@@ -463,6 +490,10 @@ namespace UsefulTORStuff {
             for (int i = 0; i < k; i++) row.Roles.Add((r.ReadString(), r.ReadByte()));
             ReadSlices(r, row.KilledBy);
             ReadSlices(r, row.Victims);
+            if (r.BytesRemaining > 0) {
+                string left = r.ReadString();
+                if (!string.IsNullOrEmpty(left)) row.LeftName = left;
+            }
             return row;
         }
 

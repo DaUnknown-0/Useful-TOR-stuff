@@ -234,15 +234,18 @@ namespace UsefulTORStuff {
                       new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -18), new Vector2(-40, 40),
                       TMPro.TextAlignmentOptions.Center);
 
-                var rows = new List<(SessionStats.Row Row, PlayerControl Pc)>();
+                // Everyone of the session: the players here, and below them the ones who left
+                // (User 2026-10-02: keep them, at the bottom), drawn in grey.
+                var rows = new List<(SessionStats.Row Row, Who W)>();
                 if (t != null && t.Complete)
                     foreach (var r in t.Rows.Values) {
-                        var pc = TheOtherRoles.Helpers.playerById(r.PlayerId);
-                        if (pc == null || pc.Data == null || pc.Data.Disconnected) continue;
-                        rows.Add((r, pc));
+                        var w = WhoOf(r.PlayerId, t);
+                        if (w.Here || r.LeftName != null) rows.Add((r, w));
                     }
-                // most rounds first, then by name
-                rows = rows.OrderByDescending(x => x.Row.Rounds).ThenBy(x => x.Pc.Data.PlayerName).ToList();
+                // here first, then most rounds, then by name
+                rows = rows.OrderByDescending(x => x.W.Here).ThenByDescending(x => x.Row.Rounds)
+                           .ThenBy(x => x.W.Name, StringComparer.OrdinalIgnoreCase).ToList();
+                currentTable = t;
 
                 string sub = t == null || !t.Complete ? UTSLocalization.Tr("uts.sessionstats.waiting")
                            : t.SessionRounds == 0 ? UTSLocalization.Tr("uts.sessionstats.empty")
@@ -274,7 +277,7 @@ namespace UsefulTORStuff {
                             selected = rows.Any(x => x.Row.PlayerId == me) ? me : rows[0].Row.PlayerId;
                         BuildTable(panel, rows, me);
                         var sel = rows.First(x => x.Row.PlayerId == selected);
-                        BuildDetail(panel, sel.Row, sel.Pc, sel.Row.PlayerId == me);
+                        BuildDetail(panel, sel.Row, sel.W, sel.Row.PlayerId == me);
                     }
                 }
 
@@ -291,8 +294,28 @@ namespace UsefulTORStuff {
         private static readonly float[] ColW = { 250, 75, 75, 110, 115, 60 };
         private const float TableW = 740, TableX = 30, TopY = -110;
 
+        // A player of the table: the live one if he is here, otherwise the name the host sent.
+        private struct Who {
+            public string Name;
+            public Color Col;
+            public bool Here;
+        }
+
+        private static readonly Color ColLeft = new Color(0.5f, 0.5f, 0.55f);
+        private static SessionStats.Table currentTable;   // the table the panel shows (names of those who left)
+
         [HideFromIl2Cpp]
-        private void BuildTable(GameObject panel, List<(SessionStats.Row Row, PlayerControl Pc)> rows, byte me) {
+        private static Who WhoOf(byte id, SessionStats.Table t) {
+            if (t != null && t.Rows.TryGetValue(id, out var row) && row.LeftName != null)
+                return new Who { Name = row.LeftName, Col = ColLeft, Here = false };
+            var pc = id < SessionStats.LeftIdBase ? TheOtherRoles.Helpers.playerById(id) : null;
+            if (pc != null && pc.Data != null && !pc.Data.Disconnected)
+                return new Who { Name = pc.Data.PlayerName ?? "?", Col = PlayerColor(pc), Here = true };
+            return new Who { Name = "?", Col = ColOthers, Here = false };
+        }
+
+        [HideFromIl2Cpp]
+        private void BuildTable(GameObject panel, List<(SessionStats.Row Row, Who W)> rows, byte me) {
             var head = Box(panel, new Vector2(TableX, TopY), new Vector2(TableW, 30), new Color(0, 0, 0, 0));
             string[] heads = {
                 "uts.sessionstats.col_player", "uts.sessionstats.col_rounds", "uts.sessionstats.col_wins",
@@ -302,40 +325,48 @@ namespace UsefulTORStuff {
                 Cell(head, UTSLocalization.Tr(heads[i]), i, 13, ColMuted, TMPro.FontStyles.Bold);
 
             float y = TopY - 34;
-            int maxRows = Mathf.FloorToInt((PanelH - 110 - 34 - 80) / RowStep);
-            foreach (var (r, pc) in rows.Take(maxRows)) {
+            // rows shrink instead of falling off the panel once the players who left are listed too
+            float space = PanelH - 110 - 34 - 80;
+            float step = rows.Count > 0 ? Mathf.Clamp(space / rows.Count, 22f, RowStep) : RowStep;
+            int maxRows = Mathf.FloorToInt(space / step);
+            float font = step >= 34f ? 1f : 0.82f;
+            foreach (var (r, w) in rows.Take(maxRows)) {
                 bool isMe = r.PlayerId == me, isSel = r.PlayerId == selected;
-                var row = Box(panel, new Vector2(TableX, y), new Vector2(TableW, RowStep - 4),
+                var row = Box(panel, new Vector2(TableX, y), new Vector2(TableW, step - 4),
                               isSel ? ColRowSel : isMe ? new Color(0.45f, 0.8f, 1f, 0.1f) : ColRow);
                 byte id = r.PlayerId;
                 row.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)(() => { selected = id; Rebuild(); }));
 
-                // colour dot + name
-                var dot = Box(row, new Vector2(ColX[0], -9), new Vector2(18, 18), PlayerColor(pc));
+                // colour dot + name; who left is grey and tagged
+                float dotSize = Mathf.Min(18f, step - 10f);
+                var dot = Box(row, new Vector2(ColX[0], -(step - 4 - dotSize) / 2f), new Vector2(dotSize, dotSize), w.Col);
                 dot.GetComponent<Image>().sprite = Circle();
-                string name = pc.Data.PlayerName ?? "?";
+                string name = w.Name;
                 if (isMe) name += " " + UTSLocalization.Tr("uts.sessionstats.you_tag");
-                var nl = Cell(row, name, 0, 16, isMe ? ColAccent : Color.white, TMPro.FontStyles.Bold);
+                if (!w.Here) name += " " + UTSLocalization.Tr("uts.sessionstats.left_tag");
+                Color text = w.Here ? Color.white : ColLeft;
+                var nl = Cell(row, name, 0, 16 * font, isMe ? ColAccent : text, TMPro.FontStyles.Bold);
                 nl.rectTransform.anchoredPosition += new Vector2(26, 0);
                 nl.rectTransform.sizeDelta -= new Vector2(26, 0);
 
-                Cell(row, r.Rounds.ToString(), 1, 15, Color.white);
-                Cell(row, r.Rounds > 0 ? $"{Pct(r.Wins, r.Rounds)}%" : "-", 2, 15, Color.white);
-                Cell(row, r.Rounds > 0 ? r.MeetingsAvg.ToString("0.0") : "-", 3, 15, Color.white);
-                Cell(row, r.ShareAvg >= 0f ? $"{Mathf.RoundToInt(r.ShareAvg * 100f)}%" : "-", 4, 15, Color.white);
-                Cell(row, r.Kills.ToString(), 5, 15, Color.white);
-                y -= RowStep;
+                Cell(row, r.Rounds.ToString(), 1, 15 * font, text);
+                Cell(row, r.Rounds > 0 ? $"{Pct(r.Wins, r.Rounds)}%" : "-", 2, 15 * font, text);
+                Cell(row, r.Rounds > 0 ? r.MeetingsAvg.ToString("0.0") : "-", 3, 15 * font, text);
+                Cell(row, r.ShareAvg >= 0f ? $"{Mathf.RoundToInt(r.ShareAvg * 100f)}%" : "-", 4, 15 * font, text);
+                Cell(row, r.Kills.ToString(), 5, 15 * font, text);
+                y -= step;
             }
         }
 
         private const float DetailX = 800, DetailW = 670;
 
         [HideFromIl2Cpp]
-        private void BuildDetail(GameObject panel, SessionStats.Row r, PlayerControl pc, bool isMe) {
+        private void BuildDetail(GameObject panel, SessionStats.Row r, Who w, bool isMe) {
             var d = Box(panel, new Vector2(DetailX, TopY), new Vector2(DetailW, 640), new Color(1f, 1f, 1f, 0.03f));
 
-            string name = (pc.Data.PlayerName ?? "?") + (isMe ? " " + UTSLocalization.Tr("uts.sessionstats.you_tag") : "");
-            var dot = Box(d, new Vector2(18, -16), new Vector2(26, 26), PlayerColor(pc));
+            string name = w.Name + (isMe ? " " + UTSLocalization.Tr("uts.sessionstats.you_tag") : "")
+                          + (!w.Here ? " " + UTSLocalization.Tr("uts.sessionstats.left_tag") : "");
+            var dot = Box(d, new Vector2(18, -16), new Vector2(26, 26), w.Col);
             dot.GetComponent<Image>().sprite = Circle();
             Text(d, name, 22, TMPro.FontStyles.Bold, Color.white, new Vector2(54, -12), new Vector2(DetailW - 70, 34));
             Text(d, UTSLocalization.Tr("uts.sessionstats.detail_summary", r.Rounds, r.Wins, Pct(r.Wins, r.Rounds)),
@@ -387,14 +418,12 @@ namespace UsefulTORStuff {
                 Text(card, TitleValue(ti), 14, TMPro.FontStyles.Normal, ColMuted, new Vector2(18, -50), new Vector2(CardW - 36, 40));
                 float y = -98;
                 if (ti.Id == SessionStats.TitleNemesis && ti.Holders.Count == 2) {
-                    var a = TheOtherRoles.Helpers.playerById(ti.Holders[0]);
-                    var b = TheOtherRoles.Helpers.playerById(ti.Holders[1]);
-                    HolderLine(card, a, y);
+                    HolderLine(card, WhoOf(ti.Holders[0], t), y);
                     Text(card, UTSLocalization.Tr("uts.sessionstats.nemesis_of"), 14, TMPro.FontStyles.Italic, ColMuted,
                          new Vector2(52, y - 30), new Vector2(CardW - 70, 22));
-                    HolderLine(card, b, y - 56);
+                    HolderLine(card, WhoOf(ti.Holders[1], t), y - 56);
                 } else {
-                    foreach (byte h in ti.Holders) { HolderLine(card, TheOtherRoles.Helpers.playerById(h), y); y -= 32; }
+                    foreach (byte h in ti.Holders) { HolderLine(card, WhoOf(h, t), y); y -= 32; }
                 }
                 i++;
             }
@@ -409,10 +438,12 @@ namespace UsefulTORStuff {
         }
 
         [HideFromIl2Cpp]
-        private static void HolderLine(GameObject card, PlayerControl pc, float y) {
-            var dot = Box(card, new Vector2(18, y - 2), new Vector2(22, 22), pc != null ? PlayerColor(pc) : ColOthers);
+        private static void HolderLine(GameObject card, Who w, float y) {
+            var dot = Box(card, new Vector2(18, y - 2), new Vector2(22, 22), w.Col);
             dot.GetComponent<Image>().sprite = Circle();
-            Text(card, pc?.Data?.PlayerName ?? UTSLocalization.Tr("uts.sessionstats.others"), 18, TMPro.FontStyles.Bold, Color.white,
+            string name = w.Name == "?" ? UTSLocalization.Tr("uts.sessionstats.others")
+                        : w.Here ? w.Name : $"{w.Name} {UTSLocalization.Tr("uts.sessionstats.left_tag")}";
+            Text(card, name, 18, TMPro.FontStyles.Bold, w.Here ? Color.white : ColLeft,
                  new Vector2(52, y), new Vector2(CardW - 70, 28));
         }
 
@@ -424,8 +455,8 @@ namespace UsefulTORStuff {
                     res.Add((n, ColOthers, $"{UTSLocalization.Tr("uts.sessionstats.others")} {n}x"));
                     continue;
                 }
-                var pc = TheOtherRoles.Helpers.playerById(id);
-                res.Add((n, pc != null ? PlayerColor(pc) : ColOthers, $"{(pc?.Data?.PlayerName ?? "?")} {n}x"));
+                var w = WhoOf(id, currentTable);
+                res.Add((n, w.Col, $"{w.Name} {n}x"));
             }
             return res;
         }

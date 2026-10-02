@@ -1137,6 +1137,7 @@
   "uts.sessionstats.col_survived": "Avg. survived",
   "uts.sessionstats.col_kills": "Kills",
   "uts.sessionstats.you_tag": "(you)",
+  "uts.sessionstats.left_tag": "(left)",
   "uts.sessionstats.detail_summary": "{0} rounds, {1} won ({2}%)",
   "uts.sessionstats.team_crew": "Crew",
   "uts.sessionstats.team_imp": "Impostor",

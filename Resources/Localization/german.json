@@ -1125,6 +1125,7 @@
  "uts.sessionstats.col_survived": "Ø überlebt",
  "uts.sessionstats.col_kills": "Kills",
  "uts.sessionstats.you_tag": "(du)",
+ "uts.sessionstats.left_tag": "(gegangen)",
  "uts.sessionstats.detail_summary": "{0} Runden, {1} gewonnen ({2}%)",
  "uts.sessionstats.team_crew": "Crew",
  "uts.sessionstats.team_imp": "Impostor",
