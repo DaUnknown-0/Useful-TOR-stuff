@@ -469,8 +469,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
-        [HarmonyPriority(Priority.First)]
         static class IntroOverMarkerPatch {
+            [HarmonyPriority(Priority.First)]
             public static void Prefix() => introOverSeen = true;
         }
 

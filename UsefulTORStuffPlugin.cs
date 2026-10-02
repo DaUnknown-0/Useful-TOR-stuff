@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.12.2";
+    public const string PluginVersion = "1.4.12.3";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -852,13 +852,13 @@ public class UsefulTORStuffPlugin : BasePlugin
     // ========================================================================
 
     [HarmonyPatch(typeof(PingTracker), nameof(PingTracker.Update))]
-    [HarmonyPriority(Priority.Low)] // run after TOR's own PingTracker postfix
     public static class VersionDisplayPatch
     {
         private static string cachedLine;
         private static string cachedTemplate;
         private static bool cachedShowTest;
 
+        [HarmonyPriority(Priority.Low)]  // run after TOR's own PingTracker postfix
         public static void Postfix(PingTracker __instance)
         {
             if (__instance == null || __instance.text == null) return;

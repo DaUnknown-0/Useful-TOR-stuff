@@ -287,7 +287,6 @@ namespace UsefulTORStuff {
 
         // ── 4) a lone surviving Sidekick must not crash TeamJackalWin ──────────────────────────
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
-        [HarmonyPriority(Priority.Last)]
         static class TeamJackalLoneSidekickPatch {
             // TOR's own CustomGameOverReason enum (EndGamePatch.cs) is internal to TOR's assembly -
             // mirrored here as a local constant, the same way UnknownsCollection/Bug.cs already does
@@ -297,6 +296,7 @@ namespace UsefulTORStuff {
             // Priority.Last guarantees TOR's own OnGameEnd prefix (default priority) has already run,
             // so OnGameEndPatch.gameOverReason is stamped and safe to read - the raw argument is not,
             // since that same TOR prefix rewrites it to ImpostorByKill for any reason >= 10.
+            [HarmonyPriority(Priority.Last)]
             public static void Prefix() {
                 try {
                     if ((int)TheOtherRoles.Patches.OnGameEndPatch.gameOverReason != TeamJackalWinReasonValue) return;

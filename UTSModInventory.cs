@@ -267,8 +267,8 @@ namespace UsefulTORStuff {
 
         // One broadcast per lobby, mirroring UsefulVersionHandshake's own versionSent latch.
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
-        [HarmonyPriority(Priority.Low)]
         static class GameStartManagerUpdatePatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix() {
                 if (PlayerControl.LocalPlayer == null) return;
                 if (!sentThisLobby) { sentThisLobby = true; Share(); return; }

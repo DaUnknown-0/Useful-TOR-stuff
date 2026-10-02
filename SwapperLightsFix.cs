@@ -111,8 +111,8 @@ namespace UsefulTORStuff {
         // restores the real value right after Begin returns (__state carries it, so a reentrant
         // Begin call cannot clobber another call's in-flight flip).
         [HarmonyPatch(typeof(SwitchMinigame), nameof(SwitchMinigame.Begin))]
-        [HarmonyPriority(Priority.High)]
         static class LightsBeginPatch {
+            [HarmonyPriority(Priority.High)]
             public static void Prefix(out PlayerControl __state) {
                 __state = null;
                 try {
@@ -122,14 +122,15 @@ namespace UsefulTORStuff {
                     __state = null;
                 }
             }
+            [HarmonyPriority(Priority.High)]
             public static void Finalizer(PlayerControl __state) {
                 if (__state != null) Swapper.swapper = __state;
             }
         }
 
         [HarmonyPatch(typeof(TuneRadioMinigame), nameof(TuneRadioMinigame.Begin))]
-        [HarmonyPriority(Priority.High)]
         static class CommsBeginPatch {
+            [HarmonyPriority(Priority.High)]
             public static void Prefix(out PlayerControl __state) {
                 __state = null;
                 try {
@@ -139,6 +140,7 @@ namespace UsefulTORStuff {
                     __state = null;
                 }
             }
+            [HarmonyPriority(Priority.High)]
             public static void Finalizer(PlayerControl __state) {
                 if (__state != null) Swapper.swapper = __state;
             }

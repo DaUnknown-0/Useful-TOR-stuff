@@ -152,16 +152,16 @@ namespace UsefulTORStuff {
 
         // Layer 1: runs BEFORE TOR's own StartMeeting prefix reads the traps.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.StartMeeting))]
-        [HarmonyPriority(Priority.First)]
         static class ScrubBeforeMeetingPatch {
+            [HarmonyPriority(Priority.First)]
             public static void Prefix() => ScrubTraps();
         }
 
         // Layer 2: the safety net. A null player yields an empty string rather than an exception,
         // which is what every caller of this method can cope with - an exception is not.
         [HarmonyPatch(typeof(RoleInfo), nameof(RoleInfo.GetRolesString))]
-        [HarmonyPriority(Priority.First)]
         static class GetRolesStringNullGuard {
+            [HarmonyPriority(Priority.First)]
             public static bool Prefix(PlayerControl p, ref string __result) {
                 try {
                     if (p != null && p.Data != null) return true;   // normal case: let TOR do its work

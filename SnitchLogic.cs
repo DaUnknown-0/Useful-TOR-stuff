@@ -841,7 +841,6 @@ public static class SnitchLogic
     }
 
     [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.StartMeeting))]
-    [HarmonyPriority(Priority.High)]
     private static class StartMeetingChatPatch
     {
         // Best-Effort-Fallback: greift NUR, wenn der deterministische Wrap auf TORs eigene
@@ -850,6 +849,7 @@ public static class SnitchLogic
         // Initialize fest, BEVOR PatchAll dieses Prepare() auswertet.
         public static bool Prepare() => ChatRevealReady && !TorSuppressReady;
 
+        [HarmonyPriority(Priority.High)]
         public static void Prefix()
         {
             try { chatModeSwapped = TrySwapChatModeToMap(); }
@@ -875,11 +875,11 @@ public static class SnitchLogic
     }
 
     [HarmonyPatch(typeof(MapBehaviour), nameof(MapBehaviour.FixedUpdate))]
-    [HarmonyPriority(Priority.High)]
     private static class MapRevealPatch
     {
         public static bool Prepare() => MapRevealReady;
 
+        [HarmonyPriority(Priority.High)]
         public static void Prefix()
         {
             // Nur wirksam, wenn alle den Mod haben — sonst läuft TORs Original-Map-Reveal.

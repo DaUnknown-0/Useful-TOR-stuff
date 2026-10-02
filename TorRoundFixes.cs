@@ -87,7 +87,6 @@ namespace UsefulTORStuff {
 
         // ── 3) End screen must not show disconnected players as alive ──────────────────────────
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
-        [HarmonyPriority(Priority.Last)]
         static class DisconnectedNotAliveOnEndPatch {
             // AdditionalTempData and its nested PlayerRoleInfo are internal TOR types - resolved
             // once by reflection and cached, same pattern as SheriffParityWin's TOR-internal probe.
@@ -123,6 +122,7 @@ namespace UsefulTORStuff {
                 }
             }
 
+            [HarmonyPriority(Priority.Last)]
             public static void Postfix() {
                 try {
                     if (!resolved) Resolve();

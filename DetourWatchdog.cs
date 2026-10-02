@@ -297,8 +297,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
-        [HarmonyPriority(Priority.Low)]
         static class TickPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix() => Tick();
         }
 
@@ -362,8 +362,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
-        [HarmonyPriority(Priority.Last)]
         static class RoundStartPatch {
+            [HarmonyPriority(Priority.Last)]
             public static void Postfix() => HealCritical("round start");
         }
 

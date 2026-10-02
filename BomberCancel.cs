@@ -89,8 +89,8 @@ namespace UsefulTORStuff {
         // (Prefix with high priority → before TOR's HandleRpc switch). Returns false only for our id;
         // everything else falls through to TOR untouched.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId == CancelBombRpcId) {
                     // Same owner-or-host guard on the LEGACY path: __instance is the sender here,
@@ -108,15 +108,30 @@ namespace UsefulTORStuff {
         // Build the cancel button after the HUD (and TOR's own buttons) are set up. TOR recreates
         // all CustomButtons on every HudManager.Start; the old button's actionButton is destroyed
         // with the old HUD and pruned by CustomButton.HudUpdate, so we simply create a fresh one.
+        // A cancel only reaches clients that run this mod; a plain-TOR client keeps its own fuse and its
+        // bomb still explodes and kills (TOR's explode() kills through an RPC from the victim's own
+        // client). So the button only exists when everyone has the mod (Opus audit 2026-10-02),
+        // latched once per round at intro end - the check builds strings and must not run per frame.
+        private static bool everyoneHasMod;
+
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        static class IntroEndPatch {
+            public static void Postfix() {
+                everyoneHasMod = UsefulVersionHandshake.EveryoneHasMod();
+                if (!everyoneHasMod && Option != null && UTSGate.Bool(Option))
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[BomberCancel] not every player has the mod - no cancel button this round.");
+            }
+        }
+
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Start))]
-        [HarmonyPriority(Priority.Low)]
         static class HudStartPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(HudManager __instance) {
                 try {
                     cancelButton = new CustomButton(
                         () => { SendCancel(); UTSAssets.PlayBombCancel(); },
                         // HasButton: only the Bomber, only while alive, only when the option is on.
-                        () => Option != null && UTSGate.Bool(Option)
+                        () => Option != null && UTSGate.Bool(Option) && everyoneHasMod
                               && Bomber.bomber != null && Bomber.bomber == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
                         // CouldUse: whenever a live bomb exists, regardless of arm state / visibility.

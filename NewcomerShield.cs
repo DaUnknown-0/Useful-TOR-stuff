@@ -493,8 +493,8 @@ namespace UsefulTORStuff {
         // prefixes run in priority order BEFORE the original, so nothing that throws later in the
         // chain (TOR's own OnDestroy patches included) can reach back and un-run it.
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
-        [HarmonyPriority(Priority.First)]
         static class IntroOverMarkerPatch {
+            [HarmonyPriority(Priority.First)]
             public static void Prefix() => introOverSeen = true;
         }
 

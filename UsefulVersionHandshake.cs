@@ -602,8 +602,8 @@ namespace UsefulTORStuff {
         // handshake state each lobby frame, confirms the active fix once in chat, and (host-only)
         // draws the mismatch warning on TOR's GameStartText when someone is missing the mod.
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
-        [HarmonyPriority(Priority.Low)]
         static class GameStartManagerUpdatePatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(GameStartManager __instance) {
                 if (PlayerControl.LocalPlayer != null && !versionSent) {
                     versionSent = true;
@@ -777,8 +777,8 @@ namespace UsefulTORStuff {
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 253 from pre-240 builds
         // (Prefix with high priority → before the TOR switch handler).
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         static class UsefulHandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(byte callId, MessageReader reader) {
                 if (callId == UsefulTORStuffPlugin.VersionHandshakeRpcId) {
                     try { ReceiveRpc(reader); } catch { }

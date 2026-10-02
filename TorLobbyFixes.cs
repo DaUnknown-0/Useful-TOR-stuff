@@ -138,10 +138,10 @@ namespace UsefulTORStuff {
         // the network or diverges shared state, so this does not need EveryoneHasMod() gating.
         // ======================================================================================
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
-        [HarmonyPriority(Priority.High)]
         internal static class LobbyCountdownTextCapturePatch {
             internal static string capturedCountdownText = "";
 
+            [HarmonyPriority(Priority.High)]
             public static void Postfix(GameStartManager __instance) {
                 try {
                     if (__instance == null || __instance.GameStartText == null) return;
@@ -155,8 +155,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
-        [HarmonyPriority(Priority.Last)]
         internal static class LobbyCountdownTextRestorePatch {
+            [HarmonyPriority(Priority.Last)]
             public static void Postfix(GameStartManager __instance) {
                 try {
                     if (__instance == null) return;

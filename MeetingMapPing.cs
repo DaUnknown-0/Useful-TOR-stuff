@@ -113,8 +113,8 @@ namespace UsefulTORStuff {
 
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 254 from pre-240 builds.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         private static class HandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(PlayerControl __instance, byte callId, MessageReader reader) {
                 if (callId != PingRpcId) return true;
                 Receive(__instance, reader);

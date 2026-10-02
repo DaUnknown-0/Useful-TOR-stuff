@@ -119,8 +119,8 @@ namespace UsefulTORStuff {
         // The hook is the game's OnGameEnd rather than TOR's own postfix method, so a rename inside
         // TOR cannot silently detach it.
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
-        [HarmonyPriority(Priority.Last)]
         private static class AppendLeaversPatch {
+            [HarmonyPriority(Priority.Last)]
             public static void Postfix() {
                 try { AppendMissing(); } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[EndScreenLeavers] append failed: {e}");

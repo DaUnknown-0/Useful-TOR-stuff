@@ -96,8 +96,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
-        [HarmonyPriority(Priority.Low)]   // after TOR's own HudManager patches as well
         static class OutlinePatch {
+            [HarmonyPriority(Priority.Low)]  // after TOR's own HudManager patches as well
             public static void Postfix() => Tick();
         }
 

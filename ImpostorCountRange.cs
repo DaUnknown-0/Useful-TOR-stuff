@@ -454,8 +454,8 @@ namespace UsefulTORStuff {
         // pre-240 builds keep working. Idempotent, so receiving both copies is harmless. Delete
         // together with the legacy half of the send in a future breaking release.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         private static class HandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId != SidekickAllowedRpcId) return true;
                 // HOST-ONLY on the LEGACY path too: gating only the consolidated channel would leave

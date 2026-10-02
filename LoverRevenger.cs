@@ -143,6 +143,13 @@ namespace UsefulTORStuff {
         private const byte SubWin = 2;       // revengerId
         private const byte SubRageArmed = 3; // revengerId
         private const byte SubDeniedDeath = 4; // revengerId, msgIndex (target died first -> revenge denied)
+        private const byte SubActive = 5;      // active (host -> everyone at intro end; the host's gate wins)
+
+        // The host's own gate decision for this round, once it arrived. Every client used to latch
+        // `active` from its OWN handshake table; one gap there left the Lover-death suppression off on
+        // that client only, so the surviving Lover died there and lived everywhere else (Opus audit
+        // 2026-10-02). Now the host's decision is broadcast and overrides the local one.
+        private static bool? hostActive;
 
         // Resolved once from TOR's internal CustomRPC enum (fallback 108 = UncheckedMurderPlayer).
         private static byte uncheckedMurderRpc = 108;
@@ -277,12 +284,11 @@ namespace UsefulTORStuff {
                 UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForLoverWin for the Revenger win.");
 
                 // Block the Impostor/Jackal parity win while a Revenger is alive.
-                var blocker = new HarmonyMethod(typeof(LoverRevenger), nameof(ParityWinBlockPrefix));
                 var impWin = type.GetMethod("CheckAndEndGameForImpostorWin", BindingFlags.NonPublic | BindingFlags.Static);
                 var jackalWin = type.GetMethod("CheckAndEndGameForJackalWin", BindingFlags.NonPublic | BindingFlags.Static);
-                if (impWin != null) { harmony.Patch(impWin, prefix: blocker); UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForImpostorWin (parity block)."); }
+                if (impWin != null) { harmony.Patch(impWin, prefix: new HarmonyMethod(typeof(LoverRevenger), nameof(ImpostorWinBlockPrefix))); UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForImpostorWin (parity block)."); }
                 else UsefulTORStuffPlugin.Logger?.LogWarning("[LoverRevenger] CheckAndEndGameForImpostorWin not found — parity block disabled for impostors.");
-                if (jackalWin != null) { harmony.Patch(jackalWin, prefix: blocker); UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForJackalWin (parity block)."); }
+                if (jackalWin != null) { harmony.Patch(jackalWin, prefix: new HarmonyMethod(typeof(LoverRevenger), nameof(JackalWinBlockPrefix))); UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Patched CheckAndEndGameForJackalWin (parity block)."); }
                 else UsefulTORStuffPlugin.Logger?.LogWarning("[LoverRevenger] CheckAndEndGameForJackalWin not found — parity block disabled for jackal.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] TryPatch failed: {e}");
@@ -312,11 +318,25 @@ namespace UsefulTORStuff {
         private static bool RevengerAlive() =>
             active && revenger != null && revenger.Data != null && !revenger.Data.IsDead;
 
-        public static bool ParityWinBlockPrefix(ref bool __result) {
+        // The block only makes sense against a RIVAL team. A Revenger who is himself an Impostor (or
+        // in the Jackal team) would otherwise block his own team's kill win; and when a teammate killed
+        // his Lover he cannot even reach that teammate (impostor targeting skips impostors), so his
+        // team could not win by kills at all (Opus audit 2026-10-02).
+        public static bool ImpostorWinBlockPrefix(ref bool __result) {
             try {
-                if (RevengerAlive()) { __result = false; return false; }
+                if (RevengerAlive() && !(revenger.Data.Role != null && revenger.Data.Role.IsImpostor)) { __result = false; return false; }
             } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] ParityWinBlockPrefix failed: {e}");
+                UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] ImpostorWinBlockPrefix failed: {e}");
+            }
+            return true;
+        }
+
+        public static bool JackalWinBlockPrefix(ref bool __result) {
+            try {
+                bool jackalTeam = revenger == Jackal.jackal || revenger == Sidekick.sidekick;
+                if (RevengerAlive() && !jackalTeam) { __result = false; return false; }
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] JackalWinBlockPrefix failed: {e}");
             }
             return true;
         }
@@ -553,8 +573,8 @@ namespace UsefulTORStuff {
         // authored by a different party, so each gets its own guard (AUDIT-2026-08-15): the payload
         // is always read in full first (reader-cursor rule), the guard only gates applying it.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId != RpcId) return true;
                 try {
@@ -594,6 +614,15 @@ namespace UsefulTORStuff {
                                 ApplyDeniedDeath(revId, idx);
                             break;
                         }
+                        case SubActive: {
+                            bool on = reader.ReadByte() != 0;
+                            if (UTSRpc.RequireHost(__instance, "LoverRevenger.Active")) {
+                                hostActive = on;
+                                active = on;
+                                SetGuessable(on);
+                            }
+                            break;
+                        }
                         case SubWin: {
                             byte revId = reader.ReadByte();
                             // Owner-authored: only the Revenger themselves (or the host) may claim
@@ -616,6 +645,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
             public static void Postfix() {
+                hostActive = null;
                 revenger = null;
                 revengerMode = 0;
                 killerId = byte.MaxValue;
@@ -639,6 +669,15 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 active = DelayOption != null && UTSGate.Bool(DelayOption)
                          && Lovers.bothDie && EveryoneHasMod();
+                if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) {
+                    try {
+                        var w = BeginRpc(SubActive);
+                        w.Write((byte)(active ? 1 : 0));
+                        AmongUsClient.Instance.FinishRpcImmediately(w);
+                    } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] SendActive failed: {e}"); }
+                } else if (hostActive.HasValue) {
+                    active = hostActive.Value;   // the host's word arrived before our own intro ended
+                }
                 // List the Revenger as a guessable role only while the feature is actually usable.
                 SetGuessable(active);
                 // Clear the win snapshot at game start (NOT in resetVariables — see field comment).
@@ -938,8 +977,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
-        [HarmonyPriority(Priority.Low)]
         static class RevengerButtonSlotPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix() {
                 try {
                     if (revengerButton == null || revengerButton.actionButton == null) return;
@@ -1033,8 +1072,8 @@ namespace UsefulTORStuff {
         // resetVariables, nulling both Lovers.* and our revenger field, before this last-priority postfix.
         // ====================================================================
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
-        [HarmonyPriority(Priority.Last)] // after TOR's OnGameEndPatch.Postfix
         static class OnGameEndOverridePatch {
+            [HarmonyPriority(Priority.Last)]  // after TOR's OnGameEndPatch.Postfix
             public static void Postfix() {
                 try {
                     // Gate on the REAL end reason, not just revengerWon: a Revenger kill that ends the
@@ -1074,8 +1113,8 @@ namespace UsefulTORStuff {
         // empty and we add our own — mirroring how TOR builds its special-win bonus text.
         // ====================================================================
         [HarmonyPatch(typeof(EndGameManager), nameof(EndGameManager.SetEverythingUp))]
-        [HarmonyPriority(Priority.Last)] // after TOR's EndGameManagerSetUpPatch
         static class EndGameWinTextPatch {
+            [HarmonyPriority(Priority.Last)]  // after TOR's EndGameManagerSetUpPatch
             public static void Postfix(EndGameManager __instance) {
                 try {
                     // Only when the game actually ended via our reason (17) — otherwise TOR's own win

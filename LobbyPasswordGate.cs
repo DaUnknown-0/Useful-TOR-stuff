@@ -580,9 +580,9 @@ namespace UsefulTORStuff
 
         // Show panel each lobby frame for host while locked; hide once unlocked.
         [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Update))]
-        [HarmonyPriority(Priority.Low)]
         static class GameStartManagerUpdatePatch
         {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix()
             {
                 if (Instance == null) return;

@@ -88,8 +88,8 @@ namespace UsefulTORStuff {
         private static GameObject picker;   // open picker panel (lives inside the settings menu)
 
         [HarmonyPatch(typeof(GameSettingMenu), nameof(GameSettingMenu.Start))]
-        [HarmonyPriority(Priority.Low)]
         static class SettingsMenuButtonPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(GameSettingMenu __instance) {
                 try {
                     picker = null;      // menu was rebuilt - any old picker/dialog died with it

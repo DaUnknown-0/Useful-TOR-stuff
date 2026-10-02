@@ -145,8 +145,8 @@ namespace UsefulTORStuff {
         private static bool lastSenderKnown;
 
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.First)]
         private static class SenderCapturePatch {
+            [HarmonyPriority(Priority.First)]
             public static void Prefix(PlayerControl __instance) {
                 lastSenderKnown = false;
                 try {

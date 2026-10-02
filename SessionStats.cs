@@ -199,8 +199,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(EndGameManager), nameof(EndGameManager.SetEverythingUp))]
-        [HarmonyPriority(Priority.First)]
         static class EndScreenPatch {
+            [HarmonyPriority(Priority.First)]
             public static void Prefix() {
                 try { FinishPending(); }
                 catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogError($"[SessionStats] round end failed: {e}"); }

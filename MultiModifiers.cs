@@ -338,14 +338,55 @@ namespace UsefulTORStuff {
             }
         }
 
+        // ---- The Mini who actually lost (Opus audit 2026-10-02) ----
+        // TOR builds the MiniLose result from Mini.mini, its own Mini, not the extra Mini who was voted
+        // out; with TOR's Mini gone, the custom reason is masked and the screen shows an Impostor win.
+        // The exiled extra Mini is remembered here (on every client, from the exile wrap-up) and set as
+        // the only winner after every OnGameEnd postfix - a finalizer, because TOR's postfix ends in
+        // resetVariables and another postfix may throw. Cleared only at the next intro, never by reset.
+        private static byte extraMiniLoser = byte.MaxValue;
+        private const int MiniLoseReason = 12;   // CustomGameOverReason.MiniLose (EndGamePatch.cs:18)
+
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        private static class MiniLoserResetPatch {
+            public static void Postfix() => extraMiniLoser = byte.MaxValue;
+        }
+
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
+        private static class MiniLoseNamePatch {
+            [HarmonyPriority(Priority.Low)]
+            public static void Finalizer() {
+                try {
+                    if (extraMiniLoser == byte.MaxValue) return;
+                    byte id = extraMiniLoser;
+                    extraMiniLoser = byte.MaxValue;
+                    if ((int)OnGameEndPatch.gameOverReason != MiniLoseReason) return;
+                    var loser = Helpers.playerById(id);
+                    if (loser == null || loser.Data == null) return;
+                    EndGameResult.CachedWinners = new Il2CppSystem.Collections.Generic.List<CachedPlayerData>();
+                    EndGameResult.CachedWinners.Add(new CachedPlayerData(loser.Data));
+                    var asm = typeof(CustomOption).Assembly;
+                    var field = asm.GetType("TheOtherRoles.Patches.AdditionalTempData")?.GetField("winCondition",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    var cond = asm.GetType("TheOtherRoles.Patches.WinCondition");
+                    if (field != null && cond != null && Enum.IsDefined(cond, "MiniLose")) field.SetValue(null, Enum.Parse(cond, "MiniLose"));
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"[MultiModifiers] Mini lose names the exiled extra Mini {loser.Data.PlayerName}.");
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] Mini lose correction failed: {e}");
+                }
+            }
+        }
+
         // Crew extra mini voted out before grown up -> Mini lose (TOR's WrapUpPostfix rule), and the
         // impostor extra mini gets the adapted kill cooldown after every meeting (x2 young, x0.66 grown).
         private static void OnExileWrapUp(PlayerControl exiled) {
             try {
                 if (exiled != null && IsExtraMini(exiled) && !Mini.isGrownUp()
                     && !exiled.Data.Role.IsImpostor
-                    && !RoleInfo.getRoleInfoForPlayer(exiled).Any(x => x.isNeutral))
+                    && !RoleInfo.getRoleInfoForPlayer(exiled).Any(x => x.isNeutral)) {
                     Mini.triggerMiniLose = true;
+                    extraMiniLoser = exiled.PlayerId;   // TOR's end screen would name ITS Mini (see MiniLoseNamePatch)
+                }
 
                 var me = PlayerControl.LocalPlayer;
                 if (me != null && IsExtraMini(me) && me.Data != null && me.Data.Role.IsImpostor && !me.Data.IsDead) {
@@ -462,8 +503,8 @@ namespace UsefulTORStuff {
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 245 from pre-240
         // builds. __instance is the sender on this path (see ApplyBreakExtraArmor).
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(PlayerControl __instance, byte callId, MessageReader reader) {
                 if (callId != RpcId) return true;
                 try {

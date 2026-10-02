@@ -594,8 +594,8 @@ namespace UsefulTORStuff {
         // prefix on HudManager.Update runs before Chance's own HudManager.Update postfix, so Chance
         // sees sabotageEnabled == false that frame and backs off.
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
-        [HarmonyPriority(Priority.First)]
         private static class SuppressChancePatch {
+            [HarmonyPriority(Priority.First)]
             private static void Prefix() {
                 if (!Active) return;
                 SuppressChanceSabotage();

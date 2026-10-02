@@ -468,8 +468,8 @@ namespace UsefulTORStuff {
         // "Jester Can Call Emergency" (TOR option) for the extra Jesters. Mirrors what TOR's own
         // postfix does for its Jester; runs after it (low priority) and only adds a block.
         [HarmonyPatch(typeof(EmergencyMinigame), nameof(EmergencyMinigame.Update))]
-        [HarmonyPriority(Priority.Low)]
         private static class EmergencyPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(EmergencyMinigame __instance) {
                 try {
                     if (Jester.canCallEmergency || __instance == null) return;
@@ -488,8 +488,8 @@ namespace UsefulTORStuff {
         // Jester win isn't given away by the exile screen. Same for ours.
         [HarmonyPatch(typeof(TranslationController), nameof(TranslationController.GetString),
                       new Type[] { typeof(StringNames), typeof(Il2CppReferenceArray<Il2CppSystem.Object>) })]
-        [HarmonyPriority(Priority.Low)]
         private static class ExileTextPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(ref string __result, [HarmonyArgument(0)] StringNames id) {
                 try {
                     if (id != StringNames.ImpostorsRemainP && id != StringNames.ImpostorsRemainS) return;
@@ -556,17 +556,44 @@ namespace UsefulTORStuff {
         // even when somebody else's postfix threw. The exception is passed through untouched
         // (returning null would swallow a crash that is not ours to hide) - and the guard postfix
         // in TorCrashGuards reports it with a stack trace so the thrower can be found.
+        // SNAPSHOT (Opus audit 2026-10-02): TOR's OnGameEnd postfix ends with resetVariables(), whose
+        // postfix here (ClearState) empties extraJesters and winnerId, and TOR's own reset nulls
+        // Lawyer.lawyer/target - all BEFORE this finalizer. The correction therefore never ran. The
+        // state is copied in a first-in-line prefix and the finalizer works only on the copy (the same
+        // trap LoverRevenger.revengerWon and EndScreenLeavers already document).
+        private static readonly List<byte> endJesters = new List<byte>();
+        private static byte? endWinnerId;
+        private static byte endLawyerId = byte.MaxValue, endLawyerTargetId = byte.MaxValue;
+        private static bool endLawyerBonus;
+
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
-        [HarmonyPriority(Priority.Low)]
+        private static class WinnerSnapshotPatch {
+            [HarmonyPriority(Priority.First)]
+            public static void Prefix() {
+                try {
+                    endJesters.Clear();
+                    endJesters.AddRange(extraJesters);
+                    endWinnerId = winnerId;
+                    endLawyerId = Lawyer.lawyer != null ? Lawyer.lawyer.PlayerId : byte.MaxValue;
+                    endLawyerTargetId = Lawyer.target != null ? Lawyer.target.PlayerId : byte.MaxValue;
+                    endLawyerBonus = Lawyer.lawyer != null && Lawyer.target != null && !Lawyer.isProsecutor && !Pursuer.notAckedExiled;
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[MultiJester] end snapshot failed: {e}");
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
         private static class WinnerPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Finalizer() {
                 try {
-                    if (extraJesters.Count == 0) return;
+                    if (endJesters.Count == 0) return;
 
                     bool jesterWin = (int)OnGameEndPatch.gameOverReason == JesterWinReason();
 
                     if (jesterWin) {
-                        var winner = winnerId.HasValue ? Helpers.playerById(winnerId.Value) : null;
+                        var winner = endWinnerId.HasValue ? Helpers.playerById(endWinnerId.Value) : null;
                         // Fallback: if we somehow never saw the exile (joined late, missing RPC),
                         // leave TOR's own result alone rather than emptying the winner list.
                         if (winner == null || winner.Data == null) return;
@@ -586,10 +613,10 @@ namespace UsefulTORStuff {
                         // the assignment order - but keying off the real winner is correct rather than
                         // hardcoded, and covers the far more common case: TOR's own Jester winning
                         // while an extra Jester also exists this round).
-                        if (Lawyer.lawyer != null && Lawyer.target != null && !Lawyer.isProsecutor
-                            && !Pursuer.notAckedExiled && Lawyer.target.PlayerId == winner.PlayerId
-                            && Lawyer.lawyer.PlayerId != winner.PlayerId) {
-                            EndGameResult.CachedWinners.Add(new CachedPlayerData(Lawyer.lawyer.Data));
+                        var lawyer = endLawyerBonus ? Helpers.playerById(endLawyerId) : null;
+                        if (lawyer != null && lawyer.Data != null && endLawyerTargetId == winner.PlayerId
+                            && endLawyerId != winner.PlayerId) {
+                            EndGameResult.CachedWinners.Add(new CachedPlayerData(lawyer.Data));
                             EnsureLawyerBonusWinCondition();
                         }
 
@@ -602,7 +629,7 @@ namespace UsefulTORStuff {
                     // is what TOR itself does for its "notWinners" list - CachedPlayerData carries no
                     // PlayerId. Iterated backwards so removing an entry can't skip the next one.
                     var names = new HashSet<string>();
-                    foreach (byte id in extraJesters) {
+                    foreach (byte id in endJesters) {
                         var p = Helpers.playerById(id);
                         if (p?.Data != null) names.Add(p.Data.PlayerName);
                     }

@@ -130,8 +130,8 @@ namespace UsefulTORStuff {
 
         // LEGACY DUAL-SEND receiver: still accepts the old standalone callId 249 from pre-240 builds.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId == ReshieldRpcId) {
                     // Same owner-or-host guard on the LEGACY path: __instance is the sender here,
@@ -171,8 +171,8 @@ namespace UsefulTORStuff {
         // Build the unshield button after the HUD is set up (recreated each HudManager.Start, like
         // TOR's own buttons).
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Start))]
-        [HarmonyPriority(Priority.Low)]
         static class HudStartPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(HudManager __instance) {
                 try {
                     unshieldButton = new CustomButton(

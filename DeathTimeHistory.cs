@@ -329,8 +329,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
-        [HarmonyPriority(Priority.First)]
         static class IntroOverMarkerPatch {
+            [HarmonyPriority(Priority.First)]
             public static void Prefix() {
                 if (introOverSeen) return;
                 introOverSeen = true;
@@ -386,8 +386,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
-        [HarmonyPriority(Priority.First)]
         static class GameEndPatch {
+            [HarmonyPriority(Priority.First)]
             public static void Prefix() {
                 try { FinishRound(); }
                 catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogError($"[DeathTimeHistory] round end failed: {e}"); }

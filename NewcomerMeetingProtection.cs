@@ -88,7 +88,7 @@ namespace UsefulTORStuff {
             // which must always be allowed to pass (that is the mechanism by which a meeting ends).
             private const byte SkipVote = 253;
 
-            public static bool Prefix([HarmonyArgument(0)] byte srcPlayerId, [HarmonyArgument(1)] byte suspectIdx) {
+            public static bool Prefix([HarmonyArgument(0)] byte srcPlayerId, [HarmonyArgument(1)] ref byte suspectIdx) {
                 try {
                     if (suspectIdx == SkipVote) return true;
                     string key = VoteBlockKey(suspectIdx);
@@ -102,9 +102,17 @@ namespace UsefulTORStuff {
                     // lobby, so an ungated message would put a line in the host's chat for every
                     // remote vote as well.
                     var me = PlayerControl.LocalPlayer;
-                    if (me != null && me.PlayerId == srcPlayerId) NotifyLocal(key);
+                    if (me != null && me.PlayerId == srcPlayerId) {
+                        NotifyLocal(key);
+                        return false;   // our own vote: refused, our UI lets us pick again
+                    }
 
-                    return false;   // the vote never happens: no state written, nothing to undo
+                    // A remote voter's UI has already locked in (a client without the mod gets no
+                    // grey-out). Refusing would leave him without a vote for the rest of the meeting and
+                    // keep the meeting from ending early, because the host waits for every DidVote (Opus
+                    // audit 2026-10-02). His vote counts as a skip instead.
+                    suspectIdx = SkipVote;
+                    return true;
                 } catch { return true; }
             }
         }

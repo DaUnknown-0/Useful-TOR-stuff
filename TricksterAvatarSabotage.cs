@@ -251,8 +251,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
-        [HarmonyPriority(Priority.High)]
         static class HandleRpcPatch {
+            [HarmonyPriority(Priority.High)]
             public static bool Prefix(byte callId, MessageReader reader, PlayerControl __instance) {
                 if (callId == MixupRpcId) {
                     try {
@@ -279,8 +279,8 @@ namespace UsefulTORStuff {
         // Timer/expiry only (Low priority -> after TOR's own look updates); looks themselves are set
         // once in ApplyMixup/ReapplyLooks, not per player per tick here.
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.FixedUpdate))]
-        [HarmonyPriority(Priority.Low)]
         static class ApplyPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(PlayerControl __instance) {
                 try {
                     if (mixupTimer <= 0f || __instance == null) return;
@@ -315,8 +315,8 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Start))]
-        [HarmonyPriority(Priority.Low)]
         static class HudStartPatch {
+            [HarmonyPriority(Priority.Low)]
             public static void Postfix(HudManager __instance) {
                 try {
                     sabotageButton = new CustomButton(
