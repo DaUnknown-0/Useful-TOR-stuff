@@ -22,6 +22,8 @@ namespace UsefulTORStuff {
 
     public class EarlyDeathShieldUI : MonoBehaviour {
         public static EarlyDeathShieldUI Instance { get; private set; }
+        /// <summary>Read by SessionStatsUI for the shared lobby-button column.</summary>
+        public static bool ButtonShown { get; private set; }
 
         public EarlyDeathShieldUI(IntPtr ptr) : base(ptr) { }
 
@@ -86,6 +88,7 @@ namespace UsefulTORStuff {
             }
 
             bool show = ShouldShow() && !SettingsOverlayView.OverlayOpen();
+            ButtonShown = show;
             PublishNextFreeRow(show);
             if (show && lobbyButton == null) BuildLobbyButton();
             if (lobbyButton == null) return;
@@ -106,7 +109,8 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         private static void PublishNextFreeRow(bool earlyDeathShown) {
-            int rows = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (earlyDeathShown ? 1 : 0);
+            int rows = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (earlyDeathShown ? 1 : 0)
+                       + (SessionStatsUI.ButtonShown ? 1 : 0) + (RoundReplay.ButtonShown ? 1 : 0);
             try { AppDomain.CurrentDomain.SetData(LobbyNextFreeRowKey, 84f + 54f * rows); } catch { }
         }
 
@@ -186,6 +190,7 @@ namespace UsefulTORStuff {
             try {
                 // Newcomer and early-death panel share the screen centre: only one at a time.
                 NewcomerShieldUI.Instance?.Close();
+                SessionStatsUI.Instance?.Close();
 
                 panelRoot = new GameObject("UTSEarlyDeathShieldUI");
                 DontDestroyOnLoad(panelRoot);
@@ -306,6 +311,7 @@ namespace UsefulTORStuff {
         private void OpenViewer() {
             try {
                 NewcomerShieldUI.Instance?.Close();
+                SessionStatsUI.Instance?.Close();
                 viewerOpen = true;
                 var st = EarlyDeathShield.LastStats;
                 viewerStatsAt = st != null ? st.ReceivedAt : -1f;

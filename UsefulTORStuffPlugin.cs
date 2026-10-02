@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.12";
+    public const string PluginVersion = "1.4.12.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -76,6 +76,9 @@ public class UsefulTORStuffPlugin : BasePlugin
     // steps below the block; module bytes live inside channel 240 and cannot collide with foreign
     // callIds. New feature, so it exists ONLY on channel 240.
     public const byte EarlyDeathShieldRpcId = 239;
+
+    // Module byte for the lobby session statistics (SessionStats). Next free byte below 239, channel 240 only.
+    public const byte SessionStatsRpcId = 238;
 
     public static ManualLogSource Logger { get; private set; }
 
@@ -164,6 +167,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         DeconDiag.Bind(Config);
         EarlyDeathShieldUI.DiagViewer = Config.Bind("Diagnostics", "EarlyDeath Viewer Test", false,
             "Autotest only: opens the early-death statistics viewer in freeplay with sample numbers.");
+        SessionStatsUI.DiagViewer = Config.Bind("Diagnostics", "SessionStats Viewer Test", false,
+            "Autotest only: opens the session statistics panel in freeplay with sample numbers and saves a screenshot.");
+        RoundReplay.DiagViewer = Config.Bind("Diagnostics", "Replay Viewer Test", false,
+            "Autotest only: finishes the freeplay recording after 12 s, opens the round replay and saves a screenshot.");
 
         // Repair path for Harmony patches that stop executing mid-session (see DetourWatchdog.cs for
         // the measurements). Only the config entries are bound here; arming happens after PatchAll,
@@ -212,6 +219,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Early-death shield receiver (module byte 239). Same pattern.
         EarlyDeathShield.RegisterRpc();
+
+        // Session statistics receiver (module byte 238). Same pattern.
+        SessionStats.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -383,6 +393,17 @@ public class UsefulTORStuffPlugin : BasePlugin
         // All patches are attribute-based and picked up by PatchAll below.
         EarlyDeathShield.CreateOptions();
 
+        // Session statistics (option 1395, General tab): wins, roles, meetings, deaths and duels of the
+        // evening for everybody in the lobby, from the host's records. Fed by DeathTimeHistory at round end.
+        SessionStats.CreateOptions();
+
+        // Kill feed for dead players (option 1396, General tab, off by default). Ticked by SessionStatsUI.
+        GhostKillFeed.CreateOptions();
+
+        // Round replay in the lobby (option 1397, General tab, on by default). Records on every client,
+        // ticked by SessionStatsUI.
+        RoundReplay.CreateOptions();
+
         // Both kill shields above gate TOR's targeting helper, which knows nothing about WHY a player
         // is being targeted. This frees the peaceful abilities (Medic, Shifter, Morphling, Tracker,
         // Deputy, Eraser, Arsonist, Pursuer) from both gates by marking their targeting methods, and
@@ -455,6 +476,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Host-only lobby panel for the early-death shield; also drives the death-time clock.
         AddComponent<EarlyDeathShieldUI>();
+
+        // Lobby panel of the session statistics (host and guests); also drives the host's sending.
+        AddComponent<SessionStatsUI>();
 
         // Memory heartbeat for the crash log (see CrashDiagnostics.cs).
         AddComponent<CrashDiagnosticsTicker>();

@@ -226,6 +226,7 @@ namespace UsefulTORStuff {
         private sealed class Participant {
             public string Code;
             public string Name;
+            public int MeetingsSurvived;   // for SessionStats: alive when a meeting (incl. its exile) ended
         }
 
         private static DateTime? roundStart;
@@ -274,6 +275,7 @@ namespace UsefulTORStuff {
                 } else if (!meetingRunning && meetingOpen != null) {
                     meetings.Add(new[] { meetingOpen.Value, DateTime.UtcNow });
                     meetingOpen = null;
+                    CountMeetingSurvivors();
                 }
             } catch { }
         }
@@ -289,6 +291,15 @@ namespace UsefulTORStuff {
             }
             UsefulTORStuffPlugin.Logger?.LogInfo(
                 $"[DeathTimeHistory] round clock started ({(introOverSeen ? "intro end" : "fallback")}), {participants.Count} participant(s).");
+        }
+
+        // A meeting counts as survived for everyone still alive once it is over, the exile included:
+        // whoever was voted out is dead by then.
+        private static void CountMeetingSurvivors() {
+            foreach (var kv in participants) {
+                var p = Helpers.playerById(kv.Key);
+                if (p != null && p.Data != null && !p.Data.IsDead && !p.Data.Disconnected) kv.Value.MeetingsSurvived++;
+            }
         }
 
         private static void ResetRound() {
@@ -336,7 +347,7 @@ namespace UsefulTORStuff {
 
         // GameHistory is internal to TOR; DeadPlayer itself is public, so the list casts cleanly
         // (Pelican.cs in Unknown's Collection reads it the same way).
-        private static List<DeadPlayer> TorDeadPlayers() {
+        internal static List<DeadPlayer> TorDeadPlayers() {
             try {
                 if (!deadPlayersResolved) {
                     deadPlayersResolved = true;
@@ -434,11 +445,65 @@ namespace UsefulTORStuff {
             }
             newestRound = end;   // a played round keeps the session alive even if everybody was left out
             Save();
+            CaptureForSessionStats(deaths, length, end);
             roundStart = null;   // one record per round, even if OnGameEnd fires twice
 
             UsefulTORStuffPlugin.Logger?.LogInfo(
                 $"[DeathTimeHistory] round recorded ({length:F0}s gameplay): {killed} died, "
                 + $"{survived} survived, {skipped} left out.");
+        }
+
+        // The wider round record for SessionStats: every participant, self-inflicted deaths included,
+        // plus role, team and kills. Read here because this prefix is the last moment TOR's role statics
+        // and GameHistory are intact; the winners are only known later (SessionStats finishes the round
+        // when the end screen is set up).
+        private static void CaptureForSessionStats(Dictionary<byte, DeadPlayer> deaths, double length, DateTime end) {
+            try {
+                var entries = new List<SessionStats.RoundEntry>();
+                foreach (var kv in participants) {
+                    var p = Helpers.playerById(kv.Key);
+                    if (p == null || p.Data == null) continue;
+                    var e = new SessionStats.RoundEntry {
+                        Code = kv.Value.Code, Name = kv.Value.Name,
+                        Meetings = kv.Value.MeetingsSurvived, Reason = SessionStats.ReasonSurvived, Share = 1f
+                    };
+                    var (team, role) = TeamAndRole(p);
+                    e.Team = team; e.Role = role;
+                    foreach (var dp in deaths.Values)
+                        if (dp.killerIfExisting != null && dp.killerIfExisting.PlayerId == kv.Key
+                            && dp.player.PlayerId != kv.Key && SessionStats.IsKillReason(dp.deathReason)) e.Kills++;
+                    if (deaths.TryGetValue(kv.Key, out var mine)) {
+                        e.Reason = (int)mine.deathReason;
+                        if (mine.killerIfExisting != null) {
+                            e.KillerCode = mine.killerIfExisting.PlayerId == kv.Key
+                                ? kv.Value.Code
+                                : participants.TryGetValue(mine.killerIfExisting.PlayerId, out var kp) ? kp.Code
+                                : NewcomerShield.CodeOf(mine.killerIfExisting) ?? "";
+                        }
+                        e.Share = mine.deathReason == DeadPlayer.CustomDeathReason.Disconnect
+                            ? -1f : (float)Math.Clamp(GameplayAt(mine.timeOfDeath) / length, 0.0, 1.0);
+                    } else if (p.Data.Disconnected) {
+                        e.Reason = (int)DeadPlayer.CustomDeathReason.Disconnect;
+                        e.Share = -1f;
+                    }
+                    entries.Add(e);
+                }
+                SessionStats.RoundCaptured(entries, roundStart ?? end, end);
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] round capture failed: {e.Message}");
+            }
+        }
+
+        // Main role (modifiers left out) and its team: 0 crew, 1 impostor, 2 neutral. Unknown's Collection
+        // slips its roles into getRoleInfoForPlayer, so they come out right as well.
+        private static (byte Team, string Role) TeamAndRole(PlayerControl p) {
+            try {
+                var info = RoleInfo.getRoleInfoForPlayer(p, false)?.FirstOrDefault(i => i != null && !i.isModifier);
+                if (info != null)
+                    return (info.isImpostor ? (byte)1 : info.isNeutral ? (byte)2 : (byte)0, info.name ?? "?");
+            } catch { }
+            bool imp = p.Data?.Role != null && p.Data.Role.IsImpostor;
+            return (imp ? (byte)1 : (byte)0, imp ? "Impostor" : "Crewmate");
         }
     }
 }
