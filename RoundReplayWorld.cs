@@ -59,6 +59,9 @@ namespace UsefulTORStuff {
         private static GameObject worldHolder, worldFigures;
         private static Vector2 worldShift;             // game world -> copy
         private static readonly List<(Collider2D[] Cols, SpriteRenderer[] Rends)> worldDoors = new List<(Collider2D[], SpriteRenderer[])>();
+        // The live copy's doors, kept for the whole round: the copy is stripped only once (its
+        // ShipStatus is gone afterwards), so a second opening must take the list from here.
+        private static readonly List<(Collider2D[] Cols, SpriteRenderer[] Rends)> liveDoors = new List<(Collider2D[], SpriteRenderer[])>();
         private static Camera worldCam;
         private static RenderTexture worldRt;
         private static GameObject worldArea;
@@ -166,6 +169,7 @@ namespace UsefulTORStuff {
         private static void ReleaseLive() {
             if (liveHolder != null) UnityEngine.Object.Destroy(liveHolder);
             liveHolder = null; liveClone = null; liveStripped = false;
+            liveDoors.Clear();
             if (keepHandleSet) { try { Addressables.Release(keepHandle); } catch { } keepHandleSet = false; }
         }
 
@@ -177,9 +181,13 @@ namespace UsefulTORStuff {
                 try {
                     worldHolder = liveHolder;
                     worldHolder.transform.position = WorldOffset;
-                    if (!liveStripped) { WorldPrepare(liveClone, 0); liveStripped = true; }
-                    else {
+                    if (!liveStripped) {
+                        WorldPrepare(liveClone, 0);
+                        liveStripped = true;
+                        liveDoors.Clear(); liveDoors.AddRange(worldDoors);
+                    } else {
                         worldHolder.SetActive(true);
+                        worldDoors.Clear(); worldDoors.AddRange(liveDoors);
                         worldDoorSample = -1;
                         worldFigures = new GameObject("UTSReplayFigures");
                         worldState = 2;
@@ -213,9 +221,14 @@ namespace UsefulTORStuff {
                 }
                 WorldBuild(worldHandle.Result);
             } catch (Exception e) {
-                worldState = 3;
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] map build failed: {e}");
-                WorldDestroy(false);
+                // Only the half-built map goes. WorldDestroy also tears down the panel's view (camera,
+                // label) and ended in worldState 0, so the panel never showed "failed".
+                if (worldFigures != null) UnityEngine.Object.Destroy(worldFigures);
+                if (worldHolder != null && worldHolder != liveHolder) UnityEngine.Object.Destroy(worldHolder);
+                worldFigures = null; worldHolder = null;
+                worldDoors.Clear();
+                worldState = 3;
             }
         }
 
@@ -276,6 +289,8 @@ namespace UsefulTORStuff {
             }
             if (worldCam != null) UnityEngine.Object.Destroy(worldCam.gameObject);
             if (worldRt != null) { worldRt.Release(); UnityEngine.Object.Destroy(worldRt); }
+            // made anew on every panel opening (WorldBuildUi) and kept by DontUnloadUnusedAsset
+            if (worldMaskTex != null) { UnityEngine.Object.Destroy(worldMaskTex); worldMaskTex = null; }
             worldFigures = null; worldHolder = null; worldCam = null; worldRt = null; worldArea = null; viewLabel = null;
             nameLabels.Clear(); labelsShown.Clear(); nameLayer = null;
             walk.Clear();

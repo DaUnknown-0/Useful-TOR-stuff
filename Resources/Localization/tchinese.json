@@ -812,6 +812,8 @@
  "uts.sabotagetuning.lights_cooldown_reduction": "電力每次使用冷卻減少量",
  "uts.sabotagetuning.heli_cooldown": "飛船墜毀冷卻時間",
  "uts.sabotagetuning.heli_cooldown_reduction": "飛船墜毀每次使用冷卻減少量",
+ "uts.sabotagetuning.mixup_cooldown": "Mushroom Mixup冷卻時間",
+ "uts.sabotagetuning.mixup_cooldown_reduction": "Mushroom Mixup每次使用冷卻減少量",
  "uts.sabotagetuning.heli_duration": "飛船墜毀持續時間",
  "uts.multimodifiers.mini_quantity": "Mini 數量（最多3個）",
  "uts.multimodifiers.armored_quantity": "Armored 數量（最多3個）",

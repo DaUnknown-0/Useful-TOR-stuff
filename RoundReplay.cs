@@ -141,6 +141,9 @@ namespace UsefulTORStuff {
             inMeeting = false;
             clock = 0f; sampledUpTo = 0f; samples = 0;
             tracks.Clear(); events.Clear(); deathsSeen.Clear();
+            // The chosen perspective is a player id of the previous round; in a new round (or lobby)
+            // it filtered the event list down to meetings or silently picked a different player.
+            persp = 255;
             ReleaseLive();
             HostBegin();
             foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {

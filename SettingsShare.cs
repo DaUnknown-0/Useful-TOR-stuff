@@ -417,9 +417,10 @@ namespace UsefulTORStuff {
                 }
                 // Route through TOR's paste logic without permanently clobbering the user's clipboard.
                 string clipBackup = GUIUtility.systemCopyBuffer;
+                int success;
                 GUIUtility.systemCopyBuffer = pasteBuffer.Trim();
-                int success = CustomOption.pasteFromClipboard();
-                GUIUtility.systemCopyBuffer = clipBackup;
+                try { success = CustomOption.pasteFromClipboard(); }
+                finally { GUIUtility.systemCopyBuffer = clipBackup; }
 
                 if (pasteStatus != null) {
                     pasteStatus.text = success == 3 ? UTSLocalization.Tr("uts.settingsshare.paste_status_ok")
@@ -482,8 +483,12 @@ namespace UsefulTORStuff {
         private static void ImportFile(FileInfo file, TextMeshPro label) {
             try {
                 string data = File.ReadAllText(file.FullName);
+                // Same as ImportPasteBuffer: route through TOR's paste, then give the user's clipboard back.
+                string clipBackup = GUIUtility.systemCopyBuffer;
+                int success;
                 GUIUtility.systemCopyBuffer = data;
-                int success = CustomOption.pasteFromClipboard(); // TOR's paste incl. all fallbacks
+                try { success = CustomOption.pasteFromClipboard(); } // TOR's paste incl. all fallbacks
+                finally { GUIUtility.systemCopyBuffer = clipBackup; }
                 bool ok = success == 3;
                 label.color = ok ? Color.green : success == 0 ? Color.red : Color.yellow;
                 PostChat(ok

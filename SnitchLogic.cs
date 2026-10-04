@@ -646,6 +646,15 @@ public static class SnitchLogic
         }
     }
 
+    // Meeting-Ende (Rauswurf beginnt, auch bei Skip): die Räume dieses Meetings sind verbraucht.
+    // Vorher wurde roomMap nur zum Rundenstart geleert; kam ein ShareRoom im nächsten Meeting nicht
+    // oder zu spät an, nannte der Snitch den Raum aus dem vorigen Meeting statt "open fields".
+    [HarmonyPatch(typeof(ExileController), nameof(ExileController.Begin))]
+    private static class ClearRoomsAtMeetingEndPatch
+    {
+        private static void Postfix() { try { roomMap.Clear(); } catch { } }
+    }
+
     private static void ClearAndReloadPostfix()
     {
         try

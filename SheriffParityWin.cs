@@ -121,7 +121,9 @@ namespace UsefulTORStuff {
 
         private static bool SheriffAlive() {
             var s = Sheriff.sheriff;
-            return s != null && s.Data != null && !s.Data.IsDead;
+            // A disconnected Sheriff keeps IsDead == false and TOR never clears Sheriff.sheriff on a
+            // disconnect, so without this check he would block the parity win for the rest of the game.
+            return s != null && s.Data != null && !s.Data.IsDead && !s.Data.Disconnected;
         }
 
         // Unknown's Collection's Hunter is a promoted Sheriff and shoots by exactly the same rules, so

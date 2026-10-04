@@ -812,6 +812,8 @@
  "uts.sabotagetuning.lights_cooldown_reduction": "Скорочення перезарядки світла за використання",
  "uts.sabotagetuning.heli_cooldown": "Перезарядка аварії дирижабля",
  "uts.sabotagetuning.heli_cooldown_reduction": "Скорочення перезарядки аварії дирижабля за використання",
+ "uts.sabotagetuning.mixup_cooldown": "Перезарядка Mushroom Mixup",
+ "uts.sabotagetuning.mixup_cooldown_reduction": "Скорочення перезарядки Mushroom Mixup за використання",
  "uts.sabotagetuning.heli_duration": "Тривалість аварії дирижабля",
  "uts.multimodifiers.mini_quantity": "Кількість Mini (макс. 3)",
  "uts.multimodifiers.armored_quantity": "Кількість Armored (макс. 3)",

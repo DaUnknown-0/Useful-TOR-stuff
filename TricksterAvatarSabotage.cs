@@ -247,6 +247,14 @@ namespace UsefulTORStuff {
             try {
                 foreach (var p in PlayerControl.AllPlayerControls)
                     if (p != null) p.setDefaultLook();
+                // setDefaultLook does not know the Morphling: a morph still running when the mixup
+                // ends is put back, the way TOR does it after a camouflage (PlayerControlPatch.cs:775).
+                if (Morphling.morphTimer > 0f && Morphling.morphling != null && Morphling.morphTarget != null
+                    && Camouflager.camouflageTimer <= 0f) {
+                    var t = Morphling.morphTarget;
+                    var o = t.Data.DefaultOutfit;
+                    Morphling.morphling.setLook(t.Data.PlayerName, o.ColorId, o.HatId, o.VisorId, o.SkinId, o.PetId);
+                }
             } catch { }
         }
 

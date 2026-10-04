@@ -392,10 +392,19 @@ namespace UsefulTORStuff {
                 if (instance?.textures == null) return;
                 // Indices 0-3 are vanilla's own 4 camera slots; TOR only ever calls GetTemporary for
                 // the SecurityGuard extension at index 4 and up (Begin, UsablesPatch.cs:513-524).
-                for (int i = 4; i < instance.textures.Length; i++) {
-                    var rt = instance.textures[i];
+                var all = instance.textures;
+                if (all.Length <= 4) return;
+                for (int i = 4; i < all.Length; i++) {
+                    var rt = all[i];
                     if (rt != null) RenderTexture.ReleaseTemporary(rt);
                 }
+                // Then hand vanilla back an array of only its own 4 slots. Whether vanilla's OnDestroy
+                // walks textures.Length (TOR's lengthened array) is not visible from the managed side;
+                // if it did, the extras released above would be released a second time. With the
+                // array cut back it cannot touch them either way.
+                var own = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<RenderTexture>(4);
+                for (int i = 0; i < 4; i++) own[i] = all[i];
+                instance.textures = own;
             }
         }
 

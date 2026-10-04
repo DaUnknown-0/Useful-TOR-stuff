@@ -227,11 +227,16 @@ namespace UsefulTORStuff {
                 yield return new WaitForEndOfFrame();
             }
 
-            if (persist.Exception != null) {
+            if (persist.IsFaulted || persist.IsCanceled) {
                 UsefulTORStuffPlugin.Logger?.LogError(
-                    $"[ModSync] {job.Catalog.DisplayName}: write failed - {persist.Exception.Message}");
+                    $"[ModSync] {job.Catalog.DisplayName}: write failed - {persist.Exception?.Message ?? "canceled"}");
                 // Put the previous DLL back, otherwise a failed replace leaves the player with no mod.
-                try { if (moved && !File.Exists(filePath)) File.Move(filePath + ".old", filePath); } catch { }
+                // A write that failed midway has already created a truncated file, which has to go
+                // first; checking "no file there" alone kept the broken DLL and left the good one as .old.
+                try {
+                    if (File.Exists(filePath)) File.Delete(filePath);
+                    if (moved) File.Move(filePath + ".old", filePath);
+                } catch { }
                 Fail(job, "uts.modsync.error_write");
                 yield break;
             }

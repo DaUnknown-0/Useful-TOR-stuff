@@ -594,7 +594,10 @@ namespace UsefulTORStuff {
                     }
                 }
                 ids.Sort();
-                string key = string.Join(",", ids.Select(x => $"{x.Id}:{x.Meetings}"));
+                // The player count is part of the key: a newcomer who is not shielded himself does not
+                // change the list, but he cleared his own copy on join and needs it sent once.
+                string key = $"{PlayerControl.AllPlayerControls.Count}|"
+                    + string.Join(",", ids.Select(x => $"{x.Id}:{x.Meetings}"));
                 if (key == lastPreviewKey) return;
                 lastPreviewKey = key;
 

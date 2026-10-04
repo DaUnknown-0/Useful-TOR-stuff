@@ -812,6 +812,8 @@
  "uts.sabotagetuning.lights_cooldown_reduction": "전기 쿨타임 감소량 (사용당)",
  "uts.sabotagetuning.heli_cooldown": "에어십 추락 쿨타임",
  "uts.sabotagetuning.heli_cooldown_reduction": "에어십 추락 쿨타임 감소량 (사용당)",
+ "uts.sabotagetuning.mixup_cooldown": "Mushroom Mixup 쿨타임",
+ "uts.sabotagetuning.mixup_cooldown_reduction": "Mushroom Mixup 쿨타임 감소량 (사용당)",
  "uts.sabotagetuning.heli_duration": "에어십 추락 지속 시간",
  "uts.multimodifiers.mini_quantity": "Mini 수량 (최대 3)",
  "uts.multimodifiers.armored_quantity": "Armored 수량 (최대 3)",

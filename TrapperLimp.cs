@@ -46,6 +46,14 @@ namespace UsefulTORStuff {
 
         private static CustomButton selfLimpButton;
 
+        // Float selections built in double and rounded to 2 decimals; the half-step tolerance keeps
+        // the max value in the list. See StrengthOption below.
+        private static object[] FloatRange(float min, float max, float step) {
+            var sels = new List<object>();
+            for (double s = min; s <= max + step * 0.5; s += step) sels.Add((float)Math.Round(s, 2));
+            return sels.ToArray();
+        }
+
         public static void CreateOptions() {
             // Receiver registration for the consolidated RPC channel (UTSRpc.CallId = 240).
             // CreateOptions is this feature's only load-time entry point, so it doubles as init.
@@ -58,15 +66,16 @@ namespace UsefulTORStuff {
                 SelfOption = CustomOption.Create(
                     1271, Types.Crewmate, "Trapper Can Self-Limp", false, CustomOptionHolder.trapperSpawnRate);
                 UTSLocalization.BindOptionTitle(SelfOption, "uts.trapperlimp.self_option");
-                StrengthOption = CustomOption.Create(
-                    1272, Types.Crewmate, "Limp Speed Multiplier", 0.5f, 0.25f, 0.9f, 0.05f, CustomOptionHolder.trapperSpawnRate);
+                // CustomOption.Create(float) builds the selections by accumulating `+= 0.05f`, which
+                // drifts (0.5 becomes 0.5000000596). The constructor's exact Array.IndexOf then missed
+                // the 0.5 default and fell back to index 0 (0.25), and the overshoot dropped 0.9 from
+                // the list. Rounding the entries afterwards came too late for the default. So the
+                // selections are built in double and rounded BEFORE the constructor sees them (the
+                // FloatRange pattern of Unknown's Collection); indices stay the same, 0.9 is appended.
+                StrengthOption = new CustomOption(
+                    1272, Types.Crewmate, "Limp Speed Multiplier", FloatRange(0.25f, 0.9f, 0.05f), 0.5f,
+                    CustomOptionHolder.trapperSpawnRate, false);
                 UTSLocalization.BindOptionTitle(StrengthOption, "uts.trapperlimp.strength_option");
-                // CustomOption.Create builds the float selections by accumulating `+= 0.05f`, which
-                // drifts (e.g. 0.7000000001) and shows up raw in the menu and getFloat(). The 0.05
-                // step isn't binary-exact; round each entry to 2 decimals so display + value are clean.
-                if (StrengthOption.selections != null)
-                    for (int i = 0; i < StrengthOption.selections.Length; i++)
-                        StrengthOption.selections[i] = Mathf.Round((float)StrengthOption.selections[i] * 100f) / 100f;
                 DurationOption = CustomOption.Create(
                     1273, Types.Crewmate, "Limp Duration After Freeze", 5f, 1f, 20f, 1f, CustomOptionHolder.trapperSpawnRate);
                 UTSLocalization.BindOptionTitle(DurationOption, "uts.trapperlimp.duration_option");

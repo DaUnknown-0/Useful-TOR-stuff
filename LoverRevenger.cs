@@ -414,6 +414,8 @@ namespace UsefulTORStuff {
         // (ExileControllerPatch: lawyerPromotesToPursuer first, then uncheckedExilePlayer) and the
         // Lover who follows an exiled partner (ExilePlayerPatch: otherLover.Exiled()).
         // Runs locally on every client, like every other Apply* here.
+        private const string NonWitchExileKey = "TORMods.NonWitchExile";
+
         private static void MeetingEndDeath(PlayerControl p) {
             if (p == null || p.Data == null || p.Data.IsDead) return;
             try {
@@ -423,7 +425,11 @@ namespace UsefulTORStuff {
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[LoverRevenger] lawyer promotion failed: {e.Message}");
             }
-            RPCProcedure.uncheckedExilePlayer(p.PlayerId);
+            // AppDomain contract with Unknown's Collection: its Witch kill-cutscene hooks
+            // uncheckedExilePlayer and must not mistake this exile for a Witch spell.
+            AppDomain.CurrentDomain.SetData(NonWitchExileKey, true);
+            try { RPCProcedure.uncheckedExilePlayer(p.PlayerId); }
+            finally { AppDomain.CurrentDomain.SetData(NonWitchExileKey, null); }
             OverrideLoverSuicide(p);
             UsefulTORStuffPlugin.Logger?.LogInfo($"[LoverRevenger] {p.Data.PlayerName} dies at the meeting end (exiled, no body).");
         }
@@ -927,8 +933,12 @@ namespace UsefulTORStuff {
                         // possible target who only died a meeting later (User 2026-10-02: the Maniac
                         // bombed a Lover and died himself before the first meeting). The Lover follows
                         // his partner now instead, as without the delay.
+                        // The surviving Lover killed the partner himself (mixed Impostor+Crew pair,
+                        // Sheriff/Guesser Lover, Maniac bomb): there is nobody to avenge either, a
+                        // Revenger with himself as the target could never win or be denied.
                         var pk = Helpers.playerById(pendingKillerId);
-                        bool killerGone = pk == null || pk.Data == null || pk.Data.IsDead || pk.Data.Disconnected;
+                        bool killerGone = pk == null || pk.Data == null || pk.Data.IsDead || pk.Data.Disconnected
+                            || pendingKillerId == pendingLover.PlayerId;
                         bool become = active && !killerGone && rnd.Next(1, 101) <= sel * 10;
                         byte mode = (byte)(RevengerMode != null ? UTSGate.Sel(RevengerMode) : 0);
                         UsefulTORStuffPlugin.Logger?.LogInfo(
@@ -1014,7 +1024,8 @@ namespace UsefulTORStuff {
                 revengerButton = new CustomButton(
                     OnRevengerKill,
                     LocalUsesRevengerButton,
-                    () => currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
+                    // Blind Rage: one kill, then the Revenger only waits for the meeting that ends him.
+                    () => !rageKillDone && currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
                     () => { if (revengerButton != null) revengerButton.Timer = revengerButton.MaxTimer; },
                     UTSAssets.RevengerIcon ?? hud.KillButton.graphic.sprite,
                     CustomButton.ButtonPositions.upperRowRight,
@@ -1100,7 +1111,7 @@ namespace UsefulTORStuff {
 
         private static void OnRevengerKill() {
             try {
-                if (!LocalIsRevenger() || currentTarget == null) return;
+                if (!LocalIsRevenger() || currentTarget == null || rageKillDone) return;
                 var result = Helpers.checkMuderAttempt(revenger, currentTarget);
                 if (result != MurderAttemptResult.PerformKill) return;
 

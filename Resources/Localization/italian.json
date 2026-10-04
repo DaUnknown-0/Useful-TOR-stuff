@@ -812,6 +812,8 @@
  "uts.sabotagetuning.lights_cooldown_reduction": "Riduzione tempo di ricarica Luci per utilizzo",
  "uts.sabotagetuning.heli_cooldown": "Tempo di ricarica Schianto dell'Airship",
  "uts.sabotagetuning.heli_cooldown_reduction": "Riduzione tempo di ricarica Schianto dell'Airship per utilizzo",
+ "uts.sabotagetuning.mixup_cooldown": "Tempo di ricarica Mushroom Mixup",
+ "uts.sabotagetuning.mixup_cooldown_reduction": "Riduzione tempo di ricarica Mushroom Mixup per utilizzo",
  "uts.sabotagetuning.heli_duration": "Durata Schianto dell'Airship",
  "uts.multimodifiers.mini_quantity": "Quantità di Mini (max 3)",
  "uts.multimodifiers.armored_quantity": "Quantità di Armored (max 3)",

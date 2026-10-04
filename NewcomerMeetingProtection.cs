@@ -194,8 +194,11 @@ namespace UsefulTORStuff {
         // sync is the tool for that gap, not more code here.
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.guesserShoot))]
         static class GuesserShootPatch {
-            public static bool Prefix([HarmonyArgument(1)] byte dyingTargetId) {
+            public static bool Prefix([HarmonyArgument(0)] byte killerId, [HarmonyArgument(1)] byte dyingTargetId) {
                 try {
+                    // A wrong guess kills the shooter himself (dyingTargetId == killerId). The shield
+                    // protects newcomers from being guessed, not from the penalty of their own guess.
+                    if (dyingTargetId == killerId) return true;
                     if (GuessBlockKey(dyingTargetId) == null) return true;
                     if (!UsefulVersionHandshake.EveryoneHasMod()) {
                         UsefulTORStuffPlugin.Logger?.LogWarning(

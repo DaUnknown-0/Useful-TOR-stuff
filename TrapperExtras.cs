@@ -345,6 +345,19 @@ namespace UsefulTORStuff {
 
         public static void ClearLog() { log.Clear(); posted = 0; CloseView(); }
 
+        /// A new round, or another lobby, starts with an empty log. ClearLog had no caller before:
+        /// the previous game's entries (same "Trap 1" numbering, old role info) stayed, and the
+        /// "log empty" line never appeared again because posted was not reset.
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
+        internal static class ClearLogOnRoundStartPatch {
+            public static void Postfix() { try { ClearLog(); } catch { } }
+        }
+
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        internal static class ClearLogOnGameJoinedPatch {
+            public static void Postfix() { try { ClearLog(); } catch { } }
+        }
+
         /*
          * CAPTURE POINT: the prefix of Trap.clearRevealedTraps.
          *

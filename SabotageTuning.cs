@@ -66,7 +66,11 @@
  * (MapRoom.SabotageOxygen -> Oxygen ...). Submerged's O2 is its own system 130
  * (SubmarineOxygenSystem, not LifeSuppSystemType); OxygenActive and the O2 duration cover it too.
  *
- * IDs 1330-1345 used here (1320-1323 are SpyExtras). Keep plugin-wide unique.
+ * Fungle's Mushroom Mixup (03.10.): an own type, because the shared vanilla timer is pinned idle and
+ * a sabotage without a per-type prefix had no cooldown at all (chainable endlessly).
+ *
+ * IDs 1330-1345 and 1348-1349 used here (1320-1323 are SpyExtras, 1346-1347 TrapperExtras). Keep
+ * plugin-wide unique.
  */
 
 using System;
@@ -79,8 +83,8 @@ using Types = TheOtherRoles.CustomOption.CustomOptionType;
 
 namespace UsefulTORStuff {
     public static class SabotageTuning {
-        public enum SabType { Reactor = 0, Oxygen = 1, Comms = 2, Lights = 3, Heli = 4 }
-        private const int N = 5;
+        public enum SabType { Reactor = 0, Oxygen = 1, Comms = 2, Lights = 3, Heli = 4, Mixup = 5 }
+        private const int N = 6;
         private const float MIN_COOLDOWN = 10f;
 
         // Master toggle (header) + per-type cooldown / reduction options. Durations only for the
@@ -98,19 +102,16 @@ namespace UsefulTORStuff {
         private static bool prevActive;
         private static bool gameInit;
 
-        // Cooldown-seconds labels (one per logical type, lazily created next to MapRoom.special).
+        // Cooldown-seconds labels, one per MapRoom button (keyed by its native pointer), lazily
+        // created next to MapRoom.special. Per button, not per type: Submerged has two O2 buttons and
+        // the second one never got a readout while the label existed once per type.
         // See OverlayUpdatePatch / UpdateCooldownText.
-        private static readonly TMPro.TextMeshPro[] cdText = new TMPro.TextMeshPro[N];
+        private static readonly System.Collections.Generic.Dictionary<IntPtr, TMPro.TextMeshPro> cdText = new();
 
-        // AUDIT-2026-08-16: last Mathf.CeilToInt(remaining) actually written to cdText[i], per type.
-        // -1 means "nothing shown yet / currently hidden", which never collides with a real second
-        // count and so always forces a fresh text push the next time that type's label is shown.
-        private static readonly int[] lastShownSecs = InitLastShownSecs();
-        private static int[] InitLastShownSecs() {
-            var a = new int[N];
-            for (int i = 0; i < N; i++) a[i] = -1;
-            return a;
-        }
+        // AUDIT-2026-08-16: last Mathf.CeilToInt(remaining) actually written to a label, per button.
+        // No entry means "nothing shown yet / currently hidden" and forces a fresh text push the next
+        // time that label is shown.
+        private static readonly System.Collections.Generic.Dictionary<IntPtr, int> lastShownSecs = new();
 
         // Non-public Countdown setters for the deadly sabotages whose duration we override (resolved
         // once via reflection; LifeSupp.Countdown is a public field and needs none).
@@ -168,6 +169,11 @@ namespace UsefulTORStuff {
                 heliDur = CustomOption.Create(1343, Types.General, "Airship Crash Duration", 30f, 10f, 120f, 5f, Enabled);
                 UTSLocalization.BindOptionTitle(heliDur, "uts.sabotagetuning.heli_duration");
 
+                cdOpt[(int)SabType.Mixup] = CustomOption.Create(1348, Types.General, "Mushroom Mixup Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
+                UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Mixup], "uts.sabotagetuning.mixup_cooldown");
+                redOpt[(int)SabType.Mixup] = CustomOption.Create(1349, Types.General, "Mushroom Mixup Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
+                UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Mixup], "uts.sabotagetuning.mixup_cooldown_reduction");
+
                 UsefulTORStuffPlugin.Logger?.LogInfo("[SabotageTuning] Options created under TOR Settings.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[SabotageTuning] CreateOptions failed: {e}");
@@ -221,6 +227,7 @@ namespace UsefulTORStuff {
                 case SystemTypes.Comms:      t = SabType.Comms;   return true;
                 case SystemTypes.Electrical: t = SabType.Lights;  return true;
                 case SystemTypes.HeliSabotage: t = SabType.Heli;  return true;
+                case SystemTypes.MushroomMixupSabotage: t = SabType.Mixup; return true;
                 default: t = SabType.Reactor; return false;
             }
         }
@@ -243,6 +250,7 @@ namespace UsefulTORStuff {
                                 case nameof(MapRoom.SabotageComms):   cached = (int)SabType.Comms;   break;
                                 case nameof(MapRoom.SabotageLights):  cached = (int)SabType.Lights;  break;
                                 case nameof(MapRoom.SabotageHeli):    cached = (int)SabType.Heli;    break;
+                                case nameof(MapRoom.SabotageMushroomMixup): cached = (int)SabType.Mixup; break;
                             }
                 } catch { }
                 roomTypeCache[r.Pointer] = cached;
@@ -384,6 +392,11 @@ namespace UsefulTORStuff {
             var sys = raw != null ? raw.TryCast<HeliSabotageSystem>() : null;
             return sys != null && sys.IsActive;
         }
+        private static bool MixupActive(ShipStatus s) {
+            var raw = GetRaw(s, SystemTypes.MushroomMixupSabotage);
+            var sys = raw != null ? raw.TryCast<MushroomMixupSabotageSystem>() : null;
+            return sys != null && sys.IsActive;
+        }
 
         // A sabotage just started: count the use of whichever type became active (observed identically
         // on every client), lowering that type's next cooldown via CurrentMax.
@@ -393,6 +406,7 @@ namespace UsefulTORStuff {
             if (CommsActive(s))   usage[(int)SabType.Comms]++;
             if (LightsActive(s))  usage[(int)SabType.Lights]++;
             if (HeliActive(s))    usage[(int)SabType.Heli]++;
+            if (MixupActive(s))   usage[(int)SabType.Mixup]++;
         }
 
         // Mutual exclusion with the Chance modifier's sabotage-cooldown override: while Sabotage Tuning
@@ -427,23 +441,24 @@ namespace UsefulTORStuff {
         }
 
         // Optional numeric readout next to a room's icon (Show Sabotage Cooldown Seconds). Created
-        // lazily, once per SabType, as a child of that type's MapRoom.special icon so it inherits the
+        // lazily, once per MapRoom button, as a child of its MapRoom.special icon so it inherits the
         // icon's position/layer/sorting automatically; reused afterwards (only text/visibility change
         // per frame). Unity's overloaded == null also catches a destroyed object, which is what makes
         // the cached reference safe across a HudManager/scene change - a stale entry is simply
         // rebuilt under the new icon instead of being dereferenced.
         private static void UpdateCooldownText(SabType t, MapRoom r, bool show) {
-            int i = (int)t;
-            float remaining = timer[i];
+            float remaining = timer[(int)t];
+            IntPtr key = r.Pointer;
+            cdText.TryGetValue(key, out var label);
             if (!show || remaining <= 0f) {
-                if (cdText[i] != null) cdText[i].gameObject.SetActive(false);
-                // AUDIT-2026-08-16: hidden -> next time this type is shown it must repaint unconditionally,
+                if (label != null) label.gameObject.SetActive(false);
+                // AUDIT-2026-08-16: hidden -> next time this label is shown it must repaint unconditionally,
                 // even if the displayed second count happens to match whatever was last drawn.
-                lastShownSecs[i] = -1;
+                lastShownSecs.Remove(key);
                 return;
             }
 
-            if (cdText[i] == null) {
+            if (label == null) {
                 var icon = r.special;
                 var go = new GameObject("UTSSabCooldownText") { layer = icon.gameObject.layer };
                 go.transform.SetParent(icon.transform, false);
@@ -455,19 +470,19 @@ namespace UsefulTORStuff {
                 txt.color = Color.white;
                 var mr = go.GetComponent<MeshRenderer>();
                 if (mr != null) { mr.sortingLayerID = icon.sortingLayerID; mr.sortingOrder = icon.sortingOrder + 1; }
-                cdText[i] = txt;
-                lastShownSecs[i] = -1; // freshly (re)built label, force the first text push below
+                cdText[key] = label = txt;
+                lastShownSecs.Remove(key); // freshly (re)built label, force the first text push below
             }
 
-            cdText[i].gameObject.SetActive(true);
+            label.gameObject.SetActive(true);
 
             // AUDIT-2026-08-16 (perf): the displayed, rounded-up second count only changes once per
             // second, so only touch .text (string concat + TMP rebuild) when it actually changed.
             int secs = Mathf.CeilToInt(remaining);
-            if (secs != lastShownSecs[i]) {
+            if (!lastShownSecs.TryGetValue(key, out int shown) || secs != shown) {
                 // ASCII only: digits plus "s" - the HUD TMP font has no glyphs beyond that (see CLAUDE.md).
-                cdText[i].text = secs.ToString() + "s";
-                lastShownSecs[i] = secs;
+                label.text = secs.ToString() + "s";
+                lastShownSecs[key] = secs;
             }
         }
 
@@ -487,6 +502,9 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(MapRoom), nameof(MapRoom.SabotageHeli))]
         private static class SabHeliPatch { private static bool Prefix() => TryTrigger(SabType.Heli); }
+
+        [HarmonyPatch(typeof(MapRoom), nameof(MapRoom.SabotageMushroomMixup))]
+        private static class SabMixupPatch { private static bool Prefix() => TryTrigger(SabType.Mixup); }
 
         // Force the menu usable whenever no sabotage is active, ignoring the shared vanilla timer; the
         // per-type prefixes do the real gating.
@@ -611,7 +629,7 @@ namespace UsefulTORStuff {
                 warnedConflict = false;
                 // AUDIT-2026-08-16: clear the remembered cooldown-seconds cache so the first frame of
                 // the next round always repaints the label instead of trusting a stale prior value.
-                for (int i = 0; i < N; i++) lastShownSecs[i] = -1;
+                lastShownSecs.Clear();
             }
         }
 
@@ -628,7 +646,8 @@ namespace UsefulTORStuff {
         private static class GameJoinedPatch {
             private static void Postfix() {
                 roomTypeCache.Clear();
-                for (int i = 0; i < N; i++) lastShownSecs[i] = -1;
+                cdText.Clear();
+                lastShownSecs.Clear();
                 for (int i = 0; i < N; i++) usage[i] = 0;
                 gameInit = false;
                 prevActive = false;

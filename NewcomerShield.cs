@@ -763,6 +763,7 @@ namespace UsefulTORStuff {
                 shielded.Clear();
                 firstMeetingSeen = false;
                 manualNewcomers.Clear();   // a hand-picked mark belongs to the lobby it was made in
+                manualExcluded.Clear();    // and so does a hand-made exclusion (it blocked a real newcomer later)
                 lastPreviewKey = "";
             }
         }

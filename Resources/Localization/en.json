@@ -810,6 +810,8 @@
   "uts.sabotagetuning.lights_cooldown_reduction": "Lights Cooldown Reduction per Use",
   "uts.sabotagetuning.heli_cooldown": "Airship Crash Cooldown",
   "uts.sabotagetuning.heli_cooldown_reduction": "Airship Crash Cooldown Reduction per Use",
+  "uts.sabotagetuning.mixup_cooldown": "Mushroom Mixup Cooldown",
+  "uts.sabotagetuning.mixup_cooldown_reduction": "Mushroom Mixup Cooldown Reduction per Use",
   "uts.sabotagetuning.heli_duration": "Airship Crash Duration",
   "uts.multimodifiers.mini_quantity": "Mini Quantity (max 3)",
   "uts.multimodifiers.armored_quantity": "Armored Quantity (max 3)",

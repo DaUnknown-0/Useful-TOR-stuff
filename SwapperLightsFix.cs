@@ -14,8 +14,9 @@
  *
  * Each panel gets its own independent option (default OFF). When an option is ON we re-allow that
  * panel for the local Swapper, without touching TOR's source:
- *   - A Postfix on Console.CanUse re-computes a normal distance-based usability for the local
- *     Swapper at the matching console (TOR's prefix already set both flags to false).
+ *   - A Postfix on Console.CanUse re-computes a normal usability for the local Swapper at the
+ *     matching console (TOR's prefix already set both flags to false): an open sabotage task for
+ *     that console, distance, and the wall check, as vanilla's own CanUse does.
  *   - To defeat TOR's auto-close we do NOT patch Minigame.Close/TuneRadioMinigame.Close: both are
  *     small parameterless Il2Cpp methods, and detouring them risks the Il2Cpp method-dedup crash
  *     documented for Minigame.Close(bool) elsewhere in this mod (identical native code for two
@@ -95,11 +96,19 @@ namespace UsefulTORStuff {
 
                     var po = pc.Object;
                     if (po.Data == null || po.Data.IsDead || !po.CanMove) return;
+                    // TOR's prefix skipped the original, and with it the checks vanilla makes: only a
+                    // console the player holds an open task for (the running sabotage) and no wall in
+                    // between. Without them the panel opened with no sabotage, and flipping a switch
+                    // there started a lights outage for everybody.
+                    if (__instance.FindTask(po) == null) return;
 
-                    float dist = Vector2.Distance(po.GetTruePosition(), (Vector2)__instance.transform.position);
+                    Vector2 truePos = po.GetTruePosition();
+                    Vector2 consolePos = __instance.transform.position;
+                    float dist = Vector2.Distance(truePos, consolePos);
                     __result = dist;
                     couldUse = true;
-                    canUse = dist <= __instance.UsableDistance;
+                    canUse = dist <= __instance.UsableDistance
+                        && (!__instance.checkWalls || !PhysicsHelpers.AnythingBetween(truePos, consolePos, Constants.ShadowMask, false));
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[SwapperLightsFix] Console.CanUse postfix failed: {e}");
                 }

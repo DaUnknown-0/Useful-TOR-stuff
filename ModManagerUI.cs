@@ -30,7 +30,6 @@ namespace UsefulTORStuff
         // da Texturen/Sprites Assets und keine Kinder sind) → GPU/CPU-Leak über die ganze Session.
         // Diese Sprites leben prozessweit (DontDestroyOnLoad) und werden überall geteilt.
         private static readonly Dictionary<Color, Sprite> _solidSprites = new Dictionary<Color, Sprite>();
-        private static Material _overlayMaterial;
 
         private static Sprite GetSolidSprite(Color color)
         {
@@ -283,22 +282,16 @@ namespace UsefulTORStuff
             overlayRect.anchorMax = Vector2.one;
             overlayRect.sizeDelta = Vector2.zero;
 
-            // Use CanvasRenderer for a simple colored quad
-            var canvasRenderer = overlay.AddComponent<CanvasRenderer>();
-            // P1.2: geteilte Textur aus dem Sprite-Cache + einmalig erzeugtes Material.
-            var texture = GetSolidSprite(new Color(0, 0, 0, 0.85f)).texture;
-            if (_overlayMaterial == null)
-            {
-                _overlayMaterial = new Material(Shader.Find("UI/Default"));
-                UnityEngine.Object.DontDestroyOnLoad(_overlayMaterial);
-            }
-            _overlayMaterial.mainTexture = texture;
-
-            canvasRenderer.SetMaterial(_overlayMaterial, texture);
-            canvasRenderer.SetColor(Color.white);
+            // An Image, not a bare CanvasRenderer: only a Graphic builds a mesh (the 85 % dimming was
+            // never drawn) and only a Graphic is hit by the GraphicRaycaster (click-to-close never fired).
+            // P1.2: geteilte Textur aus dem Sprite-Cache.
+            var dim = overlay.AddComponent<UnityEngine.UI.Image>();
+            dim.sprite = GetSolidSprite(new Color(0, 0, 0, 0.85f));
 
             // Click to close
             var button = overlay.AddComponent<UnityEngine.UI.Button>();
+            button.targetGraphic = dim;
+            button.transition = Selectable.Transition.None;
             button.onClick.AddListener((UnityEngine.Events.UnityAction)Hide);
 
             UsefulTORStuffPlugin.Logger?.LogInfo("Mod Manager: Overlay created");

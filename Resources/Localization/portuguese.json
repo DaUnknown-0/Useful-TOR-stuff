@@ -812,6 +812,8 @@
  "uts.sabotagetuning.lights_cooldown_reduction": "Redução do Tempo de Recarga das Luzes por Uso",
  "uts.sabotagetuning.heli_cooldown": "Tempo de Recarga da Queda do Airship",
  "uts.sabotagetuning.heli_cooldown_reduction": "Redução do Tempo de Recarga da Queda do Airship por Uso",
+ "uts.sabotagetuning.mixup_cooldown": "Tempo de Recarga do Mushroom Mixup",
+ "uts.sabotagetuning.mixup_cooldown_reduction": "Redução do Tempo de Recarga do Mushroom Mixup por Uso",
  "uts.sabotagetuning.heli_duration": "Duração da Queda do Airship",
  "uts.multimodifiers.mini_quantity": "Quantidade de Mini (máx. 3)",
  "uts.multimodifiers.armored_quantity": "Quantidade de Armored (máx. 3)",

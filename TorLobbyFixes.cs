@@ -77,6 +77,7 @@
  */
 
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using TheOtherRoles;
@@ -394,6 +395,17 @@ namespace UsefulTORStuff {
         // same reason - EveryoneHasMod() gating is not needed for a fix that only restores what the
         // host itself was always meant to decide.
         // ======================================================================================
+        //
+        // 03.10.: startTime is stamped in clearAndReload, BEFORE the intro, while TOR's waiting
+        // coroutine only starts in IntroCutscene.OnDestroy. Counting from startTime fired the
+        // watchdog in every round about one intro length early (hunters still frozen, the Hunted
+        // display jumped to the full time). The deadline now counts from the end of the intro.
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        internal static class HideNSeekIntroEndStamp {
+            internal static DateTime introEnd = DateTime.MinValue;
+            public static void Postfix() => introEnd = DateTime.UtcNow;
+        }
+
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.FixedUpdate))]
         internal static class HideNSeekWaitingTimerWatchdogPatch {
             private const double GracePeriodSeconds = 2.0;
@@ -403,7 +415,10 @@ namespace UsefulTORStuff {
                     if (__instance == null || !__instance.AmOwner) return;
                     if (!HideNSeek.isHideNSeekGM || !HideNSeek.isWaitingTimer) return;
 
-                    double elapsed = (DateTime.UtcNow - HideNSeek.startTime).TotalSeconds;
+                    // still in this round's intro (the stamp is from an earlier round): not armed yet
+                    DateTime introEnd = HideNSeekIntroEndStamp.introEnd;
+                    if (introEnd < HideNSeek.startTime) return;
+                    double elapsed = (DateTime.UtcNow - introEnd).TotalSeconds;
                     if (elapsed < HideNSeek.hunterWaitingTime + GracePeriodSeconds) return;
 
                     HideNSeek.isWaitingTimer = false;
@@ -464,6 +479,7 @@ namespace UsefulTORStuff {
             private static FieldInfo fiBlackOutTimer;
             private static FieldInfo fiStartTime;
             private static FieldInfo fiInitialBlackoutTime;
+            private static DateTime armedStart = DateTime.MinValue;
 
             private static bool ResolveFields() {
                 if (fieldsResolved) return fiIsPropHuntGM != null;
@@ -496,10 +512,15 @@ namespace UsefulTORStuff {
 
                     if (!(bool)fiIsPropHuntGM.GetValue(null)) return;
                     if ((bool)fiTimerRunning.GetValue(null)) return;
-                    float blackOutTimer = (float)fiBlackOutTimer.GetValue(null);
-                    if (blackOutTimer <= 0f) return; // blackout never armed yet - nothing to rescue
-
                     var startTime = (DateTime)fiStartTime.GetValue(null);
+                    // 03.10.: TOR counts blackOutTimer down to <= 0 after initialBlackoutTime, i.e.
+                    // always before the deadline below, so "blackOutTimer > 0" at that point could
+                    // never be true and the watchdog never fired. Instead remember the startTime
+                    // under which this round's blackout was seen running; a stale startTime from an
+                    // earlier round (still in the intro) does not match and arms nothing.
+                    if ((float)fiBlackOutTimer.GetValue(null) > 0f) armedStart = startTime;
+                    if (armedStart != startTime) return; // blackout never armed yet - nothing to rescue
+
                     float initialBlackoutTime = (float)fiInitialBlackoutTime.GetValue(null);
                     double elapsed = (DateTime.UtcNow - startTime).TotalSeconds;
                     if (elapsed < initialBlackoutTime + 10.0 / 25.0 + GracePeriodSeconds) return;
@@ -571,6 +592,7 @@ namespace UsefulTORStuff {
         internal static class SettingsChangeMessageNamePatch {
             /// TOR's offset from CustomOptions.cs:194. Read from there, not guessed.
             private const int TorStringNameOffset = 6000;
+            private static readonly HashSet<IntPtr> repaired = new HashSet<IntPtr>();
 
             /*
              * POSITIONAL INJECTION (__0/__1), NOT PARAMETER NAMES.
@@ -607,15 +629,26 @@ namespace UsefulTORStuff {
                     // and does not already carry the name. Both halves matter - the first picks out
                     // OUR message, the second means a line the original got right is never touched
                     // and an already-repaired one is never repaired twice.
+                    // 03.10.: "does not carry the name" alone was not enough. An earlier repaired line
+                    // of ANOTHER option with the same value ("A: On" when B is set to On) passed both
+                    // tests and got overwritten with B, while the new bare line stayed nameless. So
+                    // every message repaired once is remembered (by native pointer) and skipped; the
+                    // set is trimmed to the messages still on screen.
+                    var alive = new HashSet<IntPtr>();
+                    for (int i = 0; i < messages.Count; i++) if (messages[i] != null) alive.Add(messages[i].Pointer);
+                    repaired.IntersectWith(alive);
+
                     string fixedLine = name + ": " + __1;
                     for (int i = 0; i < messages.Count; i++) {
                         var m = messages[i];
                         if (m == null || m.Text == null) continue;
+                        if (repaired.Contains(m.Pointer)) continue;
                         string text = m.Text.text;
                         if (string.IsNullOrEmpty(text)) continue;
                         if (!text.EndsWith(__1, StringComparison.Ordinal)) continue;
                         if (text.Contains(name)) continue;
                         m.UpdateMessage(fixedLine);
+                        repaired.Add(m.Pointer);
                         return;
                     }
                 } catch (Exception e) {
