@@ -119,6 +119,7 @@ Options appear in TOR's own settings tabs, directly under the relevant role.
 | ↳ Chance Surviving Lover Becomes Revenger | 0% | Roll deciding the Revenger path vs. the delayed suicide |
 | ↳ Revenger Mode | Targeted Justice | *Targeted Justice* — a non-killer Revenger may only kill the Lover's killer (a wrong target misfires and kills the Revenger); *Blind Rage* — may kill anyone, but a wrong kill still dooms them next meeting. A correct kill ends the game as a **Lovers win** |
 | ↳ Revenger Kill Cooldown | 30 s | 10–60 s; only for a non-killer Revenger's Sheriff-style kill button (**Q**). A Revenger who already has their own kill (Impostor/Jackal/Sheriff…) uses that instead — no second button |
+| ↳ Blind Rage Kills | 1 | 1–3; Blind Rage only: how many wrong kills the Revenger gets before the button locks. Until then a later hit on the real killer still wins; any wrong kill means death at the end of the next meeting |
 
 The Revenger is client-side (a live kill button, local kills, chat), so it is **gated on every player
 having this mod** (version handshake) — the host gets a lobby warning otherwise, exactly like the

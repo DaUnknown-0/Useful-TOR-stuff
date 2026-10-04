@@ -86,35 +86,8 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Host-only heads-up, once per round, mirroring MultiJester's "Jester Quantity" lobby
-        // warning in spirit: tell the host his setting is not in effect rather than letting him find
-        // out only by comparing screens mid-round. Posted as a local chat line at round start rather
-        // than into TOR's shared lobby GameStartText - that surface is owned and laid out by
-        // UsefulVersionHandshake.GameStartManagerUpdatePatch, which this file does not touch.
-        private static bool warningChatShown;
-
-        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
-        private static class ResetPatch {
-            public static void Postfix() => warningChatShown = false;
-        }
-
-        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
-        private static class IntroEndChatPatch {
-            public static void Postfix() {
-                try {
-                    if (warningChatShown) return;
-                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
-                    if (Option == null || ConfiguredValue == 3) return;
-                    if (UsefulVersionHandshake.EveryoneHasMod()) return;
-
-                    var hud = HudManager.Instance;
-                    if (hud == null || hud.Chat == null || PlayerControl.LocalPlayer == null) return;
-                    warningChatShown = true;
-
-                    hud.Chat.AddChat(PlayerControl.LocalPlayer,
-                        UTSLocalization.Tr("uts.tricksterboxcount.mod_warning"));
-                } catch { }
-            }
-        }
+        // The host's "not in effect" warning lives in the lobby's collected line now
+        // (UsefulVersionHandshake.InactiveFeatures): this round-chat line was closed to the living,
+        // so he saw it at the first meeting, if at all (audit 04.10.).
     }
 }

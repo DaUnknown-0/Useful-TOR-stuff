@@ -45,6 +45,7 @@ namespace UsefulTORStuff {
 
         private static readonly List<string> lines = new List<string>();     // newest first
         private static readonly HashSet<byte> seen = new HashSet<byte>();
+        private static readonly Dictionary<byte, string> lineOf = new Dictionary<byte, string>();
         private static float nextTick;
         private static GameObject root;
         private static TMPro.TextMeshProUGUI text;
@@ -77,15 +78,29 @@ namespace UsefulTORStuff {
             if (lines.Count == 0 && seen.Count == 0 && (root == null || !root.activeSelf)) return;
             lines.Clear();
             seen.Clear();
+            lineOf.Clear();
             Show(false);
         }
 
         private static void Collect() {
             var list = DeathTimeHistory.TorDeadPlayers();
             if (list == null) return;
+            // A revive (Paramedic, Necromancer, Pelican release ...) takes the player out of TOR's
+            // ledger: his line goes, and a second death counts as a new one (audit 04.10.: the line
+            // stayed for a living player and the second death never showed).
+            if (seen.Count > 0) {
+                var inLedger = new HashSet<byte>();
+                foreach (var dp in list) if (dp?.player != null) inLedger.Add(dp.player.PlayerId);
+                foreach (byte id in seen.Where(id => !inLedger.Contains(id)).ToList()) {
+                    seen.Remove(id);
+                    if (lineOf.TryGetValue(id, out var old)) { lines.Remove(old); lineOf.Remove(id); }
+                }
+            }
             foreach (var dp in list) {
                 if (dp?.player == null || !seen.Add(dp.player.PlayerId)) continue;
-                lines.Insert(0, Line(dp));
+                string line = Line(dp);
+                lineOf[dp.player.PlayerId] = line;
+                lines.Insert(0, line);
                 if (lines.Count > MaxLines) lines.RemoveAt(lines.Count - 1);
             }
         }

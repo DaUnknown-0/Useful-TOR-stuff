@@ -21,9 +21,11 @@
  *     panel of our own.
  *
  * NEITHER GIVES THE TRAPPER ANYTHING NEW. The map markers show their own traps; the log is the
- * text TOR already put in front of them. Both are presentation, which is why they are plain host
- * options (default ON) rather than anything gated on a handshake: nothing here is sent, and a
- * client without the mod is not disadvantaged by another client's map being easier to read.
+ * text TOR already put in front of them. Both are presentation: nothing here is sent, and a client
+ * without the mod is not disadvantaged by another client's map being easier to read. They are read
+ * through UTSGate like every UTS option; if the host does not run UTS the gate is closed and the
+ * options fall back to their default (ON). That is a deliberate exception to UTSGate's "closed gate
+ * = behaviour without the mod" rule, harmless here because both are a local reading aid.
  *
  * REACHING TOR'S TRAP TYPE. `Trap` is internal to TheOtherRoles (Objects/Trap.cs:9), so it cannot
  * be named from here. It is resolved once through AccessTools.TypeByName and read by reflection -
@@ -178,6 +180,22 @@ namespace UsefulTORStuff {
 
         /// The live trap list, as plain objects. Empty when anything failed to resolve, so every
         /// caller can foreach over it without a null check.
+        private static FieldInfo trapObjectField;
+
+        /// Shows or hides every placed trap in the world on this client (used when the Trapper role
+        /// changes hands, TrapperShiftCharges).
+        internal static void SetTrapsVisible(bool visible) {
+            try {
+                foreach (var t in Traps()) {
+                    if (t == null) continue;
+                    trapObjectField ??= t.GetType().GetField("trap", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (trapObjectField?.GetValue(t) is GameObject go && go != null) go.SetActive(visible);
+                }
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[TrapperExtras] trap visibility failed: {e.Message}");
+            }
+        }
+
         private static IEnumerable Traps() {
             if (!Resolve()) return Array.Empty<object>();
             return getTrapsDelegate() ?? (IEnumerable)Array.Empty<object>();
@@ -493,6 +511,9 @@ namespace UsefulTORStuff {
                 try {
                     if (!LogViewOpen) return;
                     if (__instance == null || __instance.Chat == null) { LogViewOpen = false; return; }
+                    // A meeting is no place for the log view: its send block must not reach into the
+                    // discussion (audit 04.10.).
+                    if (MeetingHud.Instance != null) { LogViewOpen = false; return; }
                     if (!__instance.Chat.IsOpenOrOpening) LogViewOpen = false;
                 } catch { LogViewOpen = false; }
             }
@@ -514,11 +535,14 @@ namespace UsefulTORStuff {
                         Trapper.getButtonSprite(),
                         CustomButton.ButtonPositions.upperRowRight,
                         __instance,
-                        KeyCode.L
+                        KeyCode.L,
+                        // The label goes into the constructor: CustomButton decides there whether a
+                        // label is shown at all (audit 04.10.: set afterwards it never appeared).
+                        false,
+                        UTSLocalization.Tr("uts.trapperextras.button")
                     );
                     logButton.Timer = 0f;
                     logButton.MaxTimer = 0f;
-                    logButton.buttonText = UTSLocalization.Tr("uts.trapperextras.button");
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[TrapperExtras] log button failed: {e}");
                 }

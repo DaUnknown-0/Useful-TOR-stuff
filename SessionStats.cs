@@ -367,11 +367,14 @@ namespace UsefulTORStuff {
         // holders). A title nobody qualifies for is left out.
         private static void BuildTitles(Table t, List<RoundEntry> all, Dictionary<string, byte> present) {
             void Best(byte id, Func<Row, int> value, Func<Row, bool> qualifies) {
-                var cand = t.Rows.Values.Where(r => qualifies(r)).Select(r => (r.PlayerId, V: value(r))).Where(x => x.V > 0).ToList();
+                var cand = t.Rows.Values.Where(r => qualifies(r)).Select(r => (r.PlayerId, V: value(r), r.Rounds)).Where(x => x.V > 0).ToList();
                 if (cand.Count == 0) return;
                 int max = cand.Max(x => x.V);
                 var title = new Title { Id = id, Value = max };
-                foreach (var x in cand.Where(x => x.V == max).OrderBy(x => x.PlayerId).Take(3)) title.Holders.Add(x.PlayerId);
+                // A tie goes to whoever reached the value over more rounds (audit 04.10.: sorted by
+                // PlayerId alone, the host and the earliest joiners always took it); the id is last.
+                foreach (var x in cand.Where(x => x.V == max).OrderByDescending(x => x.Rounds).ThenBy(x => x.PlayerId).Take(3))
+                    title.Holders.Add(x.PlayerId);
                 t.Titles.Add(title);
             }
             Best(TitleSerialKiller, r => r.Kills, r => true);

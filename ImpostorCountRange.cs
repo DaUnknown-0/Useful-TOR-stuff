@@ -75,6 +75,7 @@ namespace UsefulTORStuff {
         public static CustomOption OptionMin;            // 1371
         public static CustomOption OptionMax;            // 1372
         public static CustomOption OptionSidekickRefill; // 1373
+        public static CustomOption OptionAllowMore;      // 1377 - roll beyond the vanilla table
         public static CustomOption OptionSidekickChance; // 1374
 
         // Armed by the SelectRoles prefix on the host only; GetAdjustedNumImpostors is also
@@ -102,9 +103,19 @@ namespace UsefulTORStuff {
                     1372, Types.General, "Maximum Impostors", 2f, 1f, 3f, 1f, OptionEnable);
                 UTSLocalization.BindOptionTitle(OptionMax, "uts.impcount.max_option");
 
+                // Only meaningful with a real range: at Min == Max no impostor can ever be missing, so
+                // the option then does nothing (User 04.10.); the name says so, TOR's menu cannot hide
+                // an option by another option's value.
                 OptionSidekickRefill = CustomOption.Create(
-                    1373, Types.General, "Sidekick Only Fills A Missing Impostor", false, OptionEnable);
+                    1373, Types.General, "Sidekick Only Fills A Missing Impostor (Min < Max)", false, OptionEnable);
                 UTSLocalization.BindOptionTitle(OptionSidekickRefill, "uts.impcount.refill_option");
+
+                // The roll stays inside the vanilla table for the lobby size unless the host allows
+                // more (User 2026-10-04, Fable review): the count is secret, so the crew cannot price
+                // in 3 impostors among 7 players.
+                OptionAllowMore = CustomOption.Create(
+                    1377, Types.General, "Allow More Impostors Than Vanilla", false, OptionEnable);
+                UTSLocalization.BindOptionTitle(OptionAllowMore, "uts.impcount.allow_more_option");
 
                 OptionSidekickChance = CustomOption.Create(
                     1374, Types.Neutral, "Chance That The Jackal Can Create A Sidekick",
@@ -118,9 +129,11 @@ namespace UsefulTORStuff {
                 opts.Remove(OptionMin);
                 opts.Remove(OptionMax);
                 opts.Remove(OptionSidekickRefill);
+                opts.Remove(OptionAllowMore);
                 int idx = opts.IndexOf(CustomOptionHolder.crewmateRolesFill);
                 if (idx < 0) idx = opts.Count - 1;
                 opts.Insert(idx + 1, OptionSidekickRefill);
+                opts.Insert(idx + 1, OptionAllowMore);
                 opts.Insert(idx + 1, OptionMax);
                 opts.Insert(idx + 1, OptionMin);
                 opts.Insert(idx + 1, OptionEnable);
@@ -230,6 +243,15 @@ namespace UsefulTORStuff {
                     if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
                     if (!FeatureEnabled) return;
                     rolledCount = rnd.Next(EffectiveMin, EffectiveMax + 1);
+                    if (OptionAllowMore == null || !UTSGate.Bool(OptionAllowMore)) {
+                        int players = PlayerControl.AllPlayerControls.ToArray()
+                            .Count(p => p != null && p.Data != null && !p.Data.Disconnected);
+                        int cap = players <= 6 ? 1 : players <= 8 ? 2 : 3;   // the vanilla table
+                        if (rolledCount > cap) {
+                            UsefulTORStuffPlugin.Logger?.LogInfo($"[ImpostorCountRange] rolled {rolledCount}, capped to {cap} for {players} players.");
+                            rolledCount = cap;
+                        }
+                    }
                     assignmentActive = true;
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[ImpostorCountRange] roll failed: {e}");
@@ -409,6 +431,23 @@ namespace UsefulTORStuff {
             }
         }
 
+        // ---- the exile screen: "N Impostors remain" ---------------------------------------------
+        // Vanilla counts the living impostors for that line (Confirm Ejects on), which told everyone
+        // how many were rolled (audit 04.10.). With a real range it is blanked, the way TOR and
+        // MultiJester blank it for a Jester.
+        [HarmonyPatch(typeof(TranslationController), nameof(TranslationController.GetString),
+                      new Type[] { typeof(StringNames), typeof(Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<Il2CppSystem.Object>) })]
+        private static class ImpostorsRemainPatch {
+            [HarmonyPriority(Priority.Low)]
+            public static void Postfix(ref string __result, [HarmonyArgument(0)] StringNames id) {
+                try {
+                    if (id != StringNames.ImpostorsRemainP && id != StringNames.ImpostorsRemainS) return;
+                    if (string.IsNullOrEmpty(__result) || ExileController.Instance == null) return;
+                    if (FeatureEnabled && EffectiveMin < EffectiveMax) __result = "";
+                } catch { }
+            }
+        }
+
         // ---- 3) sidekick verdict ------------------------------------------------------------------
 
         // Host only, once per game, after role assignment. Refill mode and the chance are
@@ -418,7 +457,8 @@ namespace UsefulTORStuff {
             if (!CustomOptionHolder.jackalCanCreateSidekick.getBool()) return; // TOR master off
 
             bool allowed;
-            if (FeatureEnabled && OptionSidekickRefill != null && UTSGate.Bool(OptionSidekickRefill)) {
+            if (FeatureEnabled && OptionSidekickRefill != null && UTSGate.Bool(OptionSidekickRefill)
+                && EffectiveMin < EffectiveMax) {
                 // Sidekick only fills a missing impostor slot.
                 allowed = CountAssignedImpostors() < EffectiveMax;
             } else {

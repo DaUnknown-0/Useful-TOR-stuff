@@ -96,10 +96,13 @@ namespace UsefulTORStuff {
                 + "also the vanilla texts). \"auto\" follows the game language. Codes: "
                 + string.Join(", ", TierACodes) + " (game languages), "
                 + string.Join(", ", TierBCodes) + " (extra languages).");
-            DumpVanillaStrings = config.Bind("Localization", "DumpVanillaStrings", true,
-                "Write a one-time dump of all vanilla StringNames texts (current game language) "
-                + "to BepInEx/config/UTSLocalization/. Source material for translating vanilla "
-                + "texts into the extra (non-vanilla) languages.");
+            // New key with default OFF (audit 2026-10-04): the old "DumpVanillaStrings" was on for every
+            // player and wrote ~1 MB per language; a renamed key makes the new default reach existing
+            // installs too. Translators switch it on by hand.
+            DumpVanillaStrings = config.Bind("Localization", "WriteVanillaDumpForTranslators", false,
+                "Translators only: write a one-time dump of all vanilla StringNames texts (current game "
+                + "language) to BepInEx/config/UTSLocalization/. Skipped while an extra (non-vanilla) "
+                + "language is active, because the dump would then contain translated text.");
         }
 
         public static void Initialize(ConfigFile config) {
@@ -143,6 +146,9 @@ namespace UsefulTORStuff {
             if (english.TryGetValue(key, out var e) && e.Length > 0) return e;
             return null;
         }
+
+        /// True when the ACTIVE language's table has the key (no English fallback).
+        public static bool ActiveHas(string key) => active.TryGetValue(key, out var t) && t.Length > 0;
 
         /// Translated vanilla text (tier B only) for a StringNames enum name, else null.
         public static string VanillaOrNull(string stringName) =>
@@ -239,7 +245,9 @@ namespace UsefulTORStuff {
                         if (parts[i] == null) { selField.SetValue(opt, originals); return; }
                     }
                 }
-                if (parts.Length != originals.Length) return;
+                // A table with the wrong number of entries: back to the originals, like a missing one
+                // (audit 04.10.: the list stayed in the previous language).
+                if (parts.Length != originals.Length) { selField.SetValue(opt, originals); return; }
                 var arr = new object[parts.Length];
                 for (int i = 0; i < parts.Length; i++) arr[i] = parts[i];
                 selField.SetValue(opt, arr);

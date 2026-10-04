@@ -46,7 +46,13 @@ namespace UsefulTORStuff {
                 // LocalizationTOR re-applies TOR's own RoleInfo/CustomOption strings on every
                 // language switch, which would overwrite the Drunk rename with "Invert" again.
                 // Re-apply ours afterwards (LanguageApplied fires after LocalizationTOR.Apply()).
-                UTSLocalization.LanguageApplied += () => ApplyRename(UTSGate.Bool(Option));
+                // With the rename off nothing is touched: LocalizationTOR has just written TOR's own
+                // texts, and writing our "original" ones over them replaced TOR's translation on every
+                // language switch (audit 04.10.).
+                UTSLocalization.LanguageApplied += () => {
+                    renamed = false;   // LocalizationTOR rewrote the strings, ours are gone
+                    if (UTSGate.Bool(Option)) ApplyRename(true);
+                };
 
                 // Exempt from the "host doesn't have this mod" gate (UTSGate): this only changes what
                 // ONE modifier is called on the local screen. It cannot give anyone an advantage over
@@ -59,7 +65,11 @@ namespace UsefulTORStuff {
             }
         }
 
+        private static bool renamed;   // our texts are on the RoleInfo/options right now
+
         private static void ApplyRename(bool enable) {
+            // Reverting is only needed when the rename was actually on.
+            if (!enable && !renamed) return;
             try {
                 string n    = enable ? UTSLocalization.Tr("uts.drunkrename.name_drunk")
                                      : UTSLocalization.Tr("uts.drunkrename.name_invert_original");
@@ -77,6 +87,7 @@ namespace UsefulTORStuff {
                 RoleInfo.invert.introDescription = desc;
                 RoleInfo.invert.shortDescription = desc;
 
+                renamed = enable;
                 UsefulTORStuffPlugin.Logger?.LogInfo($"[DrunkRename] Rename {(enable ? "applied" : "reverted")}.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[DrunkRename] ApplyRename failed: {e}");

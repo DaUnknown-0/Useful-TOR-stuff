@@ -381,7 +381,10 @@ namespace UsefulTORStuff {
         // impostor extra mini gets the adapted kill cooldown after every meeting (x2 young, x0.66 grown).
         private static void OnExileWrapUp(PlayerControl exiled) {
             try {
-                if (exiled != null && IsExtraMini(exiled) && !Mini.isGrownUp()
+                // TOR's chain gives the Prosecutor's win precedence over the Mini lose (audit 04.10.).
+                bool prosecutorWins = exiled != null && Lawyer.lawyer != null && Lawyer.isProsecutor && Lawyer.target != null
+                    && Lawyer.target.PlayerId == exiled.PlayerId && Lawyer.lawyer.Data != null && !Lawyer.lawyer.Data.IsDead;
+                if (exiled != null && IsExtraMini(exiled) && !Mini.isGrownUp() && !prosecutorWins
                     && !exiled.Data.Role.IsImpostor
                     && !RoleInfo.getRoleInfoForPlayer(exiled).Any(x => x.isNeutral)) {
                     Mini.triggerMiniLose = true;

@@ -421,15 +421,29 @@ namespace UsefulTORStuff {
                 return ok;
             }
 
-            public static void Prefix(byte modifierId, System.Collections.Generic.List<PlayerControl> playerList) {
+            // The list is the CALLER's (assignModifiersToPlayers hands the same list to every
+            // modifier): the Spy is only out for this one Mini draw and goes back in afterwards, or he
+            // got no modifier after the Mini at all (audit 04.10.).
+            public static void Prefix(byte modifierId, System.Collections.Generic.List<PlayerControl> playerList, out int __state) {
+                __state = -1;
                 try {
                     if (modifierId != (byte)RoleId.Mini) return;
                     if (Spy.spy == null || playerList == null) return;
-                    if (playerList.RemoveAll(x => x == Spy.spy) > 0)
-                        ThrottledLog("M30", "Spy excluded from the Mini modifier pool (blocked pairing).");
+                    int idx = playerList.IndexOf(Spy.spy);
+                    if (idx < 0) return;
+                    playerList.RemoveAt(idx);
+                    __state = idx;
+                    ThrottledLog("M30", "Spy excluded from the Mini draw (blocked pairing).");
                 } catch (Exception e) {
                     ThrottledLog("M30", $"exclusion failed: {e.GetType().Name}: {e.Message}");
                 }
+            }
+
+            public static void Postfix(System.Collections.Generic.List<PlayerControl> playerList, int __state) {
+                try {
+                    if (__state < 0 || Spy.spy == null || playerList == null || playerList.Contains(Spy.spy)) return;
+                    playerList.Insert(Math.Min(__state, playerList.Count), Spy.spy);
+                } catch { }
             }
         }
 
@@ -569,37 +583,10 @@ namespace UsefulTORStuff {
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════
-        // Section 3) Hacker's integer division loses one charge on an odd tool count
-        //
-        // TheOtherRoles.cs:734-735, Hacker.clearAndReload():
-        //     chargesVitals = Mathf.RoundToInt(CustomOptionHolder.hackerToolsNumber.getFloat()) / 2;
-        //     chargesAdminTable = Mathf.RoundToInt(CustomOptionHolder.hackerToolsNumber.getFloat()) / 2;
-        // Both sides use integer division. hackerToolsNumber defaults to 5 (range 1-30, step 1), and
-        // 5 / 2 truncates to 2 twice, so the Hacker gets 2 + 2 = 4 total charges out of a configured
-        // 5 - one charge is simply lost on every odd tool count.
-        //
-        // Postfix on Hacker.clearAndReload recomputing both fields so they always sum exactly to the
-        // configured total, giving the remainder to chargesAdminTable (chargesVitals stays the
-        // floor half, matching what the buggy code already produced for that one).
-        //
-        // DESYNC: no gate needed. This purely decides how many times the Hacker's OWN two buttons
-        // can be clicked before running out (Buttons.cs decrements chargesVitals/chargesAdminTable
-        // locally on click, no RPC involved in the counter itself); nobody else's client tracks or
-        // compares the Hacker's remaining charges. A Hacker without the mod just keeps one fewer
-        // charge than configured, same as before.
+        // Section 3) Hacker charge split: removed 2026-10-04 (User). TOR's N/2 per device is a starting
+        // stock, each device recharges up to the option on its own; the "lost" charge on an odd N is
+        // rounding, and the old fix only gave the admin table one more than the vitals.
         // ══════════════════════════════════════════════════════════════════════════════════════
-        [HarmonyPatch(typeof(Hacker), nameof(Hacker.clearAndReload))]
-        static class HackerToolChargeSplitPatch {
-            public static void Postfix() {
-                try {
-                    int total = Mathf.RoundToInt(CustomOptionHolder.hackerToolsNumber.getFloat());
-                    Hacker.chargesVitals = total / 2;
-                    Hacker.chargesAdminTable = total - Hacker.chargesVitals;
-                } catch (Exception e) {
-                    ThrottledLog("S3-Hacker", $"charge split recompute failed: {e.GetType().Name}: {e.Message}");
-                }
-            }
-        }
 
         // ══════════════════════════════════════════════════════════════════════════════════════
         // Section 3) Win-trigger flags are not cleared until the NEXT round's role assignment

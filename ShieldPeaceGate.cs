@@ -40,10 +40,13 @@
  *
  *   AppDomain "UTS.Shield.SetPeaceful"     -> Action<bool>    open/close the peaceful window
  *   AppDomain "UTS.Shield.IsKillProtected" -> Func<byte,bool> does this player hold a UTS kill shield?
+ *   AppDomain "UTS.Shield.IsNewcomer"      -> Func<byte,bool> does this player hold the newcomer shield?
  *
  * The second key exists for kills that never pass a targeting helper at all - the Maniac's blast
- * reads it the way it already reads the Medic and Time Master shields. Both keys are set once at
- * load; a mod that finds them missing simply behaves as if this mod were not installed.
+ * reads it the way it already reads the Medic and Time Master shields. The third one is for a
+ * peaceful action that should still spare a newcomer (the Mixer's role swap, User 2026-10-04: a new
+ * player learns his first role in peace). All keys are set once at load; a mod that finds them
+ * missing simply behaves as if this mod were not installed.
  */
 
 using System;
@@ -59,6 +62,7 @@ namespace UsefulTORStuff {
         // literal strings in a review without guessing them.
         public const string AppKeySetPeaceful = "UTS.Shield.SetPeaceful";
         public const string AppKeyIsProtected = "UTS.Shield.IsKillProtected";
+        public const string AppKeyIsNewcomer = "UTS.Shield.IsNewcomer";
 
         // Depth, not a bool: the peaceful methods do not nest today, but a counter costs nothing and
         // means a future nested call can never close the window early for its caller.
@@ -93,6 +97,8 @@ namespace UsefulTORStuff {
                     (Action<bool>)(on => { if (on) Open(); else Close(); }));
                 AppDomain.CurrentDomain.SetData(AppKeyIsProtected,
                     (Func<byte, bool>)IsKillProtected);
+                AppDomain.CurrentDomain.SetData(AppKeyIsNewcomer,
+                    (Func<byte, bool>)(id => { try { return NewcomerShield.IsShielded(id); } catch { return false; } }));
                 UsefulTORStuffPlugin.Logger?.LogInfo("[ShieldPeaceGate] AppDomain contract registered.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[ShieldPeaceGate] contract registration failed: {e}");

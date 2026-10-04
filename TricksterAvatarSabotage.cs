@@ -169,9 +169,28 @@ namespace UsefulTORStuff {
                 UsefulTORStuffPlugin.Logger?.LogError($"[TricksterAvatarSabotage] Camo block wrap failed: {e}");
             }
         }
+        // Shared cooldown with Lights Out only while that button exists: TOR's Lights Out appears
+        // after every box is placed and turned into a vent, and its timer does not tick before (a
+        // CustomButton skips its update while HasButton is false). Waiting for it held the mixup back
+        // until the box network was done (audit 04.10.).
         private static bool LightsReady() {
             var lob = LightsOutButton();
-            return lob == null || lob.Timer <= 0f;
+            if (lob == null) return true;
+            bool lobExists = false;
+            try { lobExists = lob.HasButton != null && lob.HasButton(); } catch { }
+            if (!lobExists) return true;
+            return lob.Timer <= 0f && !lob.isEffectActive;
+        }
+
+        public static bool IsMixupActive => mixupTimer > 0f;
+
+        // Everyone needs the mod: a player without it ignores the mixup RPC and sees the true looks
+        // (audit 04.10.). Latched at the intro, the check builds strings (BomberCancel pattern).
+        private static bool everyoneHasMod = true;
+
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        static class IntroEndGatePatch {
+            public static void Postfix() { try { everyoneHasMod = UsefulVersionHandshake.EveryoneHasMod(); } catch { everyoneHasMod = true; } }
         }
 
         // Build a random derangement of the alive players' looks and broadcast it.
@@ -207,7 +226,7 @@ namespace UsefulTORStuff {
 
                 ApplyMixup(map, dur);
 
-                // Shared cooldown: also put Lights-Out on its full cooldown.
+                // Shared cooldown: Lights Out waits too (again from the effect's end, see EndMixup).
                 var lob = LightsOutButton();
                 if (lob != null) lob.Timer = lob.MaxTimer;
             } catch (Exception e) {
@@ -244,6 +263,15 @@ namespace UsefulTORStuff {
         private static void EndMixup() {
             mixupTimer = 0f;
             mixupMap.Clear();
+            // The cooldown starts when the effect ends, like TOR's own Lights Out (audit 04.10.: from
+            // the click, a 10 s cooldown with a 30 s mixup was ready again before it ended).
+            try {
+                if (Trickster.trickster != null && Trickster.trickster == PlayerControl.LocalPlayer) {
+                    if (sabotageButton != null) sabotageButton.Timer = sabotageButton.MaxTimer;
+                    var lob = LightsOutButton();
+                    if (lob != null) lob.Timer = lob.MaxTimer;
+                }
+            } catch { }
             try {
                 foreach (var p in PlayerControl.AllPlayerControls)
                     if (p != null) p.setDefaultLook();
@@ -310,7 +338,17 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
-            public static void Postfix() { mixupTimer = 0f; mixupMap.Clear(); nextReapply = 0f; }
+            public static void Postfix() {
+                mixupTimer = 0f; mixupMap.Clear(); nextReapply = 0f;
+                // The cooldown option as it is NOW (audit 04.10.: HudManager.Start runs before the
+                // round's settings, the button kept the value from joining).
+                try {
+                    if (sabotageButton != null) {
+                        sabotageButton.MaxTimer = CooldownOption != null ? UTSGate.Num(CooldownOption) : 30f;
+                        sabotageButton.Timer = sabotageButton.MaxTimer;
+                    }
+                } catch { }
+            }
         }
 
         // Same lobby-leak rule as the roles (AUDIT M-12): the byte-keyed state above is keyed by
@@ -329,10 +367,9 @@ namespace UsefulTORStuff {
                 try {
                     sabotageButton = new CustomButton(
                         () => {
-                            TriggerMixup();
-                            sabotageButton.Timer = sabotageButton.MaxTimer;
+                            TriggerMixup();   // the cooldown starts at the effect's end (EndMixup)
                         },
-                        () => Option != null && UTSGate.Bool(Option)
+                        () => Option != null && UTSGate.Bool(Option) && everyoneHasMod
                               && Trickster.trickster != null && Trickster.trickster == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
                         // Any map; not during camouflage, not while a mixup runs, shared CD with lights.

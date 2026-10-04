@@ -56,7 +56,7 @@ namespace UsefulTORStuff {
                 // scheme makes it worse). That made "Shifter Interaction" read the wrong mode and
                 // exile the Shifter even when "Shift Cancelled" was selected.
                 OptionDeathFlash = CustomOption.Create(
-                    1320, Types.Crewmate, "Evil Flash on Death",
+                    1320, Types.Crewmate, "Evil Flash on Death (VIP Spy Only)",
                     false, CustomOptionHolder.spySpawnRate);
                 UTSLocalization.BindOptionTitle(OptionDeathFlash, "uts.spyextras.death_flash_option");
 

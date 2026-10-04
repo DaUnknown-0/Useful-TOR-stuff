@@ -72,6 +72,8 @@ namespace UsefulTORStuff
         private TextMeshProUGUI _footerLabel;
         private string _inputBuffer = "";
         private float _errorClearTimer;
+        private float _escArmedUntil;     // a second Esc before this leaves the lobby
+        private float _nextFetchRetry;    // Failed state: the hash is fetched again from here on
         // True only while WE are holding the player frozen. Used so we restore moveable exactly once
         // (never every frame), otherwise we fight the game's own moveable control (lobby walk-in
         // animation) and the bean gets stuck mid-walk.
@@ -126,11 +128,29 @@ namespace UsefulTORStuff
             // interact with the lobby while the gate is locked.
             FreezeLocalPlayer();
 
-            // Escape → leave lobby instead of entering password.
+            // Escape twice → leave the lobby (audit 04.10.: one press, the usual "close this" key,
+            // left at once).
             if (Input.GetKeyDown(KeyCode.Escape))
             {
-                LeaveGame();
-                return;
+                if (Time.unscaledTime < _escArmedUntil)
+                {
+                    LeaveGame();
+                    return;
+                }
+                _escArmedUntil = Time.unscaledTime + 2f;
+                ShowError(UTSLocalization.Tr("uts.lobbypasswordgate.esc_again"));
+            }
+
+            // A failed hash fetch is retried every 15 s instead of blocking the whole lobby until it
+            // is left and made anew (audit 04.10.).
+            if (_fetchState == FetchState.Failed)
+            {
+                if (_nextFetchRetry <= 0f) _nextFetchRetry = Time.unscaledTime + 15f;
+                else if (Time.unscaledTime >= _nextFetchRetry)
+                {
+                    _nextFetchRetry = Time.unscaledTime + 15f;
+                    try { this.StartCoroutine(CoFetchHash()); } catch { }
+                }
             }
 
             if (_fetchState != FetchState.Ready) return;

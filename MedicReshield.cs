@@ -60,6 +60,24 @@ namespace UsefulTORStuff {
         private static readonly string[] ShieldChargeSelections =
             { "∞", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10" };
 
+        public static CustomOption OptionReshieldCooldown;   // 1232
+
+        private static System.Reflection.FieldInfo medicShieldButtonField;
+        // TOR's shield button waits out the reshield cooldown after an unshield (User 04.10.).
+        private static void StartReshieldCooldown() {
+            try {
+                float cd = OptionReshieldCooldown != null ? UTSGate.Num(OptionReshieldCooldown) : 15f;
+                if (cd <= 0f) return;
+                medicShieldButtonField ??= typeof(CustomOption).Assembly.GetType("TheOtherRoles.HudManagerStartPatch")
+                    ?.GetField("medicShieldButton", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                if (medicShieldButtonField?.GetValue(null) is CustomButton b) b.Timer = cd;
+            } catch { }
+        }
+
+        // The Medic role this client last counted for: a role that changes hands (Shifter, re-rolls)
+        // arrives with usedShield already true, which is the old Medic's placement, not a new one.
+        private static PlayerControl countedMedic;
+
         // Shields placed this game, capped by OptionShieldCharges. A charge is spent only on placement;
         // remaining charges = max - placementsUsed. Reset on round start.
         private static int placementsUsed;
@@ -84,17 +102,27 @@ namespace UsefulTORStuff {
                 UTSLocalization.BindOptionTitle(Option, "uts.medicreshield.option_name");
 
                 // Sub-option: number of shield placements per game (0 = ∞). Only visible while Reshield is on.
-                OptionShieldCharges = CustomOption.Create(
+                // Default 3 (User 04.10.: unlimited let the shield hop to whoever stood nearest, every
+                // second). Explicit constructor: the Create(string[]) overload hardcodes index 0.
+                OptionShieldCharges = new CustomOption(
                     1231, Types.Crewmate, "Shield Charges",
-                    ShieldChargeSelections, Option);
+                    ShieldChargeSelections, "3", Option, false);
                 UTSLocalization.BindOptionTitle(OptionShieldCharges, "uts.medicreshield.charges_option");
+
+                // After an unshield, TOR's shield button waits this long before the next placement.
+                OptionReshieldCooldown = CustomOption.Create(
+                    1232, Types.Crewmate, "Reshield Cooldown",
+                    15f, 0f, 60f, 2.5f, Option);
+                UTSLocalization.BindOptionTitle(OptionReshieldCooldown, "uts.medicreshield.cooldown_option");
 
                 var opts = CustomOption.options;
                 opts.Remove(Option);
                 opts.Remove(OptionShieldCharges);
+                opts.Remove(OptionReshieldCooldown);
                 int idx = opts.IndexOf(CustomOptionHolder.medicShowAttemptToMedic);
                 if (idx < 0) idx = opts.Count - 1;
-                // Insert in reverse so the order is: Medic Can Reshield → Shield Charges
+                // Insert in reverse so the order is: Medic Can Reshield → Shield Charges → Reshield Cooldown
+                opts.Insert(idx + 1, OptionReshieldCooldown);
                 opts.Insert(idx + 1, OptionShieldCharges);
                 opts.Insert(idx + 1, Option);
 
@@ -148,7 +176,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class ResetPatch {
             public static void Postfix() {
-                placementsUsed = 0; prevUsedShield = false; lastDeadShieldedId = null;
+                placementsUsed = 0; prevUsedShield = false; lastDeadShieldedId = null; countedMedic = null;
                 // AUDIT-2026-08-16: shieldBtn is re-resolved lazily (== null check), but lastChargeText
                 // must be cleared so the first tick of the new round always pushes a fresh OverrideText
                 // even if the displayed count happens to match the stale cached string.
@@ -188,7 +216,7 @@ namespace UsefulTORStuff {
                     unshieldButton = new CustomButton(
                         // Unshield is free: just remove the current shield and re-arm. The next placement
                         // (via TOR's shield button) is what spends a charge.
-                        () => { SendReset(); UTSAssets.PlayReshield(); },
+                        () => { SendReset(); UTSAssets.PlayReshield(); StartReshieldCooldown(); },
                         // HasButton: medic, alive, option on, a shield is currently active (something to
                         // remove), and a charge remains to re-give (0 = unlimited).
                         // Clearing usedShield hides this button again and re-shows TOR's shield button.
@@ -235,7 +263,13 @@ namespace UsefulTORStuff {
                     // 1) Placement → spend one charge. usedShield is set true exactly when a shield is
                     //    placed (RPC.cs:579/824); SendReset clears it back to false on unshield / re-arm.
                     bool used = Medic.usedShield;
-                    if (used && !prevUsedShield) placementsUsed++;
+                    // A Medic role that just came to this client brings the old holder's state along:
+                    // taken as it is, not counted (audit 04.10.).
+                    if (countedMedic != lp) { countedMedic = lp; prevUsedShield = used; }
+                    if (used && !prevUsedShield) {
+                        placementsUsed++;
+                        lastDeadShieldedId = null;   // a new shield: its holder may die (again) and re-arm
+                    }
                     prevUsedShield = used;
 
                     // 2) Shielded death → re-arm (no charge), once per death. The shield blocks murder,

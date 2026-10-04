@@ -108,6 +108,24 @@ namespace UsefulTORStuff {
 
         public static int Port => activePort;
 
+        // The page's address was only in the BepInEx log; with 32200 taken it silently moved to
+        // 32201+ (audit 04.10.). The host is told once per session, in his first lobby.
+        private static bool portToldThisSession;
+
+        [HarmonyPatch(typeof(GameStartManager), nameof(GameStartManager.Start))]
+        static class PortHintPatch {
+            public static void Postfix() {
+                try {
+                    if (portToldThisSession || activePort <= 0) return;
+                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
+                    var hud = HudManager.Instance;
+                    if (hud == null || hud.Chat == null || PlayerControl.LocalPlayer == null) return;
+                    portToldThisSession = true;
+                    hud.Chat.AddChat(PlayerControl.LocalPlayer, UTSLocalization.Tr("uts.webconfig.port_hint", $"http://127.0.0.1:{activePort}/"));
+                } catch { }
+            }
+        }
+
         private static void Listen() {
             while (running) {
                 HttpListenerContext ctx;
@@ -374,6 +392,9 @@ namespace UsefulTORStuff {
                     option.selection = sel;
                     if (option.entry != null) option.entry.Value = sel;
                 }
+                // Persisted in every path (audit 04.10.: only the exception path wrote the config
+                // entry; updateSelection saves it only with the menu open). Idempotent.
+                try { if (option.entry != null) option.entry.Value = option.selection; } catch { }
                 // Idempotent full re-broadcast - covers the menu-closed path where updateSelection
                 // skips the per-option share (optionBehaviour is null until the menu is built).
                 try { CustomOption.ShareOptionSelections(); } catch { }
@@ -391,7 +412,12 @@ namespace UsefulTORStuff {
                 if (opts == null) return (503, "text/plain", "no game options");
                 if (v.Kind == "int" || v.Kind == "float") {
                     float stepped = v.Step > 0 ? Mathf.Round(value / v.Step) * v.Step : value;
-                    value = Mathf.Clamp(stepped, v.Min, v.Max);
+                    // A value set outside the table's range in the game stays where it is unless the
+                    // step goes back towards the range (audit 04.10.: "+" on 180 s set it to 120).
+                    float current = v.Get(opts);
+                    if (current > v.Max && stepped >= v.Max) value = Mathf.Min(stepped, current);
+                    else if (current < v.Min && stepped <= v.Min) value = Mathf.Max(stepped, current);
+                    else value = Mathf.Clamp(stepped, v.Min, v.Max);
                 }
                 v.Set(opts, value);
                 try { GameManager.Instance.LogicOptions.SyncOptions(); } catch (Exception e) {
@@ -442,7 +468,7 @@ namespace UsefulTORStuff {
                     o => o.GetInt(Int32OptionNames.NumEmergencyMeetings), (o, v) => o.SetInt(Int32OptionNames.NumEmergencyMeetings, v)),
                 I("EmergencyCooldown", "Emergency Cooldown", "Meetings & Voting", 0, 60, 5, "s",
                     o => o.GetInt(Int32OptionNames.EmergencyCooldown), (o, v) => o.SetInt(Int32OptionNames.EmergencyCooldown, v)),
-                I("DiscussionTime", "Discussion Time", "Meetings & Voting", 0, 120, 15, "s",
+                I("DiscussionTime", "Discussion Time", "Meetings & Voting", 0, 300, 15, "s",
                     o => o.GetInt(Int32OptionNames.DiscussionTime), (o, v) => o.SetInt(Int32OptionNames.DiscussionTime, v)),
                 I("VotingTime", "Voting Time", "Meetings & Voting", 0, 300, 15, "s",
                     o => o.GetInt(Int32OptionNames.VotingTime), (o, v) => o.SetInt(Int32OptionNames.VotingTime, v), zeroInf: true),

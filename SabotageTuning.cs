@@ -138,18 +138,25 @@ namespace UsefulTORStuff {
                 showSecondsOpt = CustomOption.Create(1345, Types.General, "Show Sabotage Cooldown Seconds", false, Enabled);
                 UTSLocalization.BindOptionTitle(showSecondsOpt, "uts.sabotagetuning.show_cooldown_seconds");
 
+                // The three durations only act with this switch on (User 04.10.): by default every map
+                // keeps its own vanilla countdown (Mira reactor 45 s, Polus 60 s, Airship crash 90 s),
+                // a flat 30 s for all of them was the old default. Own switch rather than a "Vanilla"
+                // value inside the ranges, which would shift every saved selection.
+                durationsOpt = CustomOption.Create(1329, Types.General, "Override Sabotage Durations (All Maps)", false, Enabled);
+                UTSLocalization.BindOptionTitle(durationsOpt, "uts.sabotagetuning.override_durations");
+
                 cdOpt[(int)SabType.Reactor] = CustomOption.Create(1331, Types.General, "Reactor/Meltdown Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Reactor], "uts.sabotagetuning.reactor_cooldown");
                 redOpt[(int)SabType.Reactor] = CustomOption.Create(1332, Types.General, "Reactor/Meltdown Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
                 UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Reactor], "uts.sabotagetuning.reactor_cooldown_reduction");
-                reactorDur = CustomOption.Create(1333, Types.General, "Reactor/Meltdown Duration", 30f, 10f, 90f, 5f, Enabled);
+                reactorDur = CustomOption.Create(1333, Types.General, "Reactor/Meltdown Duration", 30f, 10f, 90f, 5f, durationsOpt);
                 UTSLocalization.BindOptionTitle(reactorDur, "uts.sabotagetuning.reactor_duration");
 
                 cdOpt[(int)SabType.Oxygen] = CustomOption.Create(1334, Types.General, "Oxygen Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Oxygen], "uts.sabotagetuning.oxygen_cooldown");
                 redOpt[(int)SabType.Oxygen] = CustomOption.Create(1335, Types.General, "Oxygen Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
                 UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Oxygen], "uts.sabotagetuning.oxygen_cooldown_reduction");
-                oxygenDur = CustomOption.Create(1336, Types.General, "Oxygen Duration", 30f, 10f, 90f, 5f, Enabled);
+                oxygenDur = CustomOption.Create(1336, Types.General, "Oxygen Duration", 30f, 10f, 90f, 5f, durationsOpt);
                 UTSLocalization.BindOptionTitle(oxygenDur, "uts.sabotagetuning.oxygen_duration");
 
                 cdOpt[(int)SabType.Comms] = CustomOption.Create(1337, Types.General, "Communications Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
@@ -166,7 +173,7 @@ namespace UsefulTORStuff {
                 UTSLocalization.BindOptionTitle(cdOpt[(int)SabType.Heli], "uts.sabotagetuning.heli_cooldown");
                 redOpt[(int)SabType.Heli] = CustomOption.Create(1342, Types.General, "Airship Crash Cooldown Reduction per Use", 0f, 0f, 15f, 0.5f, Enabled);
                 UTSLocalization.BindOptionTitle(redOpt[(int)SabType.Heli], "uts.sabotagetuning.heli_cooldown_reduction");
-                heliDur = CustomOption.Create(1343, Types.General, "Airship Crash Duration", 30f, 10f, 120f, 5f, Enabled);
+                heliDur = CustomOption.Create(1343, Types.General, "Airship Crash Duration", 90f, 10f, 120f, 5f, durationsOpt);
                 UTSLocalization.BindOptionTitle(heliDur, "uts.sabotagetuning.heli_duration");
 
                 cdOpt[(int)SabType.Mixup] = CustomOption.Create(1348, Types.General, "Mushroom Mixup Cooldown", 30f, 10f, 60f, 2.5f, Enabled);
@@ -325,7 +332,10 @@ namespace UsefulTORStuff {
             try { heliCountdownSetter = typeof(HeliSabotageSystem).GetProperty("Countdown")?.GetSetMethod(true); } catch { }
         }
 
+        private static CustomOption durationsOpt;   // 1329
+
         private static void ApplyDeadlyDurations(ShipStatus ship) {
+            if (durationsOpt == null || !UTSGate.Bool(durationsOpt)) return;   // vanilla countdowns
             ResolveCountdownSetters();
 
             var reactorRaw = GetRaw(ship, SystemTypes.Reactor) ?? GetRaw(ship, SystemTypes.Laboratory);
@@ -349,6 +359,36 @@ namespace UsefulTORStuff {
             var heli = GetRaw(ship, SystemTypes.HeliSabotage)?.TryCast<HeliSabotageSystem>();
             if (heli != null && heli.IsActive && heliDur != null && heliCountdownSetter != null) {
                 try { heliCountdownSetter.Invoke(heli, new object[] { UTSGate.Num(heliDur) }); } catch { }
+            }
+        }
+
+        private static float nextImpCheck;
+        private static bool allImpsModded = true;
+
+        private static bool AllImpostorsHaveMod() {
+            if (Time.unscaledTime < nextImpCheck) return allImpsModded;
+            nextImpCheck = Time.unscaledTime + 2f;
+            bool all = true;
+            try {
+                foreach (var p in PlayerControl.AllPlayerControls) {
+                    if (p == null || p.Data == null || p.Data.Disconnected || p.Data.Role == null || !p.Data.Role.IsImpostor) continue;
+                    if (p == PlayerControl.LocalPlayer) continue;
+                    var c = AmongUsClient.Instance.GetClientFromCharacter(p);
+                    if (c == null || !UsefulVersionHandshake.playerVersions.ContainsKey(c.Id)) { all = false; break; }
+                }
+            } catch { all = true; }
+            allImpsModded = all;
+            return all;
+        }
+
+        // TOR's Jackal/Sidekick lights button asks Helpers.canUseSabotage (it is its only caller) and
+        // sabotages directly, past our MapRoom prefixes: it obeyed only the shared timer we keep idle,
+        // about 4 s instead of the Lights cooldown (audit 04.10.). With the tuning on it waits for the
+        // Lights timer too; the sabotage it starts then resets every timer like any other.
+        [HarmonyPatch(typeof(Helpers), nameof(Helpers.canUseSabotage))]
+        static class JackalLightsGatePatch {
+            public static void Postfix(ref bool __result) {
+                try { if (__result && Active && timer[(int)SabType.Lights] > 0f) __result = false; } catch { }
             }
         }
 
@@ -379,8 +419,11 @@ namespace UsefulTORStuff {
         }
         private static bool CommsActive(ShipStatus s) {
             var raw = GetRaw(s, SystemTypes.Comms);
-            var sys = raw != null ? raw.TryCast<HudOverrideSystemType>() : null;
-            return sys != null && sys.IsActive; // note: Mira HQ comms uses a different system (not counted)
+            if (raw == null) return false;
+            var sys = raw.TryCast<HudOverrideSystemType>();
+            if (sys != null) return sys.IsActive;
+            var hq = raw.TryCast<HqHudSystemType>();   // Mira HQ's two-panel comms counts too (audit 04.10.)
+            return hq != null && hq.IsActive;
         }
         private static bool LightsActive(ShipStatus s) {
             var raw = GetRaw(s, SystemTypes.Electrical);
@@ -556,7 +599,10 @@ namespace UsefulTORStuff {
                         // A negative value keeps host validation happy while never tripping that comparison.
                         // While a Siphoner block is active keep the shared timer positive so host
                         // validation also rejects sabotage; otherwise pin it idle as before.
-                        if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost)
+                        // Only when every Impostor runs this mod (User 04.10.): one without it is not
+                        // gated by our per-type timers, and an idle-pinned shared timer gave him no
+                        // sabotage cooldown at all. Then the shared vanilla timer stays as it is.
+                        if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost && AllImpostorsHaveMod())
                             sab.Timer = SiphonerBlockActive() ? SiphonerBlockRemaining() : -1f;
 
                         if (prevActive) {

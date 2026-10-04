@@ -231,6 +231,7 @@ namespace UsefulTORStuff {
         private static float nextLobbyRefresh = -1f;
         private static string cachedMismatch = "";
         private static string cachedCombined = "";
+        private static string cachedInactive;   // the collected "not in effect" names, rebuilt with the board
         private static string cachedRegistry;
         private static bool cachedOtherModsPublished;
 
@@ -628,9 +629,10 @@ namespace UsefulTORStuff {
                 // Red name tag above mismatched players' heads (every client, every lobby frame).
                 TintMismatchedLobbyNames();
 
-                // Re-arm the chat post each lobby frame so it fires once per started game (the actual
-                // post happens at game start in IntroEndChatPatch, after this stops running).
-                snitchFixChatShown = false;
+                // Re-arm the gate chat post each lobby frame so it fires once per started game (the
+                // actual post happens at game start in IntroEndChatPatch, after this stops running).
+                // The Snitch line is re-armed only when a lobby is joined (OnGameJoined below): once
+                // per session is enough (audit 04.10.: it came every single round, for everyone).
                 gateChatShown = false;
 
                 // Compute on EVERY client. GameStartManager.Update only runs in the lobby, so this
@@ -698,27 +700,14 @@ namespace UsefulTORStuff {
                         "Sheriff Prevents Killer Parity Win");
                 }
 
-                // Multi-Jester warning: the extra Jesters exist only inside this mod (role display,
-                // neutral status and win condition are reimplemented per client), so the feature
-                // stands down entirely unless everyone has it. Tell the host that his setting is
-                // not in effect rather than letting him find out after the round.
-                if (AmongUsClient.Instance.AmHost
-                    && MultiJester.Quantity != null && MultiJester.ConfiguredQuantity > 1
-                    && !everyone) {
-                    DrawTopLeftMessage(__instance, text,
-                        UTSLocalization.Tr("uts.versionhandshake.multijester_warning"),
-                        "Jester Quantity");
-                }
-
-                // Lover "Delay Lover Death / Revenger" warning: this feature is client-side and only
-                // works when everyone has the mod (unlike the host-enforced Sheriff parity win). Warn
-                // the host when it is ON but someone is missing the mod — it will simply not apply.
-                if (AmongUsClient.Instance.AmHost
-                    && LoverRevenger.DelayOption != null && UTSGate.Bool(LoverRevenger.DelayOption)
-                    && !everyone) {
-                    DrawTopLeftMessage(__instance, text,
-                        UTSLocalization.Tr("uts.versionhandshake.revenger_warning"),
-                        "Delay Lover Death (Revenger)");
+                // The collected warning: every switched-on feature that needs everyone to have the
+                // mod and therefore stands down this game (see InactiveFeatures).
+                if (AmongUsClient.Instance.AmHost && !everyone) {
+                    if (refresh || cachedInactive == null) cachedInactive = string.Join(", ", InactiveFeatures());
+                    if (cachedInactive != "")
+                        DrawTopLeftMessage(__instance, text,
+                            UTSLocalization.Tr("uts.versionhandshake.inactive_features", cachedInactive),
+                            "not in effect this game");
                 }
 
                 // F1: when any other handshake-publishing mod is present (Chance, Unknown's
@@ -744,30 +733,79 @@ namespace UsefulTORStuff {
                     // version drift → missing reflection handles). The client fix is NOT active, so the
                     // Host Fix fallback stays armed — say so instead of falsely claiming the fix is
                     // active. Only the host needs this heads-up.
-                    if (!AmongUsClient.Instance.AmHost) return;
+                    if (!AmongUsClient.Instance.AmHost || !SnitchCanSpawn()) return;
                     DrawTopLeftMessage(__instance, text,
-                        UTSLocalization.Tr("uts.versionhandshake.snitch_fix_not_active"),
+                        UTSLocalization.Tr(HostFixLoaded() ? "uts.versionhandshake.snitch_fix_not_active"
+                                                           : "uts.versionhandshake.snitch_fix_not_active_nohostfix"),
                         "Snitch fix is NOT active");
                 } else {
                     // Someone is missing the mod — only the host needs the heads-up, shown top-left.
                     // The game can still be started; the snitch bug may occur (Host Fix fallback handles it).
-                    if (!AmongUsClient.Instance.AmHost) return;
+                    // Only with a Snitch in the game, and no promise of a Host Fix fallback the host
+                    // does not have (audit 04.10.).
+                    if (!AmongUsClient.Instance.AmHost || !SnitchCanSpawn()) return;
                     // F1: when the combined Mod-Check block above already lists the per-player
                     // versions, drop the standalone mismatch prefix and show only the fallback note.
                     // Otherwise keep the full standalone list (single-mod install).
                     string prefix = combinedShown ? "" : mismatch;
                     DrawTopLeftMessage(__instance, text,
-                        UTSLocalization.Tr("uts.versionhandshake.snitch_fallback_warning", prefix),
+                        UTSLocalization.Tr(HostFixLoaded() ? "uts.versionhandshake.snitch_fallback_warning"
+                                                           : "uts.versionhandshake.snitch_no_fallback_warning", prefix),
                         "fallback: Host Fix");
                 }
             }
+        }
+
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class SnitchChatRearmPatch {
+            public static void Postfix() { snitchFixChatShown = false; }
+        }
+
+        private static bool SnitchCanSpawn() {
+            try { return TheOtherRoles.CustomOptionHolder.snitchSpawnRate != null && TheOtherRoles.CustomOptionHolder.snitchSpawnRate.getSelection() > 0; }
+            catch { return true; }
+        }
+
+        private static bool HostFixLoaded() {
+            try { return BepInEx.Unity.IL2CPP.IL2CPPChainloader.Instance.Plugins.ContainsKey("com.trackerteam.hostfix"); }
+            catch { return true; }
+        }
+
+        // ---- the collected "not in effect" warning (audit 04.10., 9.12 / 15.4 / 15.11 / 16.3) ----
+        // Every feature that needs EVERY player to run this mod and falls back to TOR's behaviour
+        // otherwise. The host gets ONE lobby line naming the ones he switched on, instead of separate
+        // lines for three of them and silence (or a round-chat line nobody sees) for the rest.
+        private static string Plain(TheOtherRoles.CustomOption o) {
+            try { return System.Text.RegularExpressions.Regex.Replace(o?.name ?? "", "<[^>]*>", "").Trim(); } catch { return ""; }
+        }
+
+        private static List<string> InactiveFeatures() {
+            var names = new List<string>();
+            void Add(TheOtherRoles.CustomOption o, Func<bool> on) {
+                try { if (o != null && on()) { string n = Plain(o); if (n != "" && !names.Contains(n)) names.Add(n); } } catch { }
+            }
+            Add(MultiJester.Quantity, () => MultiJester.ConfiguredQuantity > 1);
+            Add(LoverRevenger.DelayOption, () => UTSGate.Bool(LoverRevenger.DelayOption));
+            Add(BomberCancel.Option, () => UTSGate.Bool(BomberCancel.Option));
+            Add(MultiModifiers.MiniQuantity, () => UTSGate.Qty(MultiModifiers.MiniQuantity) > 1);
+            Add(MultiModifiers.ArmoredQuantity, () => UTSGate.Qty(MultiModifiers.ArmoredQuantity) > 1);
+            Add(SpyExtras.OptionShifterInteraction, () => UTSGate.Bool(SpyExtras.OptionShifterInteraction));
+            Add(TimeMasterUnguessable.Option, () => UTSGate.Bool(TimeMasterUnguessable.Option));
+            Add(TricksterBoxCount.Option, () => TricksterBoxCount.ConfiguredValue != 3);
+            Add(TricksterAvatarSabotage.Option, () => UTSGate.Bool(TricksterAvatarSabotage.Option));
+            Add(TrapperLimp.TrappedOption, () => UTSGate.Bool(TrapperLimp.TrappedOption));
+            Add(TrapperLimp.SelfOption, () => UTSGate.Bool(TrapperLimp.SelfOption));
+            Add(NewcomerShield.Enabled, () => UTSGate.Bool(NewcomerShield.Enabled) && NewcomerShield.BlocksGuesses);
+            Add(EarlyDeathShield.Enabled, () => UTSGate.Bool(EarlyDeathShield.Enabled) && EarlyDeathShield.BlocksGuesses);
+            Add(VultureGuessEat.Option, () => UTSGate.Bool(VultureGuessEat.Option));   // the counter (the win still applies)
+            return names;
         }
 
         // Post the active-fix confirmation to chat once the game has actually started (intro ended).
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
         static class IntroEndChatPatch {
             public static void Postfix() {
-                if (UsefulTORStuffPlugin.SnitchClientFixActive)
+                if (UsefulTORStuffPlugin.SnitchClientFixActive && SnitchCanSpawn())
                     PostSnitchFixChatOnce();
                 if (!UTSGate.SettingsActive)
                     PostGateChatOnce();

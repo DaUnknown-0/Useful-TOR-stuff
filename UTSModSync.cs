@@ -189,10 +189,12 @@ namespace UsefulTORStuff {
         public static bool IsTestBuild(Version v) => v != null && v.Revision > 0;
 
         // Rows the bulk button acts on: everything downloadable that does not need its own click.
+        // Not the board-gated mods (Atlas, Nightfall): this lobby does not need them just because the
+        // host has them installed (audit 04.10.); they keep their own button in the list.
         public static List<SyncRow> BulkRows() {
             var list = new List<SyncRow>();
             foreach (var r in Rows())
-                if (r.IsDownloadable && !r.NeedsConfirm) list.Add(r);
+                if (r.IsDownloadable && !r.NeedsConfirm && !(r.Catalog != null && r.Catalog.BoardGated)) list.Add(r);
             return list;
         }
 

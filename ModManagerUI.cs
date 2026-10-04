@@ -55,6 +55,7 @@ namespace UsefulTORStuff
             // Laufzeit-Zustand (beim Start geladen?) — bleibt über das Umschalten hinweg stabil,
             // während Mod.Enabled.Value den gewünschten Zustand nach Neustart abbildet.
             public bool RuntimeEnabled;
+            public bool NotesShown;   // release notes were built into the entry
         }
 
         private readonly List<ModEntryRefs> _entryRefs = new List<ModEntryRefs>();
@@ -319,7 +320,9 @@ namespace UsefulTORStuff
             CreateUpdateAllButton(panel);
 
             // Shared "show test versions" toggle (top-right). Flips the process-wide flag read by every
-            // mod's vX.Y.Z(.W) version line; display-only, no effect on stable builds (no 4th component).
+            // mod's vX.Y.Z(.W) version line AND, after the confirm dialog, switches every mod's update
+            // channel: mods with a different version on the other channel get downloaded (test build or
+            // back to stable, which can be a downgrade).
             CreateTestVersionToggle(panel);
 
             // Content
@@ -390,6 +393,21 @@ namespace UsefulTORStuff
                     failed++;
                     continue;
                 }
+                // The updater ignores a trigger while it runs its own re-check (audit 04.10.): wait up to
+                // 2 s for it to start, trigger again while it is busy, give up after ~20 s.
+                {
+                    float startWait = 20f, retryIn = 2f;
+                    int st = 0;
+                    while (startWait > 0f)
+                    {
+                        try { st = mod.GetUpdateState?.Invoke() ?? 0; } catch { st = 3; }
+                        if (st == 1 || st == 2) break;
+                        startWait -= Time.deltaTime;
+                        retryIn -= Time.deltaTime;
+                        if (retryIn <= 0f) { retryIn = 2f; try { mod.TriggerChannelSwitch(stable); } catch { } }
+                        yield return null;
+                    }
+                }
 
                 float timeout = 90f;
                 int state = 0;
@@ -458,9 +476,10 @@ namespace UsefulTORStuff
             if (_confirmOverlay != null) { UnityEngine.Object.Destroy(_confirmOverlay); _confirmOverlay = null; }
         }
 
-        // Top-right toggle for the shared "show test versions" flag. Display-only: it controls whether
-        // the 4th version component (.W on test builds) is shown in every mod's version line. Persists
-        // via UsefulTORStuffPlugin.ShowTestVersionsConfig so the choice survives restarts.
+        // Top-right toggle for the shared "show test versions" flag. Not display-only: besides the 4th
+        // version component (.W on test builds) in every version line it selects the update channel,
+        // and confirming it installs the other channel's builds (CoSwitchChannel). Persists via
+        // UsefulTORStuffPlugin.ShowTestVersionsConfig so the choice survives restarts.
         private void CreateTestVersionToggle(GameObject parent)
         {
             var button = new GameObject("TestVersionToggle");
@@ -616,6 +635,21 @@ namespace UsefulTORStuff
                     UsefulTORStuffPlugin.Logger?.LogWarning($"Update All: trigger failed for {mod.Name}: {ex.Message}");
                     failed++;
                     continue;
+                }
+                // The updater ignores a trigger while it runs its own re-check (audit 04.10.): wait up to
+                // 2 s for it to start, trigger again while it is busy, give up after ~20 s.
+                {
+                    float startWait = 20f, retryIn = 2f;
+                    int st = 0;
+                    while (startWait > 0f)
+                    {
+                        try { st = mod.GetUpdateState?.Invoke() ?? 0; } catch { st = 3; }
+                        if (st == 1 || st == 2) break;
+                        startWait -= Time.deltaTime;
+                        retryIn -= Time.deltaTime;
+                        if (retryIn <= 0f) { retryIn = 2f; try { mod.TriggerUpdate(); } catch { } }
+                        yield return null;
+                    }
                 }
 
                 // Wait for this mod to reach success (2) or error (3), up to a timeout.
@@ -861,6 +895,7 @@ namespace UsefulTORStuff
                     notesText.alignment = TMPro.TextAlignmentOptions.TopLeft;
                     notesText.enableWordWrapping = true;
                     notesText.overflowMode = TMPro.TextOverflowModes.Truncate;
+                    refs.NotesShown = true;
                 }
             }
             // Entry-Höhe an die Notes anpassen (Basis 140); repo/guid sind bodengeankert und
@@ -1200,7 +1235,19 @@ namespace UsefulTORStuff
                 try { completed = r.Mod.GetCheckCompleted?.Invoke() ?? true; } catch { }
                 try { loaded = r.Mod.ReleasesLoaded?.Invoke() ?? true; } catch { }
 
-                if (completed && !loaded)
+                // A local mod is never checked, and a check still running has no verdict yet: no green
+                // "up to date" for either (audit 04.10.).
+                if (!HasRepository(r.Mod))
+                {
+                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_local");
+                    r.StatusText.color = Color.gray;
+                }
+                else if (!completed)
+                {
+                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_checking");
+                    r.StatusText.color = new Color(1f, 1f, 0.5f);
+                }
+                else if (!loaded)
                 {
                     r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_check_unavailable");
                     r.StatusText.color = new Color(1f, 0.8f, 0.3f);
@@ -1230,10 +1277,21 @@ namespace UsefulTORStuff
         {
             while (IsUIOpen)
             {
+                bool rebuildForNotes = false;
                 foreach (var r in _entryRefs)
                 {
                     if (r?.Mod == null) continue;
                     RefreshEntry(r);
+                    if (!r.NotesShown && NotesWaiting(r.Mod)) rebuildForNotes = true;
+                }
+                // An update found by the re-check AFTER the panel was built: its release notes (and
+                // the taller entry for them) only exist in a fresh build (audit 04.10.). Once.
+                if (rebuildForNotes && !_updateAllRunning && !_rebuiltForNotes)
+                {
+                    _rebuiltForNotes = true;
+                    Hide();
+                    Show();
+                    yield break;
                 }
 
                 // F2: keep the "Update All" button's enabled state in sync as checks complete.
@@ -1246,6 +1304,19 @@ namespace UsefulTORStuff
         // True, wenn der Mod ein GitHub-Repository hinterlegt hat. Lokale Mods lassen die
         // Felder leer und erhalten daher keinen GitHub-Button. Future-proof: gilt automatisch
         // fuer jede kuenftige Mod, die kein Repository angibt.
+        private bool _rebuiltForNotes;
+
+        private static bool NotesWaiting(ModInfo mod)
+        {
+            try
+            {
+                if (mod.GetReleaseNotes == null || !(mod.HasUpdate?.Invoke() ?? false)) return false;
+                if ((mod.GetUpdateState?.Invoke() ?? 0) != 0) return false;   // a download is under way
+                return StripAndTruncateNotes(mod.GetReleaseNotes()).Length > 0;
+            }
+            catch { return false; }
+        }
+
         private static bool HasRepository(ModInfo mod) =>
             mod != null
             && !string.IsNullOrWhiteSpace(mod.RepositoryOwner)

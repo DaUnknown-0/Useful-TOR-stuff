@@ -50,7 +50,7 @@ namespace UsefulTORStuff {
         public static void CreateOptions() {
             try {
                 Enabled = CustomOption.Create(
-                    1210, Types.General, "Override Meeting Duration", false, null, true);
+                    1210, Types.General, "Override Meeting Duration", false, null, true, onChange: OnEnabledChanged);
                 UTSLocalization.BindOptionTitle(Enabled, "uts.meetingdurationoverride.enabled");
 
                 DiscussionBase     = CustomOption.Create(1211, Types.General, "Discussion Base Time", 15f, 0f, 120f, 2.5f, Enabled);
@@ -59,17 +59,47 @@ namespace UsefulTORStuff {
                 UTSLocalization.BindOptionTitle(DiscussionPerAlive, "uts.meetingdurationoverride.discussion_per_alive");
                 DiscussionPerDead  = CustomOption.Create(1213, Types.General, "Discussion Reduction Per Dead Player", 0f, 0f, 30f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(DiscussionPerDead, "uts.meetingdurationoverride.discussion_per_dead");
-                VotingBase         = CustomOption.Create(1214, Types.General, "Voting Base Time", 30f, 0f, 120f, 2.5f, Enabled);
+                VotingBase         = CustomOption.Create(1214, Types.General, "Voting Base Time (Min 5 s)", 30f, 0f, 120f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(VotingBase, "uts.meetingdurationoverride.voting_base");
                 VotingPerAlive     = CustomOption.Create(1215, Types.General, "Voting Per Alive Player", 0f, 0f, 30f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(VotingPerAlive, "uts.meetingdurationoverride.voting_per_alive");
                 VotingPerDead      = CustomOption.Create(1216, Types.General, "Voting Reduction Per Dead Player", 0f, 0f, 30f, 2.5f, Enabled);
                 UTSLocalization.BindOptionTitle(VotingPerDead, "uts.meetingdurationoverride.voting_per_dead");
 
+                lastEnabled = Enabled.getBool();
                 UsefulTORStuffPlugin.Logger?.LogInfo("[MeetingDurationOverride] Options created under TOR Settings.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[MeetingDurationOverride] CreateOptions failed: {e}");
             }
+        }
+
+        // Switched on with the base times still at their defaults: start from the host's own vanilla
+        // times instead of a flat 15 s / 30 s (audit 04.10.). Host only; a preset that already holds
+        // tuned values is left alone.
+        private static bool lastEnabled;
+
+        private static void OnEnabledChanged() {
+            try {
+                bool on = Enabled != null && Enabled.getBool();
+                bool was = lastEnabled;
+                lastEnabled = on;
+                if (!on || was) return;
+                if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
+                if (DiscussionBase == null || VotingBase == null) return;
+                if (Mathf.Abs(DiscussionBase.getFloat() - 15f) > 0.01f || Mathf.Abs(VotingBase.getFloat() - 30f) > 0.01f) return;
+                var o = GameOptionsManager.Instance?.currentNormalGameOptions;
+                if (o == null) return;
+                SetValue(DiscussionBase, o.DiscussionTime);
+                if (o.VotingTime > 0) SetValue(VotingBase, Mathf.Max(MinVotingSeconds, o.VotingTime));   // 0 = no limit: keep 30
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[MeetingDurationOverride] started from the vanilla times ({o.DiscussionTime} s / {o.VotingTime} s).");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[MeetingDurationOverride] taking the vanilla times failed: {e.Message}");
+            }
+        }
+
+        private static void SetValue(CustomOption opt, float seconds) {
+            int idx = Mathf.Clamp(Mathf.RoundToInt(seconds / 2.5f), 0, opt.selections.Length - 1);   // all options start at 0, step 2.5
+            opt.updateSelection(idx);
         }
 
         // Count players that are alive vs dead at this moment (disconnected players count as neither),

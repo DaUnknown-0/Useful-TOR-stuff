@@ -219,8 +219,12 @@ namespace UsefulTORStuff {
                     int index = page.IndexOf($"## {roleInfo.name}", StringComparison.Ordinal);
                     if (index < 0) {
                         // Role not documented in the README (a newer role, a renamed one, a mod role).
-                        // TOR would call Substring(-1) here and throw.
-                        __result = $"{roleInfo.name}: no description found in the role list.";
+                        // TOR would call Substring(-1) here and throw. The role's own description is
+                        // the answer then (audit 04.10.: every UC/Chance role said "nothing found").
+                        string own = !string.IsNullOrWhiteSpace(roleInfo.introDescription) ? roleInfo.introDescription : roleInfo.shortDescription;
+                        __result = !string.IsNullOrWhiteSpace(own)
+                            ? $"{roleInfo.name}: {own}"
+                            : $"{roleInfo.name}: no description found in the role list.";
                         return false;
                     }
 
@@ -246,6 +250,16 @@ namespace UsefulTORStuff {
 
                     PlayerControl target = Helpers.playerById(targetId);
                     if (target != null && target.Data != null) return true; // original is safe
+
+                    // The Bait left after dying: his player info and body still exist, so the report
+                    // still happens (audit 04.10.: it was dropped, the kill went unreported).
+                    var info = GameData.Instance != null ? GameData.Instance.GetPlayerById(targetId) : null;
+                    var source = Helpers.playerById(sourceId);
+                    if (info != null && source != null) {
+                        source.ReportDeadBody(info);
+                        UsefulTORStuffPlugin.Logger?.LogInfo($"[TorNullGuards] report for the departed player {targetId} sent via his player info.");
+                        return false;
+                    }
 
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         $"[TorNullGuards] dropped report for missing player {targetId} (reporter {sourceId}) - " +
@@ -325,6 +339,7 @@ namespace UsefulTORStuff {
         // ── 5) BountyHunter must not take every later role update down with it ─────────────────
         [HarmonyPatch(typeof(TheOtherRoles.Patches.PlayerControlFixedUpdatePatch), "bountyHunterUpdate")]
         static class BountyHunterUpdatePatch {
+            private static int bountyCrashLogs;
             // TOR's own filtered target pool can legitimately come up empty; RoleAssignmentPatch.cs:405
             // guards the structurally identical case with `if (possibleTargets.Count == 0)`, this
             // method does not. __exception is non-null exactly when rnd.Next(0, 0) fed the indexer a
@@ -342,8 +357,11 @@ namespace UsefulTORStuff {
                         UnityEngine.Object.Destroy(BountyHunter.cooldownText.gameObject);
                     BountyHunter.cooldownText = null;
                     BountyHunter.bounty = null;
-                    UsefulTORStuffPlugin.Logger?.LogWarning(
-                        $"[TorNullGuards] bountyHunterUpdate threw (empty target pool) - reset for the next tick: {__exception.Message}");
+                    // TOR retries every FixedUpdate while the pool stays empty: first three, then every 500th.
+                    bountyCrashLogs++;
+                    if (bountyCrashLogs <= 3 || bountyCrashLogs % 500 == 0)
+                        UsefulTORStuffPlugin.Logger?.LogWarning(
+                            $"[TorNullGuards] bountyHunterUpdate threw (empty target pool) - reset for the next tick (hit #{bountyCrashLogs}): {__exception.Message}");
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[TorNullGuards] BountyHunter cleanup after crash failed: {e}");
                 }

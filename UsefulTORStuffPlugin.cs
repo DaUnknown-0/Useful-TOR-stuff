@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.19.1";
+    public const string PluginVersion = "1.4.19.2";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -222,6 +222,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Session statistics receiver (module byte 238). Same pattern.
         SessionStats.RegisterRpc();
+
+        // Draft pick-timer reset from HostFix (module byte 237), after a picker left the draft.
+        DraftTimerReset.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface

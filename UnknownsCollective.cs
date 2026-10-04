@@ -87,6 +87,16 @@ namespace UsefulTORStuff {
             } catch { }
         }
 
+        /// Take this mod's line out of the block again (a mod that only shows itself in some
+        /// situations, e.g. HostFix only while hosting: audit 2026-10-04, its line stayed after
+        /// joining someone else's lobby). Cheap to call every frame: no-op when absent.
+        public static void Withdraw(string guid) {
+            try {
+                if (Members().Remove(guid))
+                    AppDomain.CurrentDomain.SetData(VersionKey, MembersVersion() + 1);
+            } catch { }
+        }
+
         // PERF: the block used to be rebuilt from scratch every frame by whichever mod rendered
         // first - an OrderBy, a Join and several interpolations, sixty times a second, for text
         // that changes only when a mod's line changes, the list is expanded/collapsed or the
@@ -160,8 +170,11 @@ namespace UsefulTORStuff {
                             // The click always drives the shared credit line, exactly like clicking
                             // any single mod's name always has.
                             AppDomain.CurrentDomain.SetData(CreditKey, !CreditVisible());
-                            // With two or more mods contributing, it ALSO expands/collapses the list.
-                            if (id == ToggleLinkId) SetExpanded(!Expanded());
+                            // With two or more mods contributing, it ALSO expands/collapses the list,
+                            // but only in a round: the lobby always lists every mod and ignores the
+                            // state, so a lobby click flipped it unseen and the round started the other
+                            // way round (audit 2026-10-04).
+                            if (id == ToggleLinkId && ShipStatus.Instance != null) SetExpanded(!Expanded());
                         }
                     }
                 }

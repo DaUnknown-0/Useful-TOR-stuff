@@ -76,7 +76,12 @@ namespace UsefulTORStuff {
         // Called after a successful sync (UTSModDownloader, right before the restart) and, since
         // 2026-08-16, on every AmongUsClient.OnGameJoined (see LobbyJoinPatch below) - so a real
         // crash mid-round leaves the same rejoin entry behind that a mod sync would have.
-        public static void RememberCurrentLobby() {
+        // Set by a successful mod sync: that lobby is kept even when the player leaves it on purpose,
+        // the restart that follows needs it.
+        private static bool keepForRestart;
+
+        public static void RememberCurrentLobby(bool forRestart = false) {
+            if (forRestart) keepForRestart = true;
             try {
                 if (SavedCode == null || AmongUsClient.Instance == null) return;
                 int gameId = AmongUsClient.Instance.GameId;
@@ -180,7 +185,21 @@ namespace UsefulTORStuff {
         // join, so unlike the tick-driven features in this mod no throttling is needed here.
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
         static class LobbyJoinPatch {
-            public static void Postfix() => RememberCurrentLobby();
+            public static void Postfix() { keepForRestart = false; RememberCurrentLobby(); }
+        }
+
+        // Leaving on purpose (the Leave button, a kick, a ban) is no reason to offer the way back
+        // (audit 04.10.: the button showed the lobby just left for 30 minutes). A crash or a dropped
+        // connection never comes through here, and a sync restart is kept (keepForRestart).
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.ExitGame))]
+        static class ExitGamePatch {
+            public static void Prefix([HarmonyArgument(0)] DisconnectReasons reason) {
+                try {
+                    if (keepForRestart) return;
+                    if (reason == DisconnectReasons.ExitGame || reason == DisconnectReasons.Kicked
+                        || reason == DisconnectReasons.Banned) Clear();
+                } catch { }
+            }
         }
     }
 

@@ -28,7 +28,10 @@ using UnityEngine;
 
 namespace UsefulTORStuff {
     internal static class AirshipWrapUpDefer {
-        private const float GiveUpSeconds = 30f;
+        // Only an emergency exit: the airship coroutine includes the player's spawn choice, which can
+        // take a while (AFK, a slow client). At 30 s the action could fire before ReEnableGameplay and
+        // be overwritten by it, the very bug this file exists for (audit 04.10.).
+        private const float GiveUpSeconds = 120f;
 
         private sealed class Entry {
             public AirshipExileController Controller;

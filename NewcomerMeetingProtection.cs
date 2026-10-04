@@ -51,6 +51,22 @@ namespace UsefulTORStuff {
         // (pink, EarlyDeathShield.cs), and each carries its own "Shield During The First Meeting"
         // option - so the vote and the guess block are answered per shield, not for both at once.
         // The returned key is the chat line for the blocked voter/guesser; null = not protected.
+        // The Swapper moves votes only in the count, so a swap with a vote-blocked newcomer handed
+        // him someone else's votes and voted him out after all (audit 04.10.). Such a swap is not
+        // taken. swapperSwap runs on every client from the RPC, so all of them refuse it alike;
+        // like the guess block, only when everyone has the mod (otherwise the count would differ).
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.swapperSwap))]
+        static class SwapperSwapPatch {
+            public static bool Prefix([HarmonyArgument(0)] byte playerId1, [HarmonyArgument(1)] byte playerId2) {
+                try {
+                    if (VoteBlockKey(playerId1) == null && VoteBlockKey(playerId2) == null) return true;
+                    if (!UsefulVersionHandshake.EveryoneHasMod()) return true;
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"[NewcomerMeetingProtection] a swap with a protected newcomer ({playerId1}/{playerId2}) was refused.");
+                    return false;
+                } catch { return true; }
+            }
+        }
+
         private static string VoteBlockKey(byte playerId) {
             try {
                 if (NewcomerShield.BlocksVotes && NewcomerShield.IsShielded(playerId))

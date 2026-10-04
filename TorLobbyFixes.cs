@@ -214,8 +214,19 @@ namespace UsefulTORStuff {
                 return found;
             }
 
-            public static void Postfix() {
+            public static void Prefix(out int __state) {
+                __state = -1;
+                try { __state = DynamicLobbies.LobbyLimit; } catch { }
+            }
+
+            // An invalid number makes TOR's TryParse write 0: the old limit comes back instead of the
+            // clamp's 4 (audit 04.10.).
+            public static void Postfix(int __state) {
                 try {
+                    if (__state >= 4 && __state <= 15 && (DynamicLobbies.LobbyLimit < 4 || DynamicLobbies.LobbyLimit > 15)) {
+                        DynamicLobbies.LobbyLimit = __state;
+                        return;
+                    }
                     DynamicLobbies.LobbyLimit = Math.Clamp(DynamicLobbies.LobbyLimit, 4, 15);
                 } catch (Exception e) {
                     ThrottledLog("M23", $"clamp failed: {e.GetType().Name}: {e.Message}");

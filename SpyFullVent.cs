@@ -71,9 +71,14 @@ namespace UsefulTORStuff {
             }
         }
 
-        private static bool LocalIsSpy() =>
+        // The option is a child of TOR's "Spy Can Enter Vents": with the parent off it is hidden and
+        // must not act either (audit 04.10.: it still let the Spy vent).
+        private static bool On() =>
             Option != null && UTSGate.Bool(Option)
-            && Spy.spy != null && Spy.spy == PlayerControl.LocalPlayer;
+            && CustomOptionHolder.spyCanEnterVents != null && CustomOptionHolder.spyCanEnterVents.getBool();
+
+        private static bool LocalIsSpy() =>
+            On() && Spy.spy != null && Spy.spy == PlayerControl.LocalPlayer;
 
         // Force the Spy's entry permission on each round-reload when the option is on (TOR's
         // clearAndReload otherwise overwrites canEnterVents from its own option).
@@ -81,7 +86,7 @@ namespace UsefulTORStuff {
         static class SpyClearAndReloadPatch {
             public static void Postfix() {
                 try {
-                    if (Option != null && UTSGate.Bool(Option)) Spy.canEnterVents = true;
+                    if (On()) Spy.canEnterVents = true;
                 } catch { }
             }
         }

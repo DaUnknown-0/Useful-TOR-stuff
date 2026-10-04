@@ -548,9 +548,13 @@ namespace UsefulTORStuff {
         // Option helpers
         // ==========================================================================================
 
+        // Like TOR's menu (CustomOptions.cs:725-726): a normal child hides at parent 0, an INVERTED one
+        // hides at any other parent value (audit 04.10.: those were listed while they did nothing).
         private static bool IsVisible(CustomOption option) {
-            for (var child = option; child?.parent != null; child = child.parent)
-                if (child.parent.getSelection() == 0 && !child.invertedParent) return false;
+            for (var child = option; child?.parent != null; child = child.parent) {
+                bool parentOff = child.parent.getSelection() == 0;
+                if (child.invertedParent ? !parentOff : parentOff) return false;
+            }
             return true;
         }
 
@@ -624,7 +628,9 @@ namespace UsefulTORStuff {
             if (option.type != Types.Modifier || option.getSelection() == 0) return "";
             if (option == CustomOptionHolder.modifierLover)
                 return $" (1 Evil: {CustomOptionHolder.modifierLoverImpLoverRate.getSelection() * 10}%)";
-            var quantity = ChildrenOf(option).Where(o => o.name.Contains("Quantity")).ToList();
+            // Recognised by ID from the load-time snapshot (audit 04.10.: the translated names carry no
+            // "Quantity", so the count vanished in every other language); the live name is the fallback.
+            var quantity = ChildrenOf(option).Where(o => quantityIds.Contains(o.id) || o.name.Contains("Quantity")).ToList();
             return quantity.Count == 1 ? $" ({quantity[0].getQuantity()})" : "";
         }
 
@@ -810,12 +816,15 @@ namespace UsefulTORStuff {
         // that registers its options after us is still picked up, and a translated name (no tag) can
         // never overwrite a colour that was read correctly earlier.
         private static readonly Dictionary<int, Color> snapshot = new Dictionary<int, Color>();
+        private static readonly HashSet<int> quantityIds = new HashSet<int>();   // English "...Quantity" options, by ID
 
         public static void SnapshotColors() {
             try {
 
                 foreach (var option in CustomOption.options) {
-                    if (option == null || snapshot.ContainsKey(option.id)) continue;
+                    if (option == null) continue;
+                    if (option.name != null && option.name.Contains("Quantity")) quantityIds.Add(option.id);
+                    if (snapshot.ContainsKey(option.id)) continue;
                     Color parsed;
                     if (TryParseTagColor(option.name, out parsed)) snapshot[option.id] = parsed;
                 }

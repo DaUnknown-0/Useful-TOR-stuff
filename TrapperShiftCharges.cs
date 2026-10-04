@@ -44,6 +44,13 @@ namespace UsefulTORStuff {
             public static void Postfix(bool __state) {
                 try {
                     bool localIsTrapperNow = Trapper.trapper != null && Trapper.trapper == PlayerControl.LocalPlayer;
+                    // The role changed hands: the self-limp was the old holder's (audit 04.10.).
+                    if (localIsTrapperNow != __state) TrapperLimp.ResetSelfLimp();
+                    // The traps in the world go with the role: TOR only shows them to whoever placed
+                    // them (audit 04.10.). A living former Trapper loses the view, the new one gets it.
+                    if (localIsTrapperNow && !__state) TrapperExtras.SetTrapsVisible(true);
+                    else if (__state && !localIsTrapperNow && PlayerControl.LocalPlayer?.Data != null && !PlayerControl.LocalPlayer.Data.IsDead)
+                        TrapperExtras.SetTrapsVisible(false);
                     if (!localIsTrapperNow || __state) return; // not a fresh become-trapper transition
 
                     var trapper = Trapper.trapper;

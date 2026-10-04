@@ -299,6 +299,10 @@ namespace UsefulTORStuff {
             private static readonly FieldInfo mapIconsField =
                 AccessTools.Field(AccessTools.TypeByName("TheOtherRoles.Patches.MapBehaviourPatch"), "mapIcons");
 
+            private static void RestoreShrunk() {
+                try { if (shrunkIcon != null) shrunkIcon.transform.localScale = baseScale; } catch { }
+            }
+
             [HarmonyPriority(Priority.Last)] // after MapBehaviourPatch.Postfix, which does the shrinking
             public static void Postfix() {
                 try {
@@ -321,7 +325,14 @@ namespace UsefulTORStuff {
                         var t = tasks[i];
                         if (t != null && t.TaskType == TaskTypes.VentCleaning) { task = t; break; }
                     }
-                    if (task == null || task.IsComplete) { shrunkIconKey = null; return; }
+                    if (task == null || task.IsComplete) {
+                        // The task is over: the last target vent gets its normal size back (audit
+                        // 04.10.: TOR never undoes its shrink, the icon stayed at 0.6x).
+                        RestoreShrunk();
+                        shrunkIcon = null;
+                        shrunkIconKey = null;
+                        return;
+                    }
 
                     string key;
                     int step = task.TaskStep;
@@ -343,6 +354,8 @@ namespace UsefulTORStuff {
                     if (icon == null) { shrunkIconKey = null; return; }
 
                     if (icon != shrunkIcon) {
+                        // The previous target vent is no target any more: back to its own size.
+                        RestoreShrunk();
                         // Real new instance (fresh target vent, or clearAndReload/ShowVentsOnMap
                         // rebuilt mapIcons with a fresh GameObject even under the same key) -
                         // re-capture the pristine pre-shrink scale. TOR's own multiply that just ran

@@ -53,7 +53,7 @@ namespace UsefulTORStuff {
         // Recording
         // ====================================================================
         private const float Step = 0.25f;
-        private const int MaxSamples = 6000;     // 25 minutes of gameplay
+        private const int MaxSamples = 12000;    // 50 minutes of gameplay
 
         private sealed class Track {
             public byte Id;
@@ -118,13 +118,20 @@ namespace UsefulTORStuff {
             bool started = client != null && (client.IsGameStarted || (DiagViewer != null && DiagViewer.Value));
             bool inRound = started && ship != null && IntroCutscene.Instance == null;
             if (!inRound) return;
-            if (ship != recShip) Begin(ship);
+            if (ship != recShip) {
+                // Option 1397 off: record nothing at all (no samples, no raycasts, no ship copy at the
+                // end). Decided once per round, like the rest of the recording state.
+                if (!RecordingAllowed()) { recShip = ship; recording = false; ready = false; return; }
+                Begin(ship);
+            }
             if (!recording) return;
 
             bool meeting = MeetingHud.Instance != null || ExileController.Instance != null;
             if (meeting && !inMeeting) events.Add(MeetingEvent());
             inMeeting = meeting;
-            if (!meeting) clock += Time.deltaTime;
+            // At the sample limit the clock stops with the samples (audit 04.10.): later events land
+            // at the end of the timeline instead of beyond it, where playback never reached them.
+            if (!meeting && samples < MaxSamples) clock += Time.deltaTime;
             DeviceTick();
 
             while (sampledUpTo <= clock && samples < MaxSamples) {
@@ -324,6 +331,14 @@ namespace UsefulTORStuff {
         private static TMPro.TextMeshProUGUI seesLabel;
         private static RectTransform visionRt;
         private static readonly List<(byte Id, Image Img, Color Col)> chips = new List<(byte, Image, Color)>();
+
+        private static bool RecordingAllowed() {
+            try {
+                if (DiagViewer != null && DiagViewer.Value) return true;
+                if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) return Enabled != null && Enabled.getBool();
+                return UTSGate.Bool(Enabled);
+            } catch { return true; }
+        }
 
         private static bool ShouldShowButton() {
             try {

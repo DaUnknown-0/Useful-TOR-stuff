@@ -112,7 +112,7 @@ namespace UsefulTORStuff {
 
             // Remember where we were BEFORE the player restarts, so the main menu can offer the way
             // back into this lobby. Only worth doing when something actually landed on disk.
-            if (AnySucceeded) UTSRejoin.RememberCurrentLobby();
+            if (AnySucceeded) UTSRejoin.RememberCurrentLobby(forRestart: true);
         }
 
         [HideFromIl2Cpp]
@@ -207,9 +207,19 @@ namespace UsefulTORStuff {
             job.Progress = 1f;
 
             // ---- 6. write, keeping the previous file as .old (the updaters' convention) ----
-            string filePath = job.Catalog.TargetPath;
+            string filePath = job.Catalog.WriteTargetPath;
             byte[] data = dl.downloadHandler.data;
             dl.downloadHandler.Dispose(); dl.Dispose();
+
+            // Nothing replaces a working DLL before the download is shown to be whole: the size GitHub
+            // announced and a PE header ("MZ") (audit 04.10.).
+            if (data == null || data.Length < 2 || data[0] != (byte)'M' || data[1] != (byte)'Z'
+                || (asset.Size > 0 && data.Length != asset.Size)) {
+                UsefulTORStuffPlugin.Logger?.LogError(
+                    $"[ModSync] {job.Catalog.DisplayName}: download incomplete or not a DLL ({data?.Length ?? 0} of {asset.Size} bytes).");
+                Fail(job, "uts.modsync.error_download");
+                yield break;
+            }
 
             bool moved = false;
             try {

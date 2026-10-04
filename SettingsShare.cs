@@ -70,6 +70,16 @@ namespace UsefulTORStuff {
                     string data = GUIUtility.systemCopyBuffer;
                     if (string.IsNullOrWhiteSpace(data)) return;
                     Directory.CreateDirectory(ExportDir);
+                    if (backupInProgress) {
+                        File.WriteAllText(Path.Combine(ExportDir, $"settings-backup-{DateTime.Now:yyyyMMdd-HHmmss}.txt"), data);
+                        return;
+                    }
+                    // The same settings again: no second file (audit 04.10.: every copy click added an
+                    // entry, pushing kept presets out of the five-row picker).
+                    if (SameAsNewestExport(data)) {
+                        PostChat(UTSLocalization.Tr("uts.settingsshare.export_ok_chat"));
+                        return;
+                    }
                     string stamped = Path.Combine(ExportDir, $"settings-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
                     File.WriteAllText(stamped, data);
                     PostChat(UTSLocalization.Tr("uts.settingsshare.export_ok_chat"));
@@ -251,9 +261,36 @@ namespace UsefulTORStuff {
             return passive;
         }
 
+        private static bool backupInProgress;
+
+        private static bool SameAsNewestExport(string data) {
+            try {
+                var newest = new DirectoryInfo(ExportDir).GetFiles("settings-*.txt")
+                    .Where(f => !f.Name.StartsWith("settings-backup-"))
+                    .OrderByDescending(f => f.LastWriteTime).FirstOrDefault();
+                return newest != null && File.ReadAllText(newest.FullName) == data;
+            } catch { return false; }
+        }
+
+        // Before any import the current settings go to a backup file (audit 04.10.: one click on a
+        // picker row replaced every host setting with no way back). TOR's own copy builds the text;
+        // the user's clipboard is given back afterwards. The backup shows in the picker like an export.
+        private static void BackupCurrentSettings() {
+            string clip = GUIUtility.systemCopyBuffer;
+            backupInProgress = true;
+            try { CustomOption.copyToClipboard(); }
+            catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[SettingsShare] backup failed: {e.Message}"); }
+            finally { backupInProgress = false; GUIUtility.systemCopyBuffer = clip; }
+            PostChat(UTSLocalization.Tr("uts.settingsshare.backup_chat"));
+        }
+
         // Pretty display name: "settings-20260704-000904.txt" -> "04.07.2026  00:09:04".
         private static string DisplayName(FileInfo f) {
             var name = Path.GetFileNameWithoutExtension(f.Name);
+            if (name.StartsWith("settings-backup-") && name.Length >= 31
+                && DateTime.TryParseExact(name.Substring(16), "yyyyMMdd-HHmmss",
+                    CultureInfo.InvariantCulture, DateTimeStyles.None, out var bt))
+                return UTSLocalization.Tr("uts.settingsshare.backup_name", bt.ToString("dd.MM.yyyy  HH:mm:ss"));
             if (name.StartsWith("settings-") && name.Length >= 24
                 && DateTime.TryParseExact(name.Substring(9), "yyyyMMdd-HHmmss",
                     CultureInfo.InvariantCulture, DateTimeStyles.None, out var dt))
@@ -415,6 +452,7 @@ namespace UsefulTORStuff {
                     if (pasteStatus != null) { pasteStatus.text = UTSLocalization.Tr("uts.settingsshare.paste_status_empty"); pasteStatus.color = Color.yellow; }
                     return;
                 }
+                BackupCurrentSettings();
                 // Route through TOR's paste logic without permanently clobbering the user's clipboard.
                 string clipBackup = GUIUtility.systemCopyBuffer;
                 int success;
@@ -483,6 +521,7 @@ namespace UsefulTORStuff {
         private static void ImportFile(FileInfo file, TextMeshPro label) {
             try {
                 string data = File.ReadAllText(file.FullName);
+                BackupCurrentSettings();
                 // Same as ImportPasteBuffer: route through TOR's paste, then give the user's clipboard back.
                 string clipBackup = GUIUtility.systemCopyBuffer;
                 int success;

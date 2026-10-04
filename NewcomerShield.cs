@@ -503,6 +503,8 @@ namespace UsefulTORStuff {
         // ====================================================================
         private static void AssignShields() {
             try {
+                // No shields in Hide'n'Seek or Prop Hunt (audit 04.10.): no meeting ever ends them there.
+                if (AntiStartKill.ShieldFreeMode()) return;
                 int realCodes = 0, nameFallbacks = 0;
                 // The session's first round: the automatic rule stands down (see sessionHadRound),
                 // only an explicit host mark shields. Everyone present is registered as known.
@@ -585,6 +587,7 @@ namespace UsefulTORStuff {
             public static bool Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
                 try {
                     if (shielded.Count == 0 || target == null) return true;
+                    if (AntiStartKill.ShieldFreeMode()) return true;
                     if (!shielded.Contains(target.PlayerId)) return true;
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         $"[NewcomerShield] blocked a vanilla kill on {target.Data?.PlayerName} (shielded).");
@@ -608,6 +611,8 @@ namespace UsefulTORStuff {
                                        ref MurderAttemptResult __result) {
                 try {
                     if (shielded.Count == 0 || target == null) return;
+                    if (AntiStartKill.ShieldFreeMode()) return;
+                    if (killer != null && killer.PlayerId == target.PlayerId) return;   // a self-probe (Bomber), no kill
                     if (__result == MurderAttemptResult.SuppressKill) return;   // already refused
                     if (!shielded.Contains(target.PlayerId)) return;
 
@@ -659,6 +664,7 @@ namespace UsefulTORStuff {
         private static void SetTargetPrefix(ref List<PlayerControl> untargetablePlayers) {
             try {
                 if (shielded.Count == 0) return;
+                if (AntiStartKill.ShieldFreeMode()) return;
                 // A peaceful ability is asking (Medic, Shifter, Morphling, Tracker, Deputy, Eraser,
                 // Arsonist, Pursuer, Silencer): the shield stops kills, not the rest of the game.
                 // See ShieldPeaceGate.cs for how the caller is identified.
@@ -685,6 +691,29 @@ namespace UsefulTORStuff {
         // Mirrors TOR's own condition for showing the sidekick button (Buttons.cs:1036) rather than
         // inventing a second rule: same flag, same owner check, same alive check. A Sidekick is
         // deliberately NOT covered - he cannot recruit, so nothing about him is peaceful here.
+        // 9.17 (audit 04.10.): the recruit exception leaves shielded players TARGETABLE for the
+        // Jackal, because his kill and sidekick buttons share Jackal.currentTarget. Only the sidekick
+        // button may use that: a click on his KILL button aimed at a shielded player (newcomer or
+        // early-death shield) is refused here, so the kill no longer rests on the funnel alone.
+        private static System.Reflection.FieldInfo jackalKillButtonField;
+
+        [HarmonyPatch(typeof(TheOtherRoles.Objects.CustomButton), nameof(TheOtherRoles.Objects.CustomButton.onClickEvent))]
+        static class JackalKillOnShieldedPatch {
+            [HarmonyPriority(Priority.First)]
+            public static bool Prefix(TheOtherRoles.Objects.CustomButton __instance) {
+                try {
+                    if (__instance == null || !JackalCanRecruitNow()) return true;
+                    var t = Jackal.currentTarget;
+                    if (t == null || (!IsShielded(t.PlayerId) && !EarlyDeathShield.IsShielded(t.PlayerId))) return true;
+                    jackalKillButtonField ??= typeof(CustomOption).Assembly.GetType("TheOtherRoles.HudManagerStartPatch")
+                        ?.GetField("jackalKillButton", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    if (jackalKillButtonField?.GetValue(null) as TheOtherRoles.Objects.CustomButton != __instance) return true;
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"[NewcomerShield] the Jackal's kill on the shielded {t.Data?.PlayerName} was refused.");
+                    return false;
+                } catch { return true; }
+            }
+        }
+
         internal static bool JackalCanRecruitNow() {
             try {
                 var local = PlayerControl.LocalPlayer;

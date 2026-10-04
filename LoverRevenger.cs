@@ -21,6 +21,8 @@
  *         immediately as a Lovers win. Wrong target -> misfire, the Revenger dies.
  *       * "Blind Rage": may kill anyone. If they happen to hit the real killer -> win (as above).
  *         Otherwise they die at the end of the next meeting, with a random rage chat message.
+ *         "Blind Rage Kills" (1298, 1-3, default 1) sets how many wrong kills they get before the
+ *         button locks; until then a later hit on the real killer still wins.
  *   - A Revenger with their OWN kill button (Impostor, neutral killers like Jackal/Sidekick/Thief, or
  *     the Sheriff) gets NO second button: their normal kill on the Lover's killer triggers the win
  *     (modes/misfire/rage don't apply to them). Detection via Helpers.isKiller + Sheriff.
@@ -64,6 +66,7 @@ namespace UsefulTORStuff {
         public static CustomOption RevengerChance;   // rates (0..100%)
         public static CustomOption RevengerMode;     // 0 = Targeted Justice, 1 = Blind Rage
         public static CustomOption RevengerCooldown; // kill cooldown
+        public static CustomOption RageKills;        // Blind Rage: wrong kills allowed before the button locks
 
         // ---- Mode constants ----
         private const int ModeTargeted = 0;
@@ -79,7 +82,14 @@ namespace UsefulTORStuff {
         public static PlayerControl pendingLover;
         public static byte pendingKillerId = byte.MaxValue;
 
-        public static bool rageKillDone;             // Blind-Rage Revenger used their kill -> dies next meeting
+        public static bool rageKillDone;             // Blind-Rage Revenger killed a wrong target -> dies next meeting
+        public static int rageKills;                 // wrong Blind-Rage kills so far (synced via SubRageArmed)
+
+        // Blind Rage: the button locks once the allowed number of wrong kills is used up (option 1298,
+        // default 1). Until then the Revenger may keep trying, and hitting the real killer still wins.
+        private static int RageKillLimit() =>
+            RageKills != null ? Math.Max(1, (int)UTSGate.Num(RageKills)) : 1;
+        private static bool RageLocked() => rageKillDone && rageKills >= RageKillLimit();
         public static bool triggerRevengerWin;       // host: tells CheckEndCriteria to end the game now
 
         // Win-display snapshot. Set when the win is triggered; read at OnGameEnd and on the end screen.
@@ -130,6 +140,7 @@ namespace UsefulTORStuff {
 
         private static bool active;                  // feature usable this game (gating + option ON)
         private static bool griefChatShown;          // first-meeting grief message guard
+        private static bool deadChatHintShown;       // the dead Lover was told once that the partner cannot read him
         private static PlayerControl currentTarget;  // Revenger's nearest target (for the button)
         private static CustomButton revengerButton;
 
@@ -208,7 +219,7 @@ namespace UsefulTORStuff {
                 // shown when a Revenger can actually exist. ("Both Lovers Die" is still required and is
                 // enforced at runtime.)
                 DelayOption = CustomOption.Create(
-                    1294, Types.Modifier, "Delay Lover Death (Revenger)",
+                    1294, Types.Modifier, "Delay Lover Death (Revenger, Needs Both Lovers Die)",
                     false, CustomOptionHolder.modifierLover);
                 UTSLocalization.BindOptionTitle(DelayOption, "uts.loverrevenger.option_delay");
                 RevengerChance = CustomOption.Create(
@@ -225,6 +236,10 @@ namespace UsefulTORStuff {
                     1297, Types.Modifier, "Revenger Kill Cooldown",
                     30f, 10f, 60f, 2.5f, DelayOption);
                 UTSLocalization.BindOptionTitle(RevengerCooldown, "uts.loverrevenger.option_cooldown");
+                RageKills = CustomOption.Create(
+                    1298, Types.Modifier, "Blind Rage Kills (Blind Rage Mode Only)",
+                    1f, 1f, 3f, 1f, DelayOption);
+                UTSLocalization.BindOptionTitle(RageKills, "uts.loverrevenger.option_ragekills");
 
                 // Reapply the Revenger's cached RoleInfo texts on every language switch (see
                 // ReapplyRevengerInfoLanguage above); subscribed once here alongside option creation.
@@ -233,7 +248,7 @@ namespace UsefulTORStuff {
                 // Place directly under the existing Lover modifier options (same approach as
                 // LawyerLoverTracker). Insert after "Enable Lover Chat" (or the tracker options).
                 var opts = CustomOption.options;
-                foreach (var o in new[] { DelayOption, RevengerChance, RevengerMode, RevengerCooldown })
+                foreach (var o in new[] { DelayOption, RevengerChance, RevengerMode, RevengerCooldown, RageKills })
                     opts.Remove(o);
                 int idx = opts.IndexOf(CustomOptionHolder.modifierLoverEnableChat);
                 if (idx < 0) idx = opts.Count - 1;
@@ -241,6 +256,7 @@ namespace UsefulTORStuff {
                 opts.Insert(idx + 2, RevengerChance);
                 opts.Insert(idx + 3, RevengerMode);
                 opts.Insert(idx + 4, RevengerCooldown);
+                opts.Insert(idx + 5, RageKills);
 
                 UsefulTORStuffPlugin.Logger?.LogInfo("[LoverRevenger] Options created under Lovers.");
             } catch (Exception e) {
@@ -320,8 +336,12 @@ namespace UsefulTORStuff {
         // While a Revenger is alive they remain a lethal independent threat, so the Impostors/Jackal
         // cannot claim a numerical (parity) win — they must kill the Revenger first. Mirrors how TOR's
         // own impostor/jackal win checks block on the rival killer team still being alive.
-        private static bool RevengerAlive() =>
-            active && revenger != null && revenger.Data != null && !revenger.Data.IsDead;
+        private static bool RevengerAlive() => active && !IsGone(revenger);
+
+        // Dead OR gone: a player who left keeps IsDead == false (audit 04.10.: a Revenger who left the
+        // lobby held the impostors' and the Jackal's parity win back for good).
+        private static bool IsGone(PlayerControl p) =>
+            p == null || p.Data == null || p.Data.IsDead || p.Data.Disconnected;
 
         // The block only makes sense against a RIVAL team. A Revenger who is himself an Impostor (or
         // in the Jackal team) would otherwise block his own team's kill win; and when a teammate killed
@@ -367,12 +387,13 @@ namespace UsefulTORStuff {
             p != null && (p == Lovers.lover1 || p == Lovers.lover2);
 
         // A player who already has their OWN kill button. Such a Revenger keeps that single button
-        // instead of getting a second (Revenger) button — their normal kill on the Lover's killer
+        // instead of getting a second (Revenger) button: their normal kill on the Lover's killer
         // triggers the win. Uses TOR's canonical Helpers.isKiller (Impostor + neutral killers like
-        // Jackal/Sidekick/Thief) plus the Sheriff (a crew killer that isKiller does NOT count).
+        // Jackal/Sidekick/Thief). NOT the Sheriff any more (User 04.10.): his shot on a crew killer is
+        // a misfire that kills him, so he could not avenge a crew killer at all; he gets the Revenger
+        // button like everyone else and keeps his own shot beside it.
         private static bool IsKiller(PlayerControl p) =>
-            p != null && p.Data != null && (Helpers.isKiller(p)
-                || p == Sheriff.sheriff || p == Sheriff.formerSheriff);
+            p != null && p.Data != null && Helpers.isKiller(p);
 
         // IsKiller of the Revenger, taken ONCE before he awakens (Opus review 2026-10-02). Asked later it
         // is wrong: from the awakening on, RoleInfoPatch below hands out only the Revenger's own RoleInfo,
@@ -385,6 +406,36 @@ namespace UsefulTORStuff {
             if (p == Lovers.lover1) return Lovers.lover2;
             if (p == Lovers.lover2) return Lovers.lover1;
             return null;
+        }
+
+        // The dead Lover's messages do not reach the living partner while the revenge runs (User
+        // 2026-10-04, Fable review of audit 10.3): with TOR's Lover chat the dead one could simply
+        // name the killer, which the Revenger is never meant to learn. Only that one direction is
+        // dark; the ghost chat of the dead Lover works as usual, and he is told once why his partner
+        // does not answer. Display only (each client filters what it shows), nothing is sent.
+        [HarmonyPatch(typeof(ChatController), nameof(ChatController.AddChat))]
+        static class DeadLoverChatPatch {
+            [HarmonyPriority(Priority.First)]
+            public static bool Prefix([HarmonyArgument(0)] PlayerControl sourcePlayer) {
+                try {
+                    if (!pendingArmed && revenger == null) return true;
+                    var lp = PlayerControl.LocalPlayer;
+                    if (lp == null || lp.Data == null || sourcePlayer == null || sourcePlayer.Data == null) return true;
+                    var partner = revenger ?? pendingLover;
+                    // living partner's screen: drop the dead Lover's lines
+                    if (lp == partner && !lp.Data.IsDead && sourcePlayer != lp
+                        && sourcePlayer.Data.IsDead && PartnerOf(lp) == sourcePlayer) return false;
+                    // the dead Lover's own line: tell him once
+                    if (sourcePlayer == lp && lp.Data.IsDead && partner != null && PartnerOf(partner) == lp
+                        && !deadChatHintShown) {
+                        deadChatHintShown = true;
+                        var hud = HudManager.Instance;
+                        if (hud != null && hud.Notifier != null)
+                            hud.Notifier.AddDisconnectMessage(UTSLocalization.Tr("uts.loverrevenger.dead_chat_hint"));
+                    }
+                } catch { }
+                return true;
+            }
         }
 
         private static void PostChat(PlayerControl source, string text) {
@@ -561,15 +612,24 @@ namespace UsefulTORStuff {
                 revengerMode = mode;
                 killerId = revKillerId;
                 if (lover == PlayerControl.LocalPlayer) {
-                    PostChat(lover, UTSLocalization.Tr(Pick(mode == ModeBlindRage ? AwakenRage : AwakenTargeted)));
+                    string awaken = UTSLocalization.Tr(Pick(mode == ModeBlindRage ? AwakenRage : AwakenTargeted));
+                    PostChat(lover, awaken);
                     // Detective-style colour hint (dark/light only), shown once at the awakening: the
                     // Revenger never learns WHO the killer is, this narrows it to a colour half. Local
                     // chat only - ApplyDecision runs on every client but PostChat is gated to the
                     // Revenger themselves above.
+                    // The colour word comes from TOR's translated keys (audit 04.10.: the raw English
+                    // "lighter"/"darker" sat inside every translated sentence).
                     var revKiller = Helpers.playerById(revKillerId);
-                    if (revKiller != null && revKiller.Data != null)
-                        PostChat(lover, UTSLocalization.Tr("uts.loverrevenger.color_hint",
-                            Helpers.isLighterColor(revKiller) ? "lighter" : "darker"));
+                    string hint = null;
+                    if (revKiller != null && revKiller.Data != null) {
+                        hint = UTSLocalization.Tr("uts.loverrevenger.color_hint",
+                            UTSLocalization.Tr(Helpers.isLighterColor(revKiller) ? "tor.ui.color.lighter" : "tor.ui.color.darker"));
+                        PostChat(lover, hint);
+                    }
+                    // The round chat can be closed for the living right now (no Lover chat): the
+                    // awakening and the hint also show on screen (audit 04.10.).
+                    try { Helpers.showFlash(Lovers.color, 2.5f, hint != null ? awaken + "\n" + hint : awaken); } catch { }
                     UTSAssets.PlayRevenger(); // dark awakening sting, Revenger-only
                     // A non-killer Revenger awakens NOW (mid-game). Guarantee the kill button exists at
                     // this exact moment - the HudManager.Start creation can be long gone by here, which is
@@ -590,12 +650,15 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Sent once per wrong Blind-Rage kill, so every client counts the same number.
         private static void ApplyRageArmed(byte revengerId) {
             rageKillDone = true;
+            rageKills++;
         }
 
         private static void ApplyRageDeath(byte revengerId, byte msgIndex) {
             rageKillDone = false;
+            rageKills = 0;
             var rev = Helpers.playerById(revengerId);
             if (rev == null) return;
             MeetingEndDeath(rev);
@@ -732,8 +795,10 @@ namespace UsefulTORStuff {
                 pendingLover = null;
                 pendingKillerId = byte.MaxValue;
                 rageKillDone = false;
+                rageKills = 0;
                 triggerRevengerWin = false;
                 griefChatShown = false;
+                deadChatHintShown = false;
                 currentTarget = null;
                 // No gFlipArmed/gVictim/gPartner/gKiller reset here anymore: GuesserShootSuppressPatch's
                 // flip bookkeeping now travels through Harmony's __state (see the patch below), so it
@@ -792,7 +857,7 @@ namespace UsefulTORStuff {
                     if (killer == null || victim == null || killer == victim) return; // real kill only
                     if (!IsLover(victim) || !Lovers.bothDie) return;
                     PlayerControl partner = PartnerOf(victim);
-                    if (partner == null || partner.Data == null || partner.Data.IsDead) return; // partner must survive
+                    if (IsGone(partner)) return; // partner must survive (and still be here)
                     if (pendingArmed || revenger != null) return; // already in a delay/revenger flow
 
                     // Skip TOR's suicide+override block (both guarded by Lovers.bothDie).
@@ -855,7 +920,7 @@ namespace UsefulTORStuff {
                     var victim = Helpers.playerById(dyingTargetId);
                     if (victim == null || !IsLover(victim)) return;
                     var partner = PartnerOf(victim);
-                    if (partner == null || partner.Data == null || partner.Data.IsDead) return; // partner must survive
+                    if (IsGone(partner)) return; // partner must survive (and still be here)
                     if (partner.PlayerId == dyingTargetId) return;
                     if (pendingArmed || revenger != null) return; // already in a delay/revenger flow
 
@@ -950,10 +1015,11 @@ namespace UsefulTORStuff {
                     }
                 }
 
-                // 2) Blind-Rage Revenger who used their kill dies now (with a rage message).
+                // 2) Blind-Rage Revenger who killed a wrong target dies now (with a rage message).
                 if (rageKillDone) {
                     if (revenger == null || revenger.Data == null || revenger.Data.IsDead) {
                         rageKillDone = false;
+                        rageKills = 0;
                     } else {
                         SendRageDeath(revenger.PlayerId, (byte)rnd.Next(RageDeathTexts.Length));
                     }
@@ -962,8 +1028,7 @@ namespace UsefulTORStuff {
                 // 3) Revenge denied: the Lover's killer died before the Revenger could strike (voted out
                 //    or killed by someone else). With nothing left to avenge, the Revenger dies at this
                 //    meeting's end. Skipped in the very meeting they awaken, and only once they exist.
-                if (!justAwakened && !rageKillDone && killerId != byte.MaxValue
-                    && revenger != null && revenger.Data != null && !revenger.Data.IsDead) {
+                if (!justAwakened && !rageKillDone && killerId != byte.MaxValue && !IsGone(revenger)) {
                     var killer = Helpers.playerById(killerId);
                     if (killer == null || killer.Data == null || killer.Data.IsDead || killer.Data.Disconnected)
                         SendDeniedDeath(revenger.PlayerId, (byte)rnd.Next(RevengeDeniedTexts.Length));
@@ -1024,8 +1089,9 @@ namespace UsefulTORStuff {
                 revengerButton = new CustomButton(
                     OnRevengerKill,
                     LocalUsesRevengerButton,
-                    // Blind Rage: one kill, then the Revenger only waits for the meeting that ends him.
-                    () => !rageKillDone && currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
+                    // Blind Rage: once the allowed wrong kills (option 1298) are used up, the Revenger
+                    // only waits for the meeting that ends him.
+                    () => !RageLocked() && currentTarget != null && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.CanMove,
                     () => { if (revengerButton != null) revengerButton.Timer = revengerButton.MaxTimer; },
                     UTSAssets.RevengerIcon ?? hud.KillButton.graphic.sprite,
                     CustomButton.ButtonPositions.upperRowRight,
@@ -1111,7 +1177,7 @@ namespace UsefulTORStuff {
 
         private static void OnRevengerKill() {
             try {
-                if (!LocalIsRevenger() || currentTarget == null || rageKillDone) return;
+                if (!LocalIsRevenger() || currentTarget == null || RageLocked()) return;
                 var result = Helpers.checkMuderAttempt(revenger, currentTarget);
                 if (result != MurderAttemptResult.PerformKill) return;
 
@@ -1148,6 +1214,21 @@ namespace UsefulTORStuff {
         // ====================================================================
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.MurderPlayer))]
         static class KillerRevengerWinPatch {
+            // The HOST flags the win before the kill runs (audit 04.10.): the Revenger's own SendWin
+            // below only arrives after the kill, and a kill that removes the last evil player could
+            // end the round as a normal win first. Every client knows revenger/killerId/revengerOwnKill.
+            [HarmonyPriority(Priority.First)]
+            public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
+                try {
+                    if (!active || revengerWon || revenger == null || !revengerOwnKill) return;
+                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
+                    if (__instance != revenger || target == null || target.PlayerId != killerId) return;
+                    SendWin(revenger.PlayerId);
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] host revenger win failed: {e}");
+                }
+            }
+
             public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
                 try {
                     if (!active || revengerWon || revenger == null) return;
@@ -1195,7 +1276,15 @@ namespace UsefulTORStuff {
             public static void Postfix(PlayerControl p, ref List<RoleInfo> __result) {
                 try {
                     if (!active || revenger == null || p == null || p != revenger) return;
-                    __result = new List<RoleInfo> { RevengerInfo() };
+                    // At the game's end the summary keeps what he was underneath (audit 04.10.: only
+                    // "Revenger" was listed); the Lover entry itself is what Revenger replaces.
+                    bool ended = AmongUsClient.Instance != null
+                                 && AmongUsClient.Instance.GameState == InnerNet.InnerNetClient.GameStates.Ended;
+                    var list = new List<RoleInfo> { RevengerInfo() };
+                    if (ended && __result != null)
+                        foreach (var r in __result)
+                            if (r != null && r != RoleInfo.lover && !list.Contains(r)) list.Add(r);
+                    __result = list;
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] RoleInfo postfix failed: {e}");
                 }

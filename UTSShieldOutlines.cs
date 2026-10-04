@@ -113,7 +113,10 @@ namespace UsefulTORStuff {
                     || Armored.armored != null;
                 if (!anyShield && painted.Count == 0) return;
 
-                bool hidden = Camouflager.camouflageTimer > 0f || Helpers.MushroomSabotageActive();
+                // The Trickster's avatar mixup swaps every look too: an outline would follow the REAL
+                // player under a borrowed body (audit 04.10.).
+                bool mixup = TricksterAvatarSabotage.IsMixupActive;
+                bool hidden = Camouflager.camouflageTimer > 0f || Helpers.MushroomSabotageActive() || mixup;
 
                 if (outlineId < 0) {
                     outlineId = Shader.PropertyToID("_Outline");
@@ -124,7 +127,18 @@ namespace UsefulTORStuff {
                     if (p == null) continue;
                     byte id = p.PlayerId;
 
-                    if (hidden) { painted.Remove(id); continue; }   // TOR wipes to 0 itself
+                    if (hidden) {
+                        painted.Remove(id);
+                        // TOR wipes its own outlines under camouflage, but not for the mixup: there
+                        // every outline (TOR's Medic and first-kill shields too) goes off here.
+                        if (mixup) {
+                            try {
+                                var m = p.cosmetics?.currentBodySprite?.BodySprite?.material;
+                                if (m != null) m.SetFloat(outlineId, 0f);
+                            } catch { }
+                        }
+                        continue;
+                    }
 
                     // Shields first, renderer second: the cosmetics/material chain is four interop
                     // reads per player, so it is only walked for players that actually need a

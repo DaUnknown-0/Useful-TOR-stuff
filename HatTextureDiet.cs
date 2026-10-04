@@ -94,6 +94,7 @@ namespace UsefulTORStuff {
                     try { before = Profiler.GetRuntimeMemorySizeLong(texture); } catch { }
 
                     if (compress != null && compress.Value) {
+                        long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                         try {
                             texture.Compress(true);
                             compressed++;
@@ -104,6 +105,7 @@ namespace UsefulTORStuff {
                                     $"[HatTextureDiet] Compress failed for {Path.GetFileName(path)} " +
                                     $"({texture.width}x{texture.height}): {e.GetType().Name}: {e.Message} - kept uncompressed.");
                         }
+                        compressTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
                     }
                     // The mip chain was built by LoadImage (and rebuilt by Compress); nothing to
                     // update. What this call is for is the second argument.
@@ -134,11 +136,16 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Main-thread time spent inside Compress(true), so the memory win can be weighed against the
+        // loading time it costs (audit 2026-10-04).
+        private static long compressTicks;
+
         public static void LogTotals() {
             if (loaded == 0) return;
+            long ms = compressTicks * 1000 / System.Diagnostics.Stopwatch.Frequency;
             UsefulTORStuffPlugin.Logger?.LogInfo(
                 $"[HatTextureDiet] {loaded} hat texture(s): {bytesBefore >> 20} MB -> about {bytesAfter >> 20} MB on the GPU, no CPU copy " +
-                $"({compressed} compressed, {compressFailed} kept uncompressed).");
+                $"({compressed} compressed, {compressFailed} kept uncompressed; compression took {ms} ms on the main thread).");
         }
     }
 }

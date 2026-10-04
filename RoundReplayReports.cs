@@ -84,11 +84,17 @@ namespace UsefulTORStuff {
 
         // TOR and UC mark the current target with an outline on its body: the outlined player nearest
         // to the owner is the one the click was aimed at.
+        // The vanilla kill button's target glows too, yet a click on an ability button is never aimed
+        // at it: an impostor setting a trap beside his kill target was logged as "uses TRAP on X"
+        // (audit 04.10.). That outline is skipped.
         private static byte OutlinedTarget(PlayerControl lp) {
             byte best = 255;
             float bestD = float.MaxValue;
+            PlayerControl killTarget = null;
+            try { killTarget = HudManager.Instance?.KillButton?.currentTarget; } catch { }
             foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
                 if (p == null || p == lp || p.Data == null || p.Data.IsDead) continue;
+                if (killTarget != null && p == killTarget) continue;
                 try {
                     var body = p.cosmetics?.currentBodySprite?.BodySprite;
                     if (body == null || body.material == null || body.material.GetFloat("_Outline") < 0.5f) continue;

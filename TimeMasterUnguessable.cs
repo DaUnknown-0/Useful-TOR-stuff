@@ -3,10 +3,11 @@
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
 /*
- * TimeMasterUnguessable - new Time Master option "Unguessable After Shield Saved A Kill".
+ * TimeMasterUnguessable - new Time Master option "Unguessable In The Meeting After A Saved Kill".
  *
- * TOR's Time Master is normally guessable. With this option ON the Time Master becomes unguessable
- * in meetings — but ONLY once his Time Shield has actually prevented a kill (and rewound time).
+ * TOR's Time Master is normally guessable. With this option ON the Time Master is unguessable in the
+ * ONE meeting that follows a kill his Time Shield actually prevented (and rewound time); the flag is
+ * cleared when that meeting closes (renamed 2026-10-04, the old name promised it for good).
  *
  * "Shield prevented a kill" is detected via RPCProcedure.timeMasterRewindTime: it is only ever
  * called from Helpers.checkMuderAttempt when a kill on the shielded Time Master is suppressed (and
@@ -41,7 +42,7 @@ namespace UsefulTORStuff {
         public static void CreateOptions() {
             try {
                 Option = CustomOption.Create(
-                    1260, Types.Crewmate, "Time Master Unguessable After Shield Saved A Kill",
+                    1260, Types.Crewmate, "Time Master Unguessable In The Meeting After A Saved Kill",
                     false, CustomOptionHolder.timeMasterSpawnRate);
                 UTSLocalization.BindOptionTitle(Option, "uts.timemasterunguessable.option_name");
 

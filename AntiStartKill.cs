@@ -79,7 +79,7 @@
  *  - Sheriff misfire counts as a kill like any other: a spawn-protected exchange suppresses it,
  *    and TOR's button treats SuppressKill as a full no-op (no cooldown, Buttons.cs:396).
  *
- * Options 1390-1391, module byte 241 on UTSRpc.CallId = 240 (new feature - channel only, no
+ * Options 1390, 1392-1394 (1391 removed 2026-10-04), module byte 241 on UTSRpc.CallId = 240 (new feature - channel only, no
  * legacy dual-send). See ID-Registry.md.
  */
 
@@ -98,7 +98,6 @@ namespace UsefulTORStuff {
 
         // ---- Options (1390-1394) ----
         public static CustomOption Enabled;
-        public static CustomOption NotifyKiller;
         // Global cap on top of the per-player leave rule (the spawn-camper trade-off): protection
         // can ALSO end for everyone after a time limit or after N fixed sabotages. A meeting ends
         // it unconditionally either way (the design rule, independent of this mode).
@@ -169,8 +168,6 @@ namespace UsefulTORStuff {
             try {
                 Enabled = CustomOption.Create(1390, Types.General,
                     "Anti Start Kill (Spawn Is A Safe Zone)", false, null, true);
-                NotifyKiller = CustomOption.Create(1391, Types.General,
-                    "Tell The Killer Why The Kill Failed", true, Enabled);
                 EndMode = CustomOption.Create(1392, Types.General,
                     "Protection Also Ends After", new string[] { "Nothing Extra", "A Time Limit", "Sabotage Fixes" }, Enabled);
                 EndSeconds = CustomOption.Create(1393, Types.General,
@@ -178,7 +175,6 @@ namespace UsefulTORStuff {
                 EndFixes = CustomOption.Create(1394, Types.General,
                     "Fixed Sabotages Until Protection Ends", 1f, 1f, 5f, 1f, EndMode);
                 UTSLocalization.BindOptionTitle(Enabled, "uts.antistartkill.option_name");
-                UTSLocalization.BindOptionTitle(NotifyKiller, "uts.antistartkill.option_notify");
                 UTSLocalization.BindOptionTitle(EndMode, "uts.antistartkill.option_endmode");
                 UTSLocalization.BindOptionTitle(EndSeconds, "uts.antistartkill.option_endseconds");
                 UTSLocalization.BindOptionTitle(EndFixes, "uts.antistartkill.option_endfixes");
@@ -651,6 +647,9 @@ namespace UsefulTORStuff {
                                        ref MurderAttemptResult __result) {
                 try {
                     if (protectedIds.Count == 0 || killer == null || target == null) return;
+                    // The Bomber's button probes checkMuderAttempt(bomber, bomber): a self-check, not
+                    // a kill (audit 04.10.).
+                    if (killer.PlayerId == target.PlayerId) return;
                     if (!protectedIds.Contains(killer.PlayerId)
                         && !protectedIds.Contains(target.PlayerId)) return;
 
@@ -672,7 +671,6 @@ namespace UsefulTORStuff {
                     // killer's log then proves the kill never reached a patched client (old build).
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         $"[AntiStartKill] blocked a role kill on {target.Data?.PlayerName} (spawn protection).");
-                    NotifyLocal(killer, "uts.antistartkill.kill_blocked");
                 } catch { }
             }
         }
@@ -694,28 +692,20 @@ namespace UsefulTORStuff {
                         && !protectedIds.Contains(targetId)) return true;
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         "[AntiStartKill] blocked a sidekick creation (spawn protection).");
-                    NotifyLocal(jackal, "uts.antistartkill.sidekick_blocked");
                     return false;
                 } catch { return true; }
             }
         }
 
-        // Feedback for the blocked actor, on his own client only. Without it the button just eats
-        // the cooldown and the round looks broken. Throttled: a Vampire hammering his bite button
-        // (its couldUse stays true) must not flood his own chat.
-        private static float lastNotifyAt = -10f;
+        // The "tell the killer why" chat line (option 1391) is gone (User 2026-10-04): since the
+        // target lock a protected player is never even a target, so the line only fired on side
+        // paths, and a self-probe (the Bomber) told a protected player his own kill was blocked.
 
-        private static void NotifyLocal(PlayerControl actor, string key) {
-            try {
-                if (NotifyKiller == null || !UTSGate.Bool(NotifyKiller)) return;
-                if (actor == null || PlayerControl.LocalPlayer == null
-                    || actor.PlayerId != PlayerControl.LocalPlayer.PlayerId) return;
-                if (Time.realtimeSinceStartup - lastNotifyAt < 1.5f) return;
-                lastNotifyAt = Time.realtimeSinceStartup;
-                var hud = HudManager.Instance;
-                if (hud != null && hud.Chat != null)
-                    hud.Chat.AddChat(PlayerControl.LocalPlayer, UTSLocalization.Tr(key));
-            } catch { }
+        /// The chase gamemodes are built on early kills and have no meetings to end a shield: no
+        /// protection of any kind there (TOR's own first-kill shield stands down too). Shared by the
+        /// Early Death and Newcomer shields (audit 04.10.).
+        internal static bool ShieldFreeMode() {
+            try { return HideNSeek.isHideNSeekGM || IsPropHuntGM(); } catch { return false; }
         }
 
         // ====================================================================

@@ -42,6 +42,7 @@ namespace UsefulTORStuff {
         private const string P = "[SubTest]";
         private const float FloorCutoff = -6.19f;
         private static ConfigEntry<bool> Enabled;
+        private static bool _ownFreeplay;   // set only by StartFreeplay (the autostart)
         private static bool _autoFired, _runFired;
         private static int _pass, _fail, _shot;
 
@@ -102,6 +103,7 @@ namespace UsefulTORStuff {
                 for (var t = popover.transform; t != null; t = t.parent) if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
                 popover.Show();
                 popover.PlayMap((MapNames)6);
+                _ownFreeplay = true;
                 Log("INFO", "autostart", $"freeplay started on map 6, Submerged {SubmergedCompatibility.Version}");
             } catch (Exception e) { Log("FAIL", "autostart", e.ToString()); }
         }
@@ -109,7 +111,9 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         private static class RunPatch {
             private static void Postfix(HudManager __instance) {
-                if (_runFired || Enabled == null || !Enabled.Value) return;
+                // Only the freeplay this test started itself (audit 04.10.: any freeplay the player
+                // opened got its role, position and life taken over).
+                if (_runFired || !_ownFreeplay || Enabled == null || !Enabled.Value) return;
                 var ac = AmongUsClient.Instance;
                 if (ac == null || ac.NetworkMode != NetworkModes.FreePlay || ShipStatus.Instance == null || PlayerControl.LocalPlayer == null) return;
                 _runFired = true;
@@ -564,6 +568,8 @@ namespace UsefulTORStuff {
             Log(Me.Data.IsDead ? "PASS" : "FAIL", "o2death", $"local player dead {Me.Data.IsDead}, {O2State()}");
 
             Log("INFO", "done", $"{_pass} PASS, {_fail} FAIL");
+            // One run per switch-on: the autotest leaves no armed switch behind (audit 04.10.).
+            try { if (Enabled != null) Enabled.Value = false; } catch { }
         }
 
         // ---------------------------------------------------------------- step bodies (no yields)

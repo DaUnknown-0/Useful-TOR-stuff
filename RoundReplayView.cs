@@ -509,6 +509,20 @@ namespace UsefulTORStuff {
             if (none.Count > 0) sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.none_voted", none.Count) + Voters(none));
             if (votes.Count == 0 && skips.Count == 0 && none.Count == 0) sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.no_votes"));
             if (anon) sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.anonymous"));
+            // The count above is the raw ballot; TOR weighs it (audit 04.10.). Named, so the result
+            // line below can be followed: the Mayor's double vote, the Swapper's swap, the Tiebreaker.
+            try {
+                var mayor = TheOtherRoles.TheOtherRoles.Mayor.mayor;
+                if (mayor != null && TheOtherRoles.TheOtherRoles.Mayor.voteTwice
+                    && votes.Values.Any(l => l.Contains(mayor.PlayerId)))
+                    sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.mayor_x2", WhoId(mayor.PlayerId)));
+                var sw = TheOtherRoles.Swapper.swapper;
+                byte s1 = TheOtherRoles.Swapper.playerId1, s2 = TheOtherRoles.Swapper.playerId2;
+                if (sw != null && sw.Data != null && !sw.Data.IsDead && s1 != byte.MaxValue && s2 != byte.MaxValue)
+                    sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.swapped", WhoId(s1), WhoId(s2)));
+                if (TheOtherRoles.Tiebreaker.isTiebreak)
+                    sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.tiebreak"));
+            } catch { }
             sb.AppendLine();
             sb.Append(exiled != null ? UTSLocalization.Tr("uts.replay.mr.ejected", WhoId(exiled.PlayerId))
                     : tie ? UTSLocalization.Tr("uts.replay.mr.tie") : UTSLocalization.Tr("uts.replay.mr.nobody"));

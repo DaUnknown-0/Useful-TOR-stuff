@@ -49,6 +49,17 @@ namespace UsefulTORStuff {
         // Mod Manager abgefragt, um die gesammelte Update-Ankündigung erst nach allen Checks zu zeigen.
         private bool _checkCompleted;
 
+        // The folder the running DLL was loaded from (audit 2026-10-04): BepInEx loads plugins from
+        // sub-folders too (mod-manager layouts), and writing the update into plugins\ itself left a
+        // second copy with the same GUID beside the old one. Falls back to plugins\.
+        private static string PluginDir() {
+            try {
+                var dir = Path.GetDirectoryName(typeof(UsefulTORStuffUpdater).Assembly.Location);
+                if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir)) return dir;
+            } catch { }
+            return Paths.PluginPath;
+        }
+
         public void Awake() {
             if (Instance) Destroy(Instance);
             Instance = this;
@@ -57,7 +68,7 @@ namespace UsefulTORStuff {
             // aborts the component's initialisation, so the updater silently did not exist for the
             // rest of the session. Cleaning up a leftover file is not worth that.
             try {
-                foreach (var file in Directory.GetFiles(Paths.PluginPath, PluginAssetName + ".old"))
+                foreach (var file in Directory.GetFiles(PluginDir(), PluginAssetName + ".old"))
                     try { File.Delete(file); } catch { }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[UTS] Could not clean up old plugin files: {e.Message}");
@@ -206,7 +217,7 @@ namespace UsefulTORStuff {
                 popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.download_complete");
             }
 
-            var filePath = Path.Combine(Paths.PluginPath, asset.Name);
+            var filePath = Path.Combine(PluginDir(), asset.Name);
 
             // Move the working DLL aside before writing the download, so a write failure below can
             // roll back to it instead of leaving the plugin folder without a usable Useful TOR Stuff
@@ -391,8 +402,12 @@ namespace UsefulTORStuff {
 
             if (names.Count == 0) yield break;
 
-            string announcement = UTSLocalization.Tr("uts.updater.consolidated_announcement",
-                names.Count == 1 ? "" : "s", string.Join("\n", names));
+            // A singular and a plural sentence where the language has them (audit 04.10.: the English
+            // plural "s" was put into every language's sentence); the old suffix form otherwise.
+            string key = names.Count == 1 ? "uts.updater.consolidated_announcement_one" : "uts.updater.consolidated_announcement_many";
+            string announcement = UTSLocalization.ActiveHas(key)
+                ? UTSLocalization.Tr(key, string.Join("\n", names))
+                : UTSLocalization.Tr("uts.updater.consolidated_announcement", names.Count == 1 ? "" : "s", string.Join("\n", names));
 
             yield return this.StartCoroutine(CoShowAnnouncement(
                 announcement, shortTitle: UTSLocalization.Tr("uts.updater.consolidated_short_title"),
@@ -437,7 +452,7 @@ namespace UsefulTORStuff {
             Announcement optimizedAnnouncement = new() {
                 Id = "usefulTORStuffAnnouncement",
                 Language = 0,
-                Number = 6972,
+                Number = 6973,                   // own number (Nightfall has 6972, audit 04.10.)
                 Title = title == "" ? UTSLocalization.Tr("uts.updater.announcement_default_title") : title,
                 ShortTitle = shortTitle,
                 SubTitle = "",

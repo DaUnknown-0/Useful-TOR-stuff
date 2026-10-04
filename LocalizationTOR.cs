@@ -219,6 +219,9 @@ namespace UsefulTORStuff {
         private static class DumpPatch {
             public static void Postfix() {
                 if (dumped || UTSLocalization.DumpVanillaStrings?.Value != true) return;
+                // With a Tier-B language active, GetString answers through our own postfix: the dump
+                // would store translated text under the vanilla language's name.
+                if (UTSLocalization.TierBActive) return;
                 dumped = true;
                 try { DumpVanilla(); }
                 catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[Loc] vanilla dump failed: {e.Message}"); }

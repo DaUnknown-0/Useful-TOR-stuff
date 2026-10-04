@@ -266,8 +266,10 @@ function numStepper(o, cb) {
   val.textContent = fmt(o.value);
   const step = o.step || 1;
   const clamp = v => Math.min(o.max, Math.max(o.min, Math.round(v/step)*step));
-  dec.onclick = () => cb(clamp(o.value - step));
-  inc.onclick = () => cb(clamp(o.value + step));
+  // A value outside the range (set in the game) is only clamped when the step goes back into it:
+  // "+" on a value above the maximum must not lower it.
+  dec.onclick = () => cb(o.value > o.max ? Math.max(o.max, o.value - step) : clamp(o.value - step));
+  inc.onclick = () => cb(o.value < o.min ? Math.min(o.min, o.value + step) : (o.value >= o.max ? o.value : clamp(o.value + step)));
   wrap.appendChild(dec); wrap.appendChild(val); wrap.appendChild(inc);
   return wrap;
 }

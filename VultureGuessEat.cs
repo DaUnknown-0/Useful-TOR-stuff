@@ -18,15 +18,17 @@
  * modes (where only the Guesser roles guess) this stays a no-op.
  *
  * The win check runs host-authoritatively (CheckEndCriteriaPatch.CheckAndEndGameForVultureWin via
- * Vulture.triggerVultureWin), so — like SheriffParityWin — the feature ALWAYS applies from the
- * host regardless of who has the mod; it is NOT gated on "everyone has the mod".
+ * Vulture.triggerVultureWin), so the WIN applies from the host regardless of who has the mod. The
+ * COUNTER is not: only clients with this mod count the guess, so a Vulture without it sees a wrong
+ * "(N left)" and seems to win out of nowhere; the host's lobby line names the option then (audit
+ * 04.10.). Only meaningful in the Guesser game mode, the option name says so.
  *
  * guesserShoot is internal/static in TOR's RPCProcedure, so it is patched via reflection + Harmony
  * (like the Bloody patches in UsefulTORStuffPlugin and SheriffParityWin's win-check patches).
  *
  * A child sub-option "Play Eat Sound On Counted Guess" (only selectable while the parent is ON)
- * plays TOR's existing vultureEat sound on a counted guess, mirroring the eat-button. The postfix
- * runs on every client, so the sound is heard by everyone in the meeting (intended).
+ * plays TOR's existing vultureEat sound on a counted guess, on the Vulture's own client only, like
+ * the eat button (User 04.10.: heard by everyone it named the anonymous shooter).
  */
 
 using System;
@@ -48,7 +50,7 @@ namespace UsefulTORStuff {
         public static void CreateOptions() {
             try {
                 Option = CustomOption.Create(
-                    1202, Types.Neutral, "Vulture Counts Guessed Players As Eaten",
+                    1202, Types.Neutral, "Vulture Counts Guessed Players As Eaten (Guesser Mode Only)",
                     false, CustomOptionHolder.vultureSpawnRate);
                 UTSLocalization.BindOptionTitle(Option, "uts.vultureguesseat.option_name");
 
@@ -132,7 +134,8 @@ namespace UsefulTORStuff {
                 // the eat-button (Buttons.cs:1465). The postfix runs on every client, so an unconditional
                 // play means everyone in the meeting hears it (intended). Reuses the bundled "vultureEat"
                 // clip — SoundEffectsManager is public static in TOR's assembly.
-                if (SoundOption != null && UTSGate.Bool(SoundOption)) {
+                if (SoundOption != null && UTSGate.Bool(SoundOption)
+                    && PlayerControl.LocalPlayer != null && PlayerControl.LocalPlayer.PlayerId == vulture.PlayerId) {
                     SoundEffectsManager.play("vultureEat");
                 }
 

@@ -55,7 +55,8 @@
  *
  *  A8) resetNightVision throws when nightVisionOverlays is already null (UsablesPatch.cs:678) -
  *      and it IS nulled by resetVariables and by resetNightVision itself, while the Destroy hooks
- *      call it unconditionally. Prefix: swap a null list for an empty one, then let TOR run.
+ *      call it unconditionally. REMOVED 2026-10-04: TorCrashGuards M-36 rebuilds the method and
+ *      handles the null list; this second prefix could leave an empty list behind instead.
  *
  *  A9, client half) Role draft softlock when the currently picking player disconnects. The
  *      auto-pick only runs on the picker's own client (RoleDraft.cs:84), so their disconnect
@@ -350,16 +351,22 @@ namespace UsefulTORStuff {
                                     handled = true;
                                 }
                             }
-                        } else if (lower.StartsWith("/gm")) {
+                        } else if (lower == "/gm" || lower.StartsWith("/gm ")) {
                             // A7: "/gm" alone is 3 characters - TOR's unconditional Substring(4) threw.
-                            string gm = text.Length >= 4 ? text.Substring(4).ToLower() : "";
-                            CustomGamemodes gameMode = CustomGamemodes.Classic;
+                            // Only "/gm" itself or "/gm <mode>" (audit 04.10.: any message starting with
+                            // "/gm" was taken, and anything unknown silently became Classic).
+                            string gm = text.Length >= 4 ? text.Substring(4).Trim().ToLower() : "";
+                            CustomGamemodes gameMode;
                             if (gm.StartsWith("prop") || gm.StartsWith("ph")) gameMode = CustomGamemodes.PropHunt;
                             else if (gm.StartsWith("guess") || gm.StartsWith("gm")) gameMode = CustomGamemodes.Guesser;
                             else if (gm.StartsWith("hide") || gm.StartsWith("hn")) gameMode = CustomGamemodes.HideNSeek;
+                            else if (gm.StartsWith("classic") || gm.StartsWith("cl")) gameMode = CustomGamemodes.Classic;
+                            else gameMode = (CustomGamemodes)255;   // unknown: usage line below, nothing sent
 
-                            if (shareGamemodeRpcId == null) return true; // enum changed - let TOR handle everything
-                            if (AmongUsClient.Instance.AmHost) {
+                            if ((int)gameMode == 255) {
+                                chat.AddChat(PlayerControl.LocalPlayer, "Usage: /gm classic | guesser | hidenseek | prophunt");
+                            } else if (shareGamemodeRpcId == null) return true; // enum changed - let TOR handle everything
+                            else if (AmongUsClient.Instance.AmHost) {
                                 // B4: apply locally FIRST and put the NEW mode on the wire. TOR wrote
                                 // the stale TORMapOptions.gameMode byte into the RPC and then called
                                 // shareGamemode twice locally.
@@ -368,6 +375,7 @@ namespace UsefulTORStuff {
                                     PlayerControl.LocalPlayer.NetId, shareGamemodeRpcId.Value, Hazel.SendOption.Reliable, -1);
                                 writer.Write((byte)gameMode);
                                 AmongUsClient.Instance.FinishRpcImmediately(writer);
+                                chat.AddChat(PlayerControl.LocalPlayer, $"Gamemode set to {gameMode}.");
                             } else {
                                 chat.AddChat(PlayerControl.LocalPlayer, "Nice try, but you have to be the host to use this feature");
                             }
@@ -429,30 +437,9 @@ namespace UsefulTORStuff {
             }
         }
 
-        // ── A8) resetNightVision must tolerate an already-null overlay list ────────────────────
-        [HarmonyPatch]
-        static class ResetNightVisionGuardPatch {
-            private static readonly Type surveillanceType = AccessTools.TypeByName("TheOtherRoles.Patches.SurveillanceMinigamePatch");
-            private static readonly FieldInfo overlaysField = AccessTools.Field(surveillanceType, "nightVisionOverlays");
-
-            [HarmonyTargetMethod]
-            static MethodBase TargetMethod() {
-                return surveillanceType == null ? null : AccessTools.Method(surveillanceType, "resetNightVision");
-            }
-
-            // The original iterates the list before its own null-out; resetVariables and a previous
-            // resetNightVision both leave it null, and the minigame Destroy hooks call in regardless.
-            // An empty list makes the iteration a no-op and leaves TOR's own logic fully intact.
-            [HarmonyPrefix]
-            public static void Prefix() {
-                try {
-                    if (overlaysField != null && overlaysField.GetValue(null) == null)
-                        overlaysField.SetValue(null, new List<GameObject>());
-                } catch (Exception e) {
-                    ThrottledLog("A8", $"night-vision list guard failed: {e.GetType().Name}: {e.Message}");
-                }
-            }
-        }
+        // ── A8) removed 2026-10-04: TorCrashGuards M-36 replaces resetNightVision and handles the
+        //    null list itself. A8 as a second prefix could run after M-36 and leave an EMPTY list,
+        //    which TOR's nightVisionUpdate/enforceNightVision read as "overlays exist" (audit 04.10.).
 
         // ── A9) the client half of the draft softlock: purge unresolvable pickers ──────────────
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]

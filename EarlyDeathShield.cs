@@ -64,7 +64,6 @@ namespace UsefulTORStuff {
 
         // ---- Options (1383-1388) ----
         public static CustomOption Enabled;
-        public static CustomOption NotifyKiller;
         public static CustomOption MeetingProtection;
         public static CustomOption Threshold;
         public static CustomOption MinRounds;
@@ -110,8 +109,6 @@ namespace UsefulTORStuff {
             try {
                 Enabled = CustomOption.Create(1383, Types.General,
                     "Protect Players Who Often Die Early", false, null, true);
-                NotifyKiller = CustomOption.Create(1384, Types.General,
-                    "Tell The Killer Why The Kill Failed", true, Enabled);
                 // Explicit constructor for the selection lists, for the reason NewcomerShield gives
                 // (the Create(string[]) overload hardcodes its default).
                 MeetingProtection = new CustomOption(1385, Types.General,
@@ -125,7 +122,6 @@ namespace UsefulTORStuff {
                 MaxShielded = CustomOption.Create(1388, Types.General,
                     "Maximum Shielded Players", 1f, 1f, 3f, 1f, Enabled);
                 UTSLocalization.BindOptionTitle(Enabled, "uts.earlydeath.option_name");
-                UTSLocalization.BindOptionTitle(NotifyKiller, "uts.earlydeath.option_notify");
                 UTSLocalization.BindOptionTitle(MeetingProtection, "uts.earlydeath.option_meeting");
                 UTSLocalization.BindOptionSelections(MeetingProtection, "uts.earlydeath.option_meeting_values");
                 UTSLocalization.BindOptionTitle(Threshold, "uts.earlydeath.option_threshold");
@@ -533,6 +529,8 @@ namespace UsefulTORStuff {
 
         private static void AssignShields() {
             try {
+                // No shields in Hide'n'Seek or Prop Hunt (audit 04.10.): no meeting ever ends them there.
+                if (AntiStartKill.ShieldFreeMode()) return;
                 var ev = Evaluate();
                 var list = new List<(byte Id, int Meetings)>();
                 foreach (var r in ev.Rows) {
@@ -614,6 +612,7 @@ namespace UsefulTORStuff {
             public static bool Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
                 try {
                     if (shielded.Count == 0 || target == null) return true;
+                    if (AntiStartKill.ShieldFreeMode()) return true;
                     if (!shielded.Contains(target.PlayerId)) return true;
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         $"[EarlyDeathShield] blocked a vanilla kill on {target.Data?.PlayerName} (shielded).");
@@ -627,14 +626,16 @@ namespace UsefulTORStuff {
         // real kill result is rewritten (AntiStartKill's refinement): SuppressKill is refused
         // already, and a BlankKill kills nobody.
         // ====================================================================
-        private static float lastNotifyAt = -10f;
-
+        // (The "tell the killer why" line, option 1384, was removed on 2026-10-04 with AntiStartKill's.)
         [HarmonyPatch(typeof(Helpers), nameof(Helpers.checkMuderAttempt))]
         static class CheckMurderAttemptPatch {
             public static void Postfix(PlayerControl killer, PlayerControl target,
                                        ref MurderAttemptResult __result) {
                 try {
                     if (shielded.Count == 0 || target == null) return;
+                    if (AntiStartKill.ShieldFreeMode()) return;
+                    // The Bomber's self-probe checkMuderAttempt(bomber, bomber) is no kill (04.10.).
+                    if (killer != null && killer.PlayerId == target.PlayerId) return;
                     if (!shielded.Contains(target.PlayerId)) return;
                     if (__result != MurderAttemptResult.PerformKill
                         && __result != MurderAttemptResult.DelayVampireKill) return;
@@ -642,19 +643,6 @@ namespace UsefulTORStuff {
                     __result = MurderAttemptResult.SuppressKill;
                     UsefulTORStuffPlugin.Logger?.LogInfo(
                         $"[EarlyDeathShield] blocked a role kill on {target.Data?.PlayerName} (shielded).");
-
-                    // Feedback for the killer on his own client, throttled so a Vampire hammering
-                    // the bite button does not flood his chat.
-                    if (NotifyKiller != null && NotifyKiller.getBool()
-                        && killer != null && PlayerControl.LocalPlayer != null
-                        && killer.PlayerId == PlayerControl.LocalPlayer.PlayerId
-                        && Time.realtimeSinceStartup - lastNotifyAt >= 1.5f) {
-                        lastNotifyAt = Time.realtimeSinceStartup;
-                        var hud = HudManager.Instance;
-                        if (hud != null && hud.Chat != null)
-                            hud.Chat.AddChat(PlayerControl.LocalPlayer,
-                                UTSLocalization.Tr("uts.earlydeath.kill_blocked"));
-                    }
                 } catch { }
             }
         }
@@ -669,8 +657,9 @@ namespace UsefulTORStuff {
             public static void Prefix(ref List<PlayerControl> untargetablePlayers) {
                 try {
                     if (shielded.Count == 0) return;
+                    if (AntiStartKill.ShieldFreeMode()) return;
                     if (ShieldPeaceGate.Peaceful) return;
-                    if (NewcomerShield.JackalCanRecruitNow()) return;
+                    if (NewcomerShield.JackalCanRecruitNow()) return;   // his KILL button is guarded in NewcomerShield
                     var list = untargetablePlayers != null
                         ? new List<PlayerControl>(untargetablePlayers) : new List<PlayerControl>();
                     foreach (byte id in shielded) {

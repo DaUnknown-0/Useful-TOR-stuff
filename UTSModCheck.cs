@@ -111,9 +111,13 @@ namespace UsefulTORStuff {
                     board.TryGetValue(entry.Guid, out var column);
                     string code = Code(column, c.Id, out string boardVersion);
                     string label = entry.ShortName;
-                    if (inv != null) {
-                        var e = inv.Get(entry.Id);
-                        if (e == null || e.State == LocalModState.Missing) {
+                    // An inventory sends every catalog entry its build knows, missing ones included.
+                    // No line at all for this entry means an OLDER build that has never heard of the
+                    // mod: unknown, not missing, and nothing its sync could fix (audit 04.10.). The
+                    // mod's own handshake below speaks for it then.
+                    var e = inv?.Get(entry.Id);
+                    if (inv != null && e != null) {
+                        if (e.State == LocalModState.Missing) {
                             p.Issues.Add(UTSLocalization.Tr("uts.modcheck.missing", label));
                             if (entry.AllowsVersion(hostVersion)) syncable = true;   // pinned (Submerged): only its version
                         } else if (e.State == LocalModState.Disabled) {

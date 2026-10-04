@@ -180,10 +180,26 @@ namespace UsefulTORStuff {
 
         // Best-effort: keep the map button usable during a meeting for a tracking role with the
         // meeting option on, so the player can open the minimap and see the last position.
+        // The position is written down all round long, not only while the map is open (audit 04.10.:
+        // whoever never opened the map got no meeting marker, and a map opened minutes ago left a
+        // stale "last known" position). Throttled, a position does not need frame precision.
+        private static float nextTrack;
+
+        private static void TrackTick() {
+            if (MeetingHud.Instance != null || Time.time < nextTrack) return;
+            nextTrack = Time.time + 0.25f;
+            var target = GetTarget(out _);
+            if (target == null || target.transform == null) return;
+            cachedPos = target.transform.position;
+            cachedValid = true;
+            cachedColorPlayer = target;
+        }
+
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         static class MapButtonInMeetingPatch {
             public static void Postfix(HudManager __instance) {
                 try {
+                    TrackTick();
                     if (MeetingHud.Instance == null || __instance == null || __instance.MapButton == null) return;
                     GetTarget(out bool meetingAllowed);
                     if (meetingAllowed && cachedValid)

@@ -203,18 +203,27 @@ namespace UsefulTORStuff {
 
             public static bool Prepare(MethodBase original) => TargetMethod() != null;
 
-            public static void Prefix(out int __state) {
+            // __state packs the charges before the call and whether a CONFIRMED swap involved the
+            // dying player (read before the original clears playerId1/2). Only a confirmed swap was
+            // paid for (MeetingPatch.cs:309), so only that one is refunded (audit 04.10.: a merely
+            // selected pair also returned a charge).
+            public static void Prefix([HarmonyArgument(1)] byte dyingPlayerId, out int __state) {
                 __state = -1;
-                try { __state = Swapper.charges; } catch { }
+                try {
+                    bool confirmed = Swapper.playerId1 != byte.MaxValue && Swapper.playerId2 != byte.MaxValue
+                                     && (dyingPlayerId == Swapper.playerId1 || dyingPlayerId == Swapper.playerId2);
+                    __state = Swapper.charges * 2 + (confirmed ? 1 : 0);
+                } catch { }
             }
 
             public static void Postfix(int __state) {
                 try {
                     if (__state < 0) return;                       // prefix could not read it
-                    if (Swapper.charges <= __state + 1) return;    // nothing was inflated
+                    int before = __state / 2, refund = __state % 2;
+                    if (Swapper.charges <= before + refund) return;    // nothing was inflated
                     int inflated = Swapper.charges;
-                    Swapper.charges = __state + 1;
-                    ThrottledLog("H8", $"swap refund was {inflated - __state} charges, clamped to 1 "
+                    Swapper.charges = before + refund;
+                    ThrottledLog("H8", $"swap refund was {inflated - before} charges, clamped to {refund} "
                                        + $"(now {Swapper.charges}).");
                     RestampSwapLabel();
                 } catch (Exception e) {
@@ -339,32 +348,13 @@ namespace UsefulTORStuff {
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════
-        // TOR-M5) isKiller counts the Prosecutor as a killer
+        // TOR-M5) isKiller and the Prosecutor: NOT A BUG, nothing to patch
         //
-        // Helpers.cs:606-613 excludes Jester, Arsonist, Vulture, Lawyer and Pursuer from "neutral
-        // killers" but not the Prosecutor - who is a Lawyer variant with no kill of any kind
-        // (Lawyer.isProsecutor, not a separate PlayerControl, which is exactly why the existing
-        // `player != Lawyer.lawyer` term does not catch him: it does, actually, for the Lawyer
-        // FIELD - but the Prosecutor keeps that field, so this fix is about the case where he has
-        // already been promoted to Pursuer... which is also listed. The real gap is the win-check
-        // path, see below).
-        //
-        // Concretely: the Snitch's "killers" arrow list and the Lovers win check both read isKiller,
-        // so a living Prosecutor makes the Snitch point at a player who cannot kill and can block a
-        // Lovers win that should have happened. The postfix only ever REMOVES a killer flag, never
-        // adds one, so nothing that relies on isKiller can start seeing new killers because of it.
+        // Helpers.isKiller (Helpers.cs:606-613) already excludes `player != Lawyer.lawyer`, and the
+        // Prosecutor IS Lawyer.lawyer (Lawyer.isProsecutor is only a flag). A postfix that used to
+        // sit here could never change a result and was removed on 2026-10-04 so the coverage map
+        // does not list a phantom fix.
         // ══════════════════════════════════════════════════════════════════════════════════════
-        [HarmonyPatch(typeof(Helpers), nameof(Helpers.isKiller))]
-        static class ProsecutorIsNotAKillerPatch {
-            [HarmonyPriority(Priority.Low)]   // after MultiJester's own isKiller postfix
-            public static void Postfix(PlayerControl player, ref bool __result) {
-                try {
-                    if (!__result || player == null) return;
-                    if (!Lawyer.isProsecutor) return;
-                    if (Lawyer.lawyer != null && player.PlayerId == Lawyer.lawyer.PlayerId) __result = false;
-                } catch { }
-            }
-        }
 
         // ══════════════════════════════════════════════════════════════════════════════════════
         // TOR-M9) A Time Master rewind survives into the meeting

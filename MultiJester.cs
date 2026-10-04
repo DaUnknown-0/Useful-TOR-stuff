@@ -201,6 +201,8 @@ namespace UsefulTORStuff {
             try {
                 if (p == null || p.Data == null || p.Data.Disconnected || p.Data.IsDead) return false;
                 if (p.Data.Role != null && p.Data.Role.IsImpostor) return false;
+                // Not the Prosecutor's target: his exile is the Prosecutor's win (audit 04.10.).
+                if (Lawyer.isProsecutor && Lawyer.target != null && Lawyer.target.PlayerId == p.PlayerId) return false;
                 var infos = RoleInfo.getRoleInfoForPlayer(p, false);
                 return infos.Count == 1 && infos[0] == RoleInfo.crewmate;
             } catch {
@@ -521,6 +523,9 @@ namespace UsefulTORStuff {
                 // crewmates, but the Mini modifier can sit on one), so mirror that guard.
                 if (Mini.mini != null && Mini.mini.PlayerId == exiled.PlayerId && !Mini.isGrownUp()
                     && !RoleInfo.getRoleInfoForPlayer(Mini.mini).Any(x => x.isNeutral)) return;
+                // ... and the Prosecutor's win, TOR's same condition (ExileControllerPatch), audit 04.10.
+                if (Lawyer.lawyer != null && Lawyer.isProsecutor && Lawyer.target != null
+                    && Lawyer.target.PlayerId == exiled.PlayerId && Lawyer.lawyer.Data != null && !Lawyer.lawyer.Data.IsDead) return;
 
                 Jester.triggerJesterWin = true;
                 UsefulTORStuffPlugin.Logger?.LogInfo(

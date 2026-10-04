@@ -158,13 +158,16 @@ namespace UsefulTORStuff {
                 if (AmongUsClient.Instance == null) return false;
                 if (AmongUsClient.Instance.AmHost) return false;          // the host syncs nothing
                 if (!UTSModSync.HostReported) return false;               // host has no mod sync
-                return UTSModSync.HasAnythingToShow();
+                // After a download the button stays: it is the way back to the "restart needed" line
+                // (audit 04.10.: it vanished with the last download).
+                return UTSModSync.HasAnythingToShow() || UTSModSync.AnythingFetched;
             } catch { return false; }
         }
 
         [HideFromIl2Cpp]
         private string LobbyButtonLabel() {
             int n = UTSModSync.ActionableCount();
+            if (n == 0 && UTSModSync.AnythingFetched) return UTSLocalization.Tr("uts.modsync.lobby_button_restart");
             return n > 0
                 ? UTSLocalization.Tr("uts.modsync.lobby_button", n)
                 : UTSLocalization.Tr("uts.modsync.lobby_button_info");

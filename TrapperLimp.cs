@@ -21,6 +21,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using HarmonyLib;
 using Hazel;
 using UnityEngine;
@@ -102,8 +103,48 @@ namespace UsefulTORStuff {
         private static bool IsAlive(PlayerControl p) =>
             p != null && p.Data != null && !p.Data.IsDead;
 
+        // Everyone needs the mod (a victim without it walks at full speed, audit 04.10.), and with
+        // TOR's "Anonymous Map" on the trapped limp is off: a slow walker after the freeze named the
+        // trapped player the option hides (User 04.10.). Latched at the intro.
+        private static bool everyoneHasMod = true;
+
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        static class IntroEndGatePatch {
+            public static void Postfix() { try { everyoneHasMod = UsefulVersionHandshake.EveryoneHasMod(); } catch { everyoneHasMod = true; } }
+        }
+
+        internal static void ResetSelfLimp() {
+            selfLimping = false;
+            lastLabelOn = null;
+        }
+
+        // Paused during meetings (audit 04.10.): the meeting's length is added back to every limp
+        // that was still running when it started.
+        private static float meetingStartedAt = -1f;
+
+        [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Start))]
+        static class MeetingStartPatch {
+            public static void Postfix() { meetingStartedAt = Time.time; }
+        }
+
+        [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Close))]
+        static class MeetingClosePatch {
+            public static void Postfix() {
+                try {
+                    if (meetingStartedAt < 0f) return;
+                    float paused = Time.time - meetingStartedAt;
+                    foreach (var id in limpUntil.Keys.ToList())
+                        if (limpUntil[id] > meetingStartedAt) limpUntil[id] += paused;
+                } catch { }
+                meetingStartedAt = -1f;
+            }
+        }
+
+        private static bool? lastLabelOn;
+
         private static bool ShouldLimp(byte id) {
-            if (TrappedOption != null && UTSGate.Bool(TrappedOption)
+            if (!everyoneHasMod) return false;
+            if (TrappedOption != null && UTSGate.Bool(TrappedOption) && !Trapper.anonymousMap
                 && limpUntil.TryGetValue(id, out float until) && Time.time < until) return true;
             if (SelfOption != null && UTSGate.Bool(SelfOption) && selfLimping
                 && Trapper.trapper != null && Trapper.trapper.PlayerId == id) return true;
@@ -173,6 +214,13 @@ namespace UsefulTORStuff {
         // ---- Self-limp toggle (button + synced RPC) ---------------------------------------------
         private static void ToggleSelfLimp() {
             selfLimping = !selfLimping;
+            // The button says whether the limp is on (audit 04.10.: a fixed label, no state shown).
+            try {
+                if (selfLimpButton != null && lastLabelOn != selfLimping) {
+                    lastLabelOn = selfLimping;
+                    selfLimpButton.buttonText = UTSLocalization.Tr(selfLimping ? "uts.trapperlimp.button_label_on" : "uts.trapperlimp.button_label");
+                }
+            } catch { }
             // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 248 + consolidated channel 240.
             // Classified IDEMPOTENT: the TOGGLE happens locally on the sender, the wire carries the
             // resulting ABSOLUTE state (0/1) and the receiver just assigns it - so applying the same
@@ -218,7 +266,7 @@ namespace UsefulTORStuff {
                 try {
                     selfLimpButton = new CustomButton(
                         () => { ToggleSelfLimp(); UTSAssets.PlayLimpToggle(); },
-                        () => SelfOption != null && UTSGate.Bool(SelfOption)
+                        () => SelfOption != null && UTSGate.Bool(SelfOption) && everyoneHasMod
                               && Trapper.trapper != null && Trapper.trapper == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead,
                         () => PlayerControl.LocalPlayer.CanMove,

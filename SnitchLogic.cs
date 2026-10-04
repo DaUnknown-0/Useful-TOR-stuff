@@ -227,7 +227,8 @@ public static class SnitchLogic
             {
                 harmony.Patch(torStartMeetingPrefixMethod,
                     prefix: new HarmonyMethod(typeof(SnitchLogic), nameof(TorSnitchSuppressPrefix)),
-                    postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(TorSnitchSuppressPostfix)));
+                    postfix: new HarmonyMethod(typeof(SnitchLogic), nameof(TorSnitchSuppressPostfix)),
+                    finalizer: new HarmonyMethod(typeof(SnitchLogic), nameof(TorSnitchSuppressFinalizer)));
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     "SnitchLogic: deterministische TOR-Snitch-Unterdrückung aktiv (TOR StartMeetingPatch.Prefix umschlossen).");
             }
@@ -837,6 +838,18 @@ public static class SnitchLogic
         }
     }
 
+    // Runs even when TOR's prefix throws and the postfix is skipped (audit 04.10.): Snitch.mode would
+    // otherwise stay swapped, and the next meeting would take the swapped value as the original.
+    private static Exception TorSnitchSuppressFinalizer(Exception __exception)
+    {
+        if (chatModeSwapped)
+        {
+            try { SetSnitchMode(chatOriginalMode); } catch { }
+            chatModeSwapped = false;
+        }
+        return __exception;
+    }
+
     private static void TorSnitchSuppressPostfix()
     {
         if (!chatModeSwapped) return;
@@ -948,10 +961,22 @@ public static class SnitchLogic
                     // Read once for the whole pass instead of once per player (compiled getter, but
                     // still no reason to re-read an unchanging value AllPlayerControls.Count times).
                     int targets = GetSnitchTargets();
+                    // Points of players who died or no longer match go now, not only at the meeting
+                    // (audit 04.10.: they stood on the map as ghosts; TOR has the same flaw).
+                    var keep = new HashSet<byte>();
+                    foreach (PlayerControl player in PlayerControl.AllPlayerControls)
+                        if (player != null && player.Data != null && !player.Data.IsDead && IsSnitchTargetMatch(player, targets))
+                            keep.Add(player.PlayerId);
+                    foreach (var entry in points.ToList())
+                    {
+                        if (keep.Contains(entry.Key)) continue;
+                        if (entry.Value != null) UnityEngine.Object.Destroy(entry.Value.gameObject);
+                        points.Remove(entry.Key);
+                    }
                     foreach (PlayerControl player in PlayerControl.AllPlayerControls)
                     {
                         if (player == null || player.Data == null || player.Data.IsDead) continue;
-                        if (!IsSnitchTargetMatch(player, targets)) continue;
+                        if (!keep.Contains(player.PlayerId)) continue;
 
                         Vector3 v = player.transform.position;
                         v /= shipStatus.MapScale;
@@ -996,6 +1021,18 @@ public static class SnitchLogic
             {
                 mapModeSwapped = false;
             }
+        }
+
+        // The original (MapBehaviour.FixedUpdate) may throw, which skips the postfix: the mode is put
+        // back here then (audit 04.10.).
+        public static Exception Finalizer(Exception __exception)
+        {
+            if (mapModeSwapped)
+            {
+                try { SetSnitchMode(mapOriginalMode); } catch { }
+                mapModeSwapped = false;
+            }
+            return __exception;
         }
     }
 }

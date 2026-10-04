@@ -264,6 +264,8 @@ namespace UsefulTORStuff {
             string cfg = UTSLocalization.ModLanguage?.Value?.Trim().ToLowerInvariant() ?? "auto";
             int cur = Math.Max(0, Array.IndexOf(Codes, cfg));
             string shown = cur == 0 ? $"auto ({UTSLocalization.ActiveCode})" : Names[cur];
+            // "auto" following the game: the panel marks the language it actually shows.
+            if (cur == 0) { int active = Array.IndexOf(Codes, UTSLocalization.ActiveCode); if (active > 0) cur = active; }
             string label = UTSLocalization.Tr("uts.maplang.label", shown) + (open ? "  ^" : "  v");
 
             // camera-fit per frame: pin the button to the bottom-right viewport corner
@@ -316,8 +318,12 @@ namespace UsefulTORStuff {
                 consumedClickFrame = ClickFrame;
                 int hit = CellAt(world);
                 if (hit >= 0) {
-                    UTSLocalization.ModLanguage.Value = Codes[hit]; // SettingChanged re-applies live
-                    TrySwitchVanilla(Codes[hit]);
+                    // A language the game itself offers switches the GAME, and the mod goes back to
+                    // following it ("auto"), audit 04.10.: a fixed mod code made the mod ignore every
+                    // later language change in the main menu. Tier-B codes stay a fixed mod choice.
+                    string code = Codes[hit];
+                    bool vanilla = TrySwitchVanilla(code);
+                    UTSLocalization.ModLanguage.Value = vanilla ? "auto" : code; // SettingChanged re-applies live
                 }
                 SetOpen(false);
                 return;
@@ -335,11 +341,12 @@ namespace UsefulTORStuff {
         // room names) AND our own SetLanguage postfix (mod re-apply). Tier-B codes have no
         // vanilla equivalent - the game language stays and the GetString postfix takes over
         // once the vanilla.<code>.json tables ship. "auto" changes nothing vanilla-side.
-        private static void TrySwitchVanilla(string code) {
+        // True when the code is a language of the game itself (now active there).
+        private static bool TrySwitchVanilla(string code) {
             try {
-                if (code == "auto" || Array.IndexOf(UTSLocalization.TierBCodes, code) >= 0) return;
+                if (code == "auto" || Array.IndexOf(UTSLocalization.TierBCodes, code) >= 0) return false;
                 string enumName = code == "en" ? "English" : code;
-                if (!Enum.TryParse<SupportedLangs>(enumName, true, out var lang)) return;
+                if (!Enum.TryParse<SupportedLangs>(enumName, true, out var lang)) return false;
                 var settings = AmongUs.Data.DataManager.Settings;
                 if (settings?.Language != null && settings.Language.CurrentLanguage != lang) {
                     settings.Language.CurrentLanguage = lang;
@@ -351,8 +358,10 @@ namespace UsefulTORStuff {
                         && tc.Languages.TryGetValue(lang, out var set) && set != null)
                         tc.SetLanguage(set);
                 }
+                return true;
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[MapLang] vanilla switch failed: {e.Message}");
+                return false;
             }
         }
 

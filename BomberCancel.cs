@@ -74,6 +74,24 @@ namespace UsefulTORStuff {
         private static void SendCancel() {
             UTSRpc.SendDual(CancelBombRpcId, CancelBombRpcId, null); // no payload
             try { Bomber.clearBomb(); } catch { }
+            EndPlantEffect();
+        }
+
+        // clearBomb resets TOR's bomb state but not the plant button, a TOR effect button: it kept
+        // counting down its effect as if the bomb still lay (audit 04.10.). The effect ends here and
+        // the normal plant cooldown starts, on the Bomber's own client (the only one with the button).
+        private static System.Reflection.FieldInfo bomberButtonField;
+        private static void EndPlantEffect() {
+            try {
+                bomberButtonField ??= typeof(CustomOption).Assembly.GetType("TheOtherRoles.HudManagerStartPatch")
+                    ?.GetField("bomberButton", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                if (bomberButtonField?.GetValue(null) is not TheOtherRoles.Objects.CustomButton b) return;
+                b.isEffectActive = false;
+                b.Timer = b.MaxTimer;
+                try { b.actionButton.cooldownTimerText.color = Palette.EnabledColor; } catch { }
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[BomberCancel] plant button reset failed: {e.Message}");
+            }
         }
 
         // Receiver on the consolidated channel (module byte 252). Registered from CreateOptions.

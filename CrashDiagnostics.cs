@@ -16,7 +16,10 @@
  *      On this machine it has (AppData\Local\CrashDumps held seven of them, and they were what
  *      finally pointed at the DetourWatchdog); on everyone else's it has not.
  *
- * Both are settings, not code, and both can be put in place by the plugin on its own machine:
+ * Both are settings, not code, and both can be put in place by the plugin on its own machine. Since
+ * 2026-10-04 both are OFF by default (KeepBepInExLogAcrossSessions, WriteCrashDumps): they reach
+ * into BepInEx.cfg and the registry of anyone who got the mod through the mod sync, so they are
+ * switched on deliberately by whoever hunts a crash. The appended log is capped by MaxLogMB.
  *
  *   - AppendLog is flipped to true in BepInEx.cfg. That file is BepInEx's, not ours, so the edit is
  *     the smallest possible one: the single key inside the single section, everything else copied
@@ -53,6 +56,7 @@ namespace UsefulTORStuff {
     public static class CrashDiagnostics {
         private static ConfigEntry<bool> appendLog;
         private static ConfigEntry<bool> werDumps;
+        private static ConfigEntry<int> maxLogMb;
         private static ConfigEntry<bool> fullDumps;
         private static ConfigEntry<float> memoryLogInterval;
         private static ConfigEntry<int> memoryWarnMb;
@@ -60,10 +64,17 @@ namespace UsefulTORStuff {
         private static ConfigEntry<int> breakdownGrowthMb;
 
         public static void Bind(ConfigFile config) {
-            appendLog = config.Bind("CrashDiagnostics", "KeepBepInExLogAcrossSessions", true,
+            // Both OFF by default since 2026-10-04 (User): they change BepInEx.cfg and the registry,
+            // which a player who got this mod through the mod sync never agreed to. Whoever hunts a
+            // crash switches them on; an existing config keeps its value.
+            appendLog = config.Bind("CrashDiagnostics", "KeepBepInExLogAcrossSessions", false,
                 "Set [Logging.Disk] AppendLog = true in BepInEx.cfg so a crash's log survives the " +
-                "restart that follows it. Applied once, effective from the next launch.");
-            werDumps = config.Bind("CrashDiagnostics", "WriteCrashDumps", true,
+                "restart that follows it. Applied once, effective from the next launch. Once " +
+                "LogOutput.log is larger than MaxLogMB, the next launch starts a fresh log.");
+            maxLogMb = config.Bind("CrashDiagnostics", "MaxLogMB", 50,
+                "With KeepBepInExLogAcrossSessions: above this size LogOutput.log is started afresh at " +
+                "the next launch (AppendLog off for that one launch, then on again).");
+            werDumps = config.Bind("CrashDiagnostics", "WriteCrashDumps", false,
                 "Register Among Us.exe for Windows Error Reporting LocalDumps under HKEY_CURRENT_USER " +
                 "so a hard crash leaves a minidump in %LOCALAPPDATA%\\CrashDumps. Per-user, no admin.");
             fullDumps = config.Bind("CrashDiagnostics", "FullCrashDumps", false,
@@ -86,7 +97,7 @@ namespace UsefulTORStuff {
         /// One-shot, at load. Each step is independent and failure-tolerant: a locked config file
         /// or a registry policy must never stop the plugin from loading.
         public static void Install() {
-            if (appendLog?.Value == true) EnsureAppendLog();
+            if (appendLog?.Value == true) EnsureAppendLog(!LogTooLarge());
             if (werDumps?.Value == true) EnsureLocalDumps();
             LogAddressSpace();
         }
@@ -94,7 +105,19 @@ namespace UsefulTORStuff {
         // ------------------------------------------------------------------------------------
         // BepInEx.cfg: AppendLog = true
         // ------------------------------------------------------------------------------------
-        private static void EnsureAppendLog() {
+        // The size limit (audit 04.10.: the appended log grew without end). BepInEx holds the file
+        // open while the game runs, so it cannot be cut here; instead the NEXT launch is told not to
+        // append (it then starts a fresh file), and the launch after that appends again.
+        private static bool LogTooLarge() {
+            try {
+                string log = Path.Combine(Paths.BepInExRootPath, "LogOutput.log");
+                long limit = Math.Max(5, maxLogMb?.Value ?? 50) * 1024L * 1024L;
+                return File.Exists(log) && new FileInfo(log).Length > limit;
+            } catch { return false; }
+        }
+
+        private static void EnsureAppendLog(bool append = true) {
+            string want = append ? "true" : "false";
             try {
                 string path = Path.Combine(Paths.ConfigPath, "BepInEx.cfg");
                 if (!File.Exists(path)) return;
@@ -114,8 +137,8 @@ namespace UsefulTORStuff {
                     int eq = t.IndexOf('=');
                     if (eq < 0) continue;
                     string value = t.Substring(eq + 1).Trim();
-                    if (value.Equals("true", StringComparison.OrdinalIgnoreCase)) return;   // already set
-                    lines[i] = "AppendLog = true";
+                    if (value.Equals(want, StringComparison.OrdinalIgnoreCase)) return;   // already set
+                    lines[i] = "AppendLog = " + want;
                     changed = true;
                     break;
                 }
@@ -125,7 +148,7 @@ namespace UsefulTORStuff {
                     if (!inSection && sectionEnd < 0) return;   // no [Logging.Disk] at all: not our file to invent
                     var list = new System.Collections.Generic.List<string>(lines);
                     int at = sectionEnd < 0 ? list.Count : sectionEnd;
-                    list.Insert(at, "AppendLog = true");
+                    list.Insert(at, "AppendLog = " + want);
                     lines = list.ToArray();
                     changed = true;
                 }
@@ -137,9 +160,10 @@ namespace UsefulTORStuff {
                 File.WriteAllLines(tmp, lines, new UTF8Encoding(false));
                 File.Copy(tmp, path, true);
                 File.Delete(tmp);
-                UsefulTORStuffPlugin.Logger?.LogInfo(
-                    "[CrashDiagnostics] BepInEx.cfg: AppendLog set to true - from the next launch on, " +
-                    "LogOutput.log keeps earlier sessions (including the one that crashed).");
+                UsefulTORStuffPlugin.Logger?.LogInfo(append
+                    ? "[CrashDiagnostics] BepInEx.cfg: AppendLog set to true - from the next launch on, " +
+                      "LogOutput.log keeps earlier sessions (including the one that crashed)."
+                    : "[CrashDiagnostics] LogOutput.log is above MaxLogMB - the next launch starts a fresh log.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[CrashDiagnostics] could not update BepInEx.cfg: {e.GetType().Name}: {e.Message}");
             }

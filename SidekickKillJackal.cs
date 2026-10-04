@@ -37,7 +37,7 @@ namespace UsefulTORStuff {
                 // invertedParent: true → option is visible when jackalCanCreateSidekickFromImpostor
                 // is OFF, meaning Fake-SK is possible. Only then does betraying the Jackal make sense.
                 Option = CustomOption.Create(
-                    1240, Types.Neutral, "Sidekick Can Kill Jackal",
+                    1240, Types.Neutral, "Sidekick Can Kill Jackal (Needs Sidekick Can Kill)",
                     false, CustomOptionHolder.jackalCanCreateSidekickFromImpostor,
                     invertedParent: true);
                 UTSLocalization.BindOptionTitle(Option, "uts.sidekickkilljackal.option_name");

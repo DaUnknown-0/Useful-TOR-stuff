@@ -69,12 +69,32 @@ namespace UsefulTORStuff {
             PinnedVersion == null || (v != null && UsefulTORStuffUpdater.SemCompare(v, PinnedVersion) == 0);
 
         // Built from the compiled-in coordinates, never from anything received.
+        // per_page=100: the default 30 releases were too few with all the test builds, the host's
+        // exact version fell out of the list (audit 04.10.).
         public string ReleasesApiUrl =>
-            $"https://api.github.com/repos/{RepositoryOwner}/{RepositoryName}/releases";
+            $"https://api.github.com/repos/{RepositoryOwner}/{RepositoryName}/releases?per_page=100";
 
         // The download target. Deliberately NOT the GitHub asset's own name field: the file name
         // belongs to the catalog, so a compromised/odd release cannot steer where we write.
         public string TargetPath => Path.Combine(Paths.PluginPath, AssetName);
+
+        /// Where the update goes: over the DLL that is actually loaded, when it lies inside the plugins
+        /// folder (a sub-folder or another file name otherwise left a second copy with the same GUID
+        /// beside it, audit 04.10.); the catalog path for a mod that is not loaded.
+        public string WriteTargetPath {
+            get {
+                try {
+                    if (BepInEx.Unity.IL2CPP.IL2CPPChainloader.Instance.Plugins.TryGetValue(Guid, out var info)
+                        && info != null && !string.IsNullOrEmpty(info.Location)) {
+                        string full = Path.GetFullPath(info.Location);
+                        string root = Path.GetFullPath(Paths.PluginPath);
+                        if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && full.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                            return full;
+                    }
+                } catch { }
+                return TargetPath;
+            }
+        }
     }
 
     // What the local install looks like for one catalog entry.
