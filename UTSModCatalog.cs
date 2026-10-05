@@ -133,6 +133,9 @@ namespace UsefulTORStuff {
             new CatalogEntry(7, "Submerged", "Submerged",
                              "SubmergedAmongUs", "Submerged", "Submerged.dll", "Submerged",
                              external: true, pinnedVersion: new Version(2025, 1, 30), requiresGuid: "gg.reactor.api"),
+            // Add-on for Unknown's Collection (Halloween costumes + Xenomorph role, added 2026-10-05).
+            new CatalogEntry(8, "com.daunknown.unknownshalloween", "Unknown's Halloween",
+                             "DaUnknown-0", "UnknownsHalloween", "UnknownsHalloween.dll", "Halloween"),
         };
 
         // Reserved: "a mod outside this catalog". Counted in the inventory so the local player can
