@@ -1,11 +1,24 @@
-﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
+
+/*
+ * ModManagerUI - the Mod Manager panel in the main menu, drawn with VanillaUI (lobby-pane look).
+ *
+ * Three tabs:
+ *   Installed  every mod that registered itself (ModManagerRegistry): on/off for the next start,
+ *              update check and download through the mod's own updater, release notes, GitHub link
+ *   All mods   the whole catalog (UTSModCatalog): what is installed, switched off or missing, with a
+ *              download of the newest release for anything missing (UTSModDownloader)
+ *   Modpacks   named selections (UTSModpacks): save the current set-up, apply a pack, share it as a
+ *              code through the clipboard, import a code, delete
+ * The header keeps the "Update all" button and the shared test-versions switch (which also switches
+ * every mod's update channel after a confirmation).
+ */
 
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Text.RegularExpressions;
 using BepInEx.Unity.IL2CPP.Utils;
 using UnityEngine;
@@ -13,8 +26,6 @@ using UnityEngine.UI;
 
 namespace UsefulTORStuff
 {
-    // Vereinfachte Mod-Manager-UI mit formatiertem Text (keine custom Canvas-UI).
-    // Zeigt Mod-Liste in bestehendem Popup-Template.
     public class ModManagerUI : MonoBehaviour
     {
         public static ModManagerUI Instance { get; private set; }
@@ -23,53 +34,45 @@ namespace UsefulTORStuff
         public ModManagerUI(IntPtr ptr) : base(ptr) { }
 
         private GameObject _popup;
+        private enum Tab { Installed, Catalog, Modpacks }
+        private Tab _tab = Tab.Installed;
 
-        // P1.2: Wiederverwendbarer 1×1-Solid-Color-Sprite-Cache + einmalig erzeugtes Overlay-
-        // Material. Vorher erzeugte jedes Show() und jeder Toggle-Klick frische Texture2D/Sprite/
-        // Material-Assets, die nie freigegeben wurden (Destroy(_popup) gibt Assets NICHT frei,
-        // da Texturen/Sprites Assets und keine Kinder sind) → GPU/CPU-Leak über die ganze Session.
-        // Diese Sprites leben prozessweit (DontDestroyOnLoad) und werden überall geteilt.
-        private static readonly Dictionary<Color, Sprite> _solidSprites = new Dictionary<Color, Sprite>();
-
-        private static Sprite GetSolidSprite(Color color)
-        {
-            if (_solidSprites.TryGetValue(color, out var cached) && cached != null) return cached;
-            var tex = new Texture2D(1, 1);
-            tex.SetPixel(0, 0, color);
-            tex.Apply();
-            var sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
-            UnityEngine.Object.DontDestroyOnLoad(tex);
-            UnityEngine.Object.DontDestroyOnLoad(sprite);
-            _solidSprites[color] = sprite;
-            return sprite;
-        }
-
-        // Referenzen pro Mod-Zeile, damit die Polling-Coroutine den Download-Zustand live
-        // aktualisieren kann (Fortschritt, "Restart required", Fehler) ohne Neuaufbau.
+        // References per installed-mod card so the polling coroutine can update the download state
+        // live (progress, "restart required", errors) without a rebuild.
         private class ModEntryRefs
         {
             public ModInfo Mod;
             public TMPro.TextMeshProUGUI StatusText;
             public GameObject UpdateButton;
             public TMPro.TextMeshProUGUI UpdateButtonText;
-            // Laufzeit-Zustand (beim Start geladen?) — bleibt über das Umschalten hinweg stabil,
-            // während Mod.Enabled.Value den gewünschten Zustand nach Neustart abbildet.
             public bool RuntimeEnabled;
-            public bool NotesShown;   // release notes were built into the entry
+            public bool NotesShown;
         }
-
         private readonly List<ModEntryRefs> _entryRefs = new List<ModEntryRefs>();
 
-        // F2: "Update All" läuft sequentiell (die Updater sind Single-_busy-Automaten — nicht
-        // parallelisieren). Header-Button + Summary-Text.
+        // References per catalog row (download state of the newest-release jobs).
+        private class CatalogRefs
+        {
+            public CatalogEntry Entry;
+            public TMPro.TextMeshProUGUI StatusText;
+            public GameObject DownloadButton;
+        }
+        private readonly List<CatalogRefs> _catalogRefs = new List<CatalogRefs>();
+
         private bool _updateAllRunning;
         private GameObject _updateAllButton;
         private TMPro.TextMeshProUGUI _updateAllButtonText;
         private TMPro.TextMeshProUGUI _headerSummaryText;
+        private TMPro.TextMeshProUGUI _testVersionToggleText;
+        private GameObject _testVersionToggle;
+        private GameObject _confirmOverlay;
+        private bool _rebuiltForNotes;
+        private string _summary = "";     // survives a rebuild (tab switch)
 
-        // F2: Release-Notes für die Anzeige aufbereiten — crude Markdown-Strip auf die ersten
-        // ~10 Zeilen / ~600 Zeichen, mit "…" bei Kürzung. Neutralisiert TMP-Rich-Text, damit die
-        // Notes keine Tags ins Label injizieren können. Liefert "" wenn nichts anzuzeigen ist.
+        private const float PanelW = 1240f, PanelH = 880f, Inset = 30f;
+
+        // Release notes for display: crude Markdown strip to the first ~10 lines / ~600 characters,
+        // with an ellipsis when cut. TMP rich text is neutralised so notes cannot inject tags.
         private static string StripAndTruncateNotes(string raw)
         {
             if (string.IsNullOrWhiteSpace(raw)) return "";
@@ -78,9 +81,9 @@ namespace UsefulTORStuff
             foreach (var lineRaw in srcLines)
             {
                 string line = lineRaw.Trim();
-                line = Regex.Replace(line, @"^#{1,6}\s*", "");        // ## Heading → Heading
-                line = Regex.Replace(line, @"^[\*\-\+]\s+", "• ");      // - item → • item
-                line = Regex.Replace(line, @"\[([^\]]+)\]\([^\)]*\)", "$1"); // [text](url) → text
+                line = Regex.Replace(line, @"^#{1,6}\s*", "");
+                line = Regex.Replace(line, @"^[\*\-\+]\s+", "• ");
+                line = Regex.Replace(line, @"\[([^\]]+)\]\([^\)]*\)", "$1");
                 line = line.Replace("**", "").Replace("__", "").Replace("`", "");
                 outLines.Add(line);
             }
@@ -91,10 +94,8 @@ namespace UsefulTORStuff
             var keep = joined.Split('\n');
             if (keep.Length > 10) { joined = string.Join("\n", keep.Take(10)); truncated = true; }
             if (joined.Length > 600) { joined = joined.Substring(0, 600).TrimEnd(); truncated = true; }
-
-            // TMP-Tags neutralisieren: ein Zero-Width-Space hinter '<' verhindert Tag-Parsing.
             joined = joined.Replace("<", "<​");
-            if (truncated) joined += " …";
+            if (truncated) joined += " ...";
             return joined;
         }
 
@@ -108,17 +109,11 @@ namespace UsefulTORStuff
         {
             try
             {
-                if (_popup != null)
-                {
-                    UsefulTORStuffPlugin.Logger?.LogWarning("Mod Manager is already open.");
-                    return;
-                }
-
-                // Beim Öffnen erneut auf neue Versionen prüfen (gedrosselt auf 1×/Minute).
-                // Das Ergebnis erscheint automatisch über die laufende CoRefreshStates-Schleife.
+                if (_popup != null) { UsefulTORStuffPlugin.Logger?.LogWarning("Mod Manager is already open."); return; }
+                // Re-check for new versions on opening (throttled to once a minute); the result shows
+                // up through the running CoRefreshStates loop.
                 ModManagerRegistry.MaybeCheckForUpdates();
-
-                CreateProfessionalUI();
+                Build();
             }
             catch (Exception ex)
             {
@@ -126,110 +121,80 @@ namespace UsefulTORStuff
             }
         }
 
-        private void CreateProfessionalUI()
+        private void Build()
         {
             try
             {
-                // 1. Root Canvas
-                _popup = new GameObject("ModManagerUI");
-                DontDestroyOnLoad(_popup);
+                _popup = VanillaUI.Canvas("ModManagerUI", 9999, true);   // above everything
+                VanillaUI.Backdrop(_popup, Hide);
+                var panel = VanillaUI.CenterPanel(_popup, new Vector2(PanelW, PanelH));
 
-                var canvas = _popup.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 9999; // Very high to be above everything
+                float y = VanillaUI.Title(panel, UTSLocalization.Tr("uts.modmanagerui.title"));
+                BuildHeader(panel, y - 10f);
+                BuildContent(panel, y - 112f);
+                VanillaUI.CloseButton(panel, UTSLocalization.Tr("uts.modmanagerui.close_button"), Hide);
 
-                var scaler = _popup.AddComponent<UnityEngine.UI.CanvasScaler>();
-                scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
-                scaler.referenceResolution = new Vector2(1920, 1080);
-                scaler.matchWidthOrHeight = 0.5f;
-
-                var raycaster = _popup.AddComponent<UnityEngine.UI.GraphicRaycaster>();
-                raycaster.blockingObjects = UnityEngine.UI.GraphicRaycaster.BlockingObjects.All;
-
-                // 2. Fullscreen Overlay (blocks all interactions behind)
-                CreateOverlay();
-
-                // 3. Main Panel
-                CreateMainPanel();
-
-                _popup.SetActive(true);
-
-                // Set flag that UI is open
                 IsUIOpen = true;
-
-                // Disable interactions with UI behind
                 DisableBackgroundUI();
-
-                // Poll laufende Downloads und aktualisiere die Anzeige der Mod-Zeilen.
                 this.StartCoroutine(CoRefreshStates());
-
-                UsefulTORStuffPlugin.Logger?.LogInfo("Mod Manager: Professional UI created successfully");
             }
             catch (Exception ex)
             {
-                UsefulTORStuffPlugin.Logger?.LogError($"Failed to create professional UI: {ex}");
-                // AUDIT L-15: throwing anywhere AFTER DisableBackgroundUI() used to leave the whole
-                // menu behind this popup switched off - every hidden object still hidden, every
-                // PassiveButton still disabled - while the popup itself was destroyed. The result was
-                // a dead main menu until the game was restarted. Undo the background disabling on the
-                // way out, and drop IsUIOpen so a second attempt is possible.
+                UsefulTORStuffPlugin.Logger?.LogError($"Failed to create Mod Manager UI: {ex}");
+                // AUDIT L-15: a throw after DisableBackgroundUI() used to leave the menu behind this
+                // popup switched off. Undo on the way out and drop IsUIOpen so a retry is possible.
                 try { EnableBackgroundUI(); } catch { }
                 IsUIOpen = false;
-                if (_popup != null)
-                {
-                    Destroy(_popup);
-                    _popup = null;
-                }
+                if (_popup != null) { Destroy(_popup); _popup = null; }
             }
         }
 
-        private List<GameObject> _hiddenObjects = new List<GameObject>();
-        private List<PassiveButton> _disabledButtons = new List<PassiveButton>();
+        /// <summary>Autotest (UIGallery): switch to a tab by index while the panel is open.</summary>
+        public void DiagShowTab(int index)
+        {
+            _tab = (Tab)Mathf.Clamp(index, 0, 2);
+            if (_popup != null) Rebuild();
+        }
 
-        // P2.5: HEURISTIK, KEINE exakte Auswahl. Versteckt JEDES Objekt, dessen Name
-        // "update"/"button"/"popup"/"dialog"/"confirm" enthält, um Hintergrund-UI hinter dem
-        // Mod Manager zu deaktivieren; alles wird in EnableBackgroundUI() beim Schließen
-        // wiederhergestellt. Achtung für künftige Maintainer: benennt das Spiel/TOR Elemente um
-        // oder kollidieren neue Namen mit diesen Substrings, kann zu viel/zu wenig versteckt
-        // werden. Objekte unter _popup werden hier explizit ausgenommen, damit der Manager sich
-        // nie selbst deaktiviert.
+        private void Rebuild()
+        {
+            _entryRefs.Clear(); _catalogRefs.Clear();
+            EnableBackgroundUI();
+            if (_popup != null) { Destroy(_popup); _popup = null; }
+            IsUIOpen = false;
+            Build();
+        }
+
+        // ====================================================================
+        // Background: hide the menu's own buttons while the panel is open
+        // ====================================================================
+        private readonly List<GameObject> _hiddenObjects = new List<GameObject>();
+        private readonly List<PassiveButton> _disabledButtons = new List<PassiveButton>();
+
+        // P2.5: a HEURISTIC, not an exact selection: hides every object whose name contains
+        // update/button/popup/dialog/confirm, so nothing behind the Mod Manager reacts; everything is
+        // restored in EnableBackgroundUI(). Objects under _popup are excluded.
         private void DisableBackgroundUI()
         {
             _hiddenObjects.Clear();
             _disabledButtons.Clear();
-
-            // Find and hide ALL Canvas elements that are not our mod manager
             var allCanvases = GameObject.FindObjectsOfType<Canvas>();
             foreach (var canvas in allCanvases)
             {
-                if (canvas.gameObject != _popup && canvas.sortingOrder < 9999)
+                if (canvas.gameObject == _popup || canvas.sortingOrder >= 9999 || !canvas.gameObject.activeInHierarchy) continue;
+                foreach (var child in canvas.GetComponentsInChildren<Transform>(true))
                 {
-                    // Hide any canvas that might contain updater buttons or popups
-                    if (canvas.gameObject.activeInHierarchy)
+                    if (_popup != null && child.IsChildOf(_popup.transform)) continue;
+                    string n = child.name.ToLower();
+                    if (child.gameObject.activeInHierarchy &&
+                        (n.Contains("update") || n.Contains("button") || n.Contains("popup") || n.Contains("dialog") || n.Contains("confirm")))
                     {
-                        var allChildren = canvas.GetComponentsInChildren<Transform>(true);
-                        foreach (var child in allChildren)
-                        {
-                            // Niemals etwas unter unserem eigenen Popup verstecken.
-                            if (_popup != null && child.IsChildOf(_popup.transform)) continue;
-                            if (child.gameObject.activeInHierarchy &&
-                                (child.name.ToLower().Contains("update") ||
-                                 child.name.ToLower().Contains("button") ||
-                                 child.name.ToLower().Contains("popup") ||
-                                 child.name.ToLower().Contains("dialog") ||
-                                 child.name.ToLower().Contains("confirm")))
-                            {
-                                child.gameObject.SetActive(false);
-                                _hiddenObjects.Add(child.gameObject);
-                            }
-                        }
+                        child.gameObject.SetActive(false);
+                        _hiddenObjects.Add(child.gameObject);
                     }
                 }
             }
-
-            // Disable ALL PassiveButtons that are not part of the mod manager
-            var allButtons = GameObject.FindObjectsOfType<PassiveButton>();
-            foreach (var button in allButtons)
+            foreach (var button in GameObject.FindObjectsOfType<PassiveButton>())
             {
                 if (!button.transform.IsChildOf(_popup.transform) && button.enabled)
                 {
@@ -237,35 +202,16 @@ namespace UsefulTORStuff
                     _disabledButtons.Add(button);
                 }
             }
-
-            UsefulTORStuffPlugin.Logger?.LogInfo($"Mod Manager: Disabled background UI ({_hiddenObjects.Count} objects hidden, {_disabledButtons.Count} buttons disabled)");
         }
 
         private void EnableBackgroundUI()
         {
             try
             {
-                // Re-enable only the buttons we disabled
-                foreach (var button in _disabledButtons)
-                {
-                    if (button != null)
-                    {
-                        button.enabled = true;
-                    }
-                }
+                foreach (var button in _disabledButtons) if (button != null) button.enabled = true;
                 _disabledButtons.Clear();
-
-                // Re-enable all hidden objects
-                foreach (var go in _hiddenObjects)
-                {
-                    if (go != null)
-                    {
-                        go.SetActive(true);
-                    }
-                }
+                foreach (var go in _hiddenObjects) if (go != null) go.SetActive(true);
                 _hiddenObjects.Clear();
-
-                UsefulTORStuffPlugin.Logger?.LogInfo("Mod Manager: Re-enabled background UI");
             }
             catch (Exception ex)
             {
@@ -273,92 +219,48 @@ namespace UsefulTORStuff
             }
         }
 
-        private void CreateOverlay()
+        // ====================================================================
+        // Header: tabs left, Update all + test versions right, summary line below
+        // ====================================================================
+        private void BuildHeader(GameObject panel, float y)
         {
-            var overlay = new GameObject("Overlay");
-            overlay.transform.SetParent(_popup.transform, false);
+            float x = VanillaUI.FrameW + Inset;
+            TabButton(panel, Tab.Installed, UTSLocalization.Tr("uts.modmanagerui.tab_installed"), x, y); x += 196;
+            TabButton(panel, Tab.Catalog, UTSLocalization.Tr("uts.modmanagerui.tab_catalog"), x, y); x += 196;
+            TabButton(panel, Tab.Modpacks, UTSLocalization.Tr("uts.modmanagerui.tab_modpacks"), x, y);
 
-            var overlayRect = overlay.AddComponent<RectTransform>();
-            overlayRect.anchorMin = Vector2.zero;
-            overlayRect.anchorMax = Vector2.one;
-            overlayRect.sizeDelta = Vector2.zero;
+            // test versions (right) and update all (left of it)
+            _testVersionToggle = VanillaUI.Button(panel, "", new Vector2(-VanillaUI.FrameW - Inset, y), new Vector2(230, 40), VanillaUI.Grey,
+                OnTestVersionToggle, out _testVersionToggleText, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+            UpdateTestVersionToggleText();
+            _updateAllButton = VanillaUI.Button(panel, UTSLocalization.Tr("uts.modmanagerui.update_all_button"),
+                new Vector2(-VanillaUI.FrameW - Inset - 242, y), new Vector2(190, 40), VanillaUI.Blue,
+                () => { if (!_updateAllRunning) this.StartCoroutine(CoUpdateAll()); }, out _updateAllButtonText,
+                new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+            RefreshUpdateAllButton();
 
-            // An Image, not a bare CanvasRenderer: only a Graphic builds a mesh (the 85 % dimming was
-            // never drawn) and only a Graphic is hit by the GraphicRaycaster (click-to-close never fired).
-            // P1.2: geteilte Textur aus dem Sprite-Cache.
-            var dim = overlay.AddComponent<UnityEngine.UI.Image>();
-            dim.sprite = GetSolidSprite(new Color(0, 0, 0, 0.85f));
-
-            // Click to close
-            var button = overlay.AddComponent<UnityEngine.UI.Button>();
-            button.targetGraphic = dim;
-            button.transition = Selectable.Transition.None;
-            button.onClick.AddListener((UnityEngine.Events.UnityAction)Hide);
-
-            UsefulTORStuffPlugin.Logger?.LogInfo("Mod Manager: Overlay created");
+            _headerSummaryText = VanillaUI.Label(panel, _summary, 15, VanillaUI.Warn, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1),
+                new Vector2(0, y - 50), new Vector2(-2 * (VanillaUI.FrameW + Inset), 24), TMPro.TextAlignmentOptions.Center);
         }
 
-        private void CreateMainPanel()
+        private void TabButton(GameObject panel, Tab tab, string label, float x, float y)
         {
-            var panel = new GameObject("MainPanel");
-            panel.transform.SetParent(_popup.transform, false);
-
-            var panelRect = panel.AddComponent<RectTransform>();
-            panelRect.anchorMin = new Vector2(0.5f, 0.5f);
-            panelRect.anchorMax = new Vector2(0.5f, 0.5f);
-            panelRect.pivot = new Vector2(0.5f, 0.5f);
-            panelRect.sizeDelta = new Vector2(900, 700);
-
-            // Panel background
-            var panelBg = panel.AddComponent<UnityEngine.UI.Image>();
-            panelBg.sprite = GetSolidSprite(new Color(0.1f, 0.1f, 0.15f, 0.98f));
-
-            // Title
-            CreateTitle(panel);
-
-            // F2: "Update All" header button + summary line.
-            CreateUpdateAllButton(panel);
-
-            // Shared "show test versions" toggle (top-right). Flips the process-wide flag read by every
-            // mod's vX.Y.Z(.W) version line AND, after the confirm dialog, switches every mod's update
-            // channel: mods with a different version on the other channel get downloaded (test build or
-            // back to stable, which can be a downgrade).
-            CreateTestVersionToggle(panel);
-
-            // Content
-            CreateContent(panel);
-
-            // Close button
-            CreateCloseButton(panel);
-
-            UsefulTORStuffPlugin.Logger?.LogInfo("Mod Manager: Main panel created");
+            bool sel = _tab == tab;
+            VanillaUI.Button(panel, label, new Vector2(x, y), new Vector2(186, 40), sel ? VanillaUI.TealBright : VanillaUI.Teal,
+                () => { if (_tab != tab) { _tab = tab; Rebuild(); } }, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1));
         }
 
-        private void CreateTitle(GameObject parent)
+        private void SetSummary(string text, Color? color = null)
         {
-            var title = new GameObject("Title");
-            title.transform.SetParent(parent.transform, false);
-
-            var titleRect = title.AddComponent<RectTransform>();
-            titleRect.anchorMin = new Vector2(0, 1);
-            titleRect.anchorMax = new Vector2(1, 1);
-            titleRect.pivot = new Vector2(0.5f, 1);
-            titleRect.anchoredPosition = new Vector2(0, -20);
-            titleRect.sizeDelta = new Vector2(-40, 60);
-
-            var titleText = title.AddComponent<TMPro.TextMeshProUGUI>();
-            titleText.text = UTSLocalization.Tr("uts.modmanagerui.title");
-            titleText.fontSize = 36;
-            titleText.fontStyle = TMPro.FontStyles.Bold;
-            titleText.alignment = TMPro.TextAlignmentOptions.Center;
-            titleText.color = new Color(0.3f, 0.7f, 1f);
+            _summary = text ?? "";
+            if (_headerSummaryText == null) return;
+            _headerSummaryText.color = color ?? VanillaUI.Warn;
+            VanillaUI.SetText(_headerSummaryText, _summary);
         }
 
-        private GameObject _testVersionToggle;
-        private TMPro.TextMeshProUGUI _testVersionToggleText;
-        private GameObject _confirmOverlay;
-
-        // Number of running mods that have a release in the requested channel (stable=true / test=false).
+        // ====================================================================
+        // Test-versions switch and channel switch
+        // ====================================================================
         private int CountChannelMods(bool stable)
         {
             int n = 0;
@@ -369,9 +271,36 @@ namespace UsefulTORStuff
             return n;
         }
 
+        private void OnTestVersionToggle()
+        {
+            if (_updateAllRunning) return;
+            bool nv = !VersionDisplay.ShowTestVersions();
+            bool stableChannel = !nv;            // OFF -> stable, ON -> test
+            string ch = stableChannel ? "STABLE" : "TEST";
+            int affected = CountChannelMods(stableChannel);
+            string onOffLabel = nv ? "ON" : "OFF";
+            string msg = affected > 0
+                ? UTSLocalization.Tr("uts.modmanagerui.confirm_switch_msg_affected", onOffLabel, affected, ch)
+                : UTSLocalization.Tr("uts.modmanagerui.confirm_switch_msg_none", onOffLabel, ch);
+            ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.confirm_switch_title"), msg, () => {
+                VersionDisplay.SetShowTestVersions(nv);
+                if (UsefulTORStuffPlugin.ShowTestVersionsConfig != null)
+                    UsefulTORStuffPlugin.ShowTestVersionsConfig.Value = nv;
+                UpdateTestVersionToggleText();
+                if (affected > 0) this.StartCoroutine(CoSwitchChannel(stableChannel));
+            });
+        }
+
+        private void UpdateTestVersionToggleText()
+        {
+            if (_testVersionToggleText == null) return;
+            bool on = VersionDisplay.ShowTestVersions();
+            VanillaUI.SetText(_testVersionToggleText, on ? UTSLocalization.Tr("uts.modmanagerui.test_versions_on") : UTSLocalization.Tr("uts.modmanagerui.test_versions_off"));
+            VanillaUI.Recolor(_testVersionToggle, on ? VanillaUI.Green : VanillaUI.Grey);
+        }
+
         // Switch every eligible mod to its newest release of the given channel, sequentially (each
-        // updater is a single-busy state machine), waiting for success (2) or error (3) before the next.
-        // A deliberate, possibly DOWNgrading channel switch — not a version-gated update.
+        // updater is a single-busy state machine). A deliberate, possibly DOWNgrading switch.
         private IEnumerator CoSwitchChannel(bool stable)
         {
             if (_updateAllRunning) yield break;
@@ -393,226 +322,91 @@ namespace UsefulTORStuff
                     failed++;
                     continue;
                 }
-                // The updater ignores a trigger while it runs its own re-check (audit 04.10.): wait up to
-                // 2 s for it to start, trigger again while it is busy, give up after ~20 s.
-                {
-                    float startWait = 20f, retryIn = 2f;
-                    int st = 0;
-                    while (startWait > 0f)
-                    {
-                        try { st = mod.GetUpdateState?.Invoke() ?? 0; } catch { st = 3; }
-                        if (st == 1 || st == 2) break;
-                        startWait -= Time.deltaTime;
-                        retryIn -= Time.deltaTime;
-                        if (retryIn <= 0f) { retryIn = 2f; try { mod.TriggerChannelSwitch(stable); } catch { } }
-                        yield return null;
-                    }
-                }
-
-                float timeout = 90f;
+                yield return WaitForUpdater(mod, () => mod.TriggerChannelSwitch(stable));
                 int state = 0;
-                while (timeout > 0f)
-                {
-                    try { state = mod.GetUpdateState?.Invoke() ?? 0; } catch { state = 3; }
-                    if (state == 2 || state == 3) break;
-                    timeout -= Time.deltaTime;
-                    yield return null;
-                }
+                try { state = mod.GetUpdateState?.Invoke() ?? 0; } catch { state = 3; }
                 if (state == 2) done++; else failed++;
             }
 
             _updateAllRunning = false;
             RefreshUpdateAllButton();
-            if (_headerSummaryText != null)
-                _headerSummaryText.text = failed == 0
-                    ? $"<color=#9EFFA0>{UTSLocalization.Tr("uts.modmanagerui.channel_switch_summary_ok", done, stable ? "Stable" : "Test")}</color>"
-                    : $"<color=#FFD27F>{UTSLocalization.Tr("uts.modmanagerui.channel_switch_summary_partial", done, failed)}</color>";
+            SetSummary(failed == 0
+                ? UTSLocalization.Tr("uts.modmanagerui.channel_switch_summary_ok", done, stable ? "Stable" : "Test")
+                : UTSLocalization.Tr("uts.modmanagerui.channel_switch_summary_partial", done, failed),
+                failed == 0 ? VanillaUI.Good : VanillaUI.Warn);
         }
 
-        // Simple modal confirmation overlay (dim background + box with message + Ja/Abbrechen).
+        // The updater ignores a trigger while it runs its own re-check (audit 04.10.): wait up to 20 s
+        // for it to start, re-trigger every 2 s, then wait up to 90 s for success (2) or error (3).
+        private static IEnumerator WaitForUpdater(ModInfo mod, Action retrigger)
+        {
+            float startWait = 20f, retryIn = 2f;
+            int st = 0;
+            while (startWait > 0f)
+            {
+                try { st = mod.GetUpdateState?.Invoke() ?? 0; } catch { st = 3; }
+                if (st == 1 || st == 2 || st == 3) break;
+                startWait -= Time.deltaTime;
+                retryIn -= Time.deltaTime;
+                if (retryIn <= 0f) { retryIn = 2f; try { retrigger(); } catch { } }
+                yield return null;
+            }
+            float timeout = 90f;
+            while (timeout > 0f)
+            {
+                try { st = mod.GetUpdateState?.Invoke() ?? 0; } catch { st = 3; }
+                if (st == 2 || st == 3) break;
+                timeout -= Time.deltaTime;
+                yield return null;
+            }
+        }
+
+        // ====================================================================
+        // Confirmation dialog
+        // ====================================================================
         private void ShowConfirm(string title, string message, Action onYes)
         {
             HideConfirm();
-            if (_popup == null) { onYes?.Invoke(); return; } // no UI root -> just proceed
-            _confirmOverlay = new GameObject("ConfirmOverlay");
-            _confirmOverlay.transform.SetParent(_popup.transform, false);
-            var ort = _confirmOverlay.AddComponent<RectTransform>();
-            ort.anchorMin = Vector2.zero; ort.anchorMax = Vector2.one; ort.sizeDelta = Vector2.zero; ort.anchoredPosition = Vector2.zero;
-            var dim = _confirmOverlay.AddComponent<UnityEngine.UI.Image>();
-            dim.sprite = GetSolidSprite(new Color(0f, 0f, 0f, 0.6f));
-            _confirmOverlay.AddComponent<UnityEngine.UI.Button>(); // swallow clicks behind the box
-
-            var box = new GameObject("Box"); box.transform.SetParent(_confirmOverlay.transform, false);
-            var brt = box.AddComponent<RectTransform>();
-            brt.anchorMin = new Vector2(0.5f, 0.5f); brt.anchorMax = new Vector2(0.5f, 0.5f); brt.pivot = new Vector2(0.5f, 0.5f);
-            brt.sizeDelta = new Vector2(540, 280); brt.anchoredPosition = Vector2.zero;
-            box.AddComponent<UnityEngine.UI.Image>().sprite = GetSolidSprite(new Color(0.12f, 0.12f, 0.18f, 0.99f));
-
-            var t = new GameObject("Title"); t.transform.SetParent(box.transform, false);
-            var trt = t.AddComponent<RectTransform>(); trt.anchorMin = new Vector2(0, 1); trt.anchorMax = new Vector2(1, 1); trt.pivot = new Vector2(0.5f, 1); trt.anchoredPosition = new Vector2(0, -14); trt.sizeDelta = new Vector2(-24, 40);
-            var tt = t.AddComponent<TMPro.TextMeshProUGUI>(); tt.text = title; tt.fontSize = 22; tt.fontStyle = TMPro.FontStyles.Bold; tt.alignment = TMPro.TextAlignmentOptions.Center; tt.color = new Color(0.3f, 0.7f, 1f);
-
-            var m = new GameObject("Msg"); m.transform.SetParent(box.transform, false);
-            var mrt = m.AddComponent<RectTransform>(); mrt.anchorMin = Vector2.zero; mrt.anchorMax = Vector2.one; mrt.offsetMin = new Vector2(18, 66); mrt.offsetMax = new Vector2(-18, -56);
-            var mt = m.AddComponent<TMPro.TextMeshProUGUI>(); mt.text = message; mt.fontSize = 15; mt.alignment = TMPro.TextAlignmentOptions.Top; mt.color = Color.white; mt.enableWordWrapping = true;
-
-            MakeConfirmButton(box, UTSLocalization.Tr("uts.modmanagerui.confirm_yes"), new Vector2(-95, 16), new Color(0.2f, 0.6f, 0.25f, 0.95f), () => { HideConfirm(); onYes?.Invoke(); });
-            MakeConfirmButton(box, UTSLocalization.Tr("uts.modmanagerui.confirm_cancel"), new Vector2(95, 16), new Color(0.5f, 0.2f, 0.2f, 0.95f), () => HideConfirm());
-        }
-
-        private void MakeConfirmButton(GameObject parent, string label, Vector2 anchoredPos, Color col, Action onClick)
-        {
-            var b = new GameObject("Btn" + label); b.transform.SetParent(parent.transform, false);
-            var rt = b.AddComponent<RectTransform>(); rt.anchorMin = new Vector2(0.5f, 0); rt.anchorMax = new Vector2(0.5f, 0); rt.pivot = new Vector2(0.5f, 0); rt.sizeDelta = new Vector2(160, 40); rt.anchoredPosition = anchoredPos;
-            b.AddComponent<UnityEngine.UI.Image>().sprite = GetSolidSprite(col);
-            var to = new GameObject("T"); to.transform.SetParent(b.transform, false);
-            var trt = to.AddComponent<RectTransform>(); trt.anchorMin = Vector2.zero; trt.anchorMax = Vector2.one; trt.sizeDelta = Vector2.zero;
-            var tx = to.AddComponent<TMPro.TextMeshProUGUI>(); tx.text = label; tx.fontSize = 16; tx.fontStyle = TMPro.FontStyles.Bold; tx.alignment = TMPro.TextAlignmentOptions.Center; tx.color = Color.white;
-            b.AddComponent<UnityEngine.UI.Button>().onClick.AddListener((UnityEngine.Events.UnityAction)(() => onClick()));
+            if (_popup == null) { onYes?.Invoke(); return; }
+            _confirmOverlay = VanillaUI.Backdrop(_popup, null);
+            _confirmOverlay.name = "ConfirmOverlay";
+            var box = VanillaUI.CenterPanel(_confirmOverlay, new Vector2(600, 320));
+            float y = VanillaUI.Title(box, title, 14f, 26f);
+            VanillaUI.Label(box, message, 15, Color.white, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero,
+                new Vector2(-2 * (VanillaUI.FrameW + 24f), -(VanillaUI.FrameW + 70f + 76f) - 10f), TMPro.TextAlignmentOptions.Top)
+                .rectTransform.offsetMax = new Vector2(-(VanillaUI.FrameW + 24f), y);
+            VanillaUI.Button(box, UTSLocalization.Tr("uts.modmanagerui.confirm_yes"), new Vector2(-100, VanillaUI.FrameW + 16), new Vector2(180, 46),
+                VanillaUI.Green, () => { HideConfirm(); onYes?.Invoke(); });
+            VanillaUI.Button(box, UTSLocalization.Tr("uts.modmanagerui.confirm_cancel"), new Vector2(100, VanillaUI.FrameW + 16), new Vector2(180, 46),
+                VanillaUI.Grey, HideConfirm);
         }
 
         private void HideConfirm()
         {
-            if (_confirmOverlay != null) { UnityEngine.Object.Destroy(_confirmOverlay); _confirmOverlay = null; }
+            if (_confirmOverlay != null) { Destroy(_confirmOverlay); _confirmOverlay = null; }
         }
 
-        // Top-right toggle for the shared "show test versions" flag. Not display-only: besides the 4th
-        // version component (.W on test builds) in every version line it selects the update channel,
-        // and confirming it installs the other channel's builds (CoSwitchChannel). Persists via
-        // UsefulTORStuffPlugin.ShowTestVersionsConfig so the choice survives restarts.
-        private void CreateTestVersionToggle(GameObject parent)
-        {
-            var button = new GameObject("TestVersionToggle");
-            button.transform.SetParent(parent.transform, false);
-            var btnRect = button.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(1, 1);
-            btnRect.anchorMax = new Vector2(1, 1);
-            btnRect.pivot = new Vector2(1, 1);
-            btnRect.anchoredPosition = new Vector2(-20, -18);
-            btnRect.sizeDelta = new Vector2(210, 34);
-
-            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            btnBg.sprite = GetSolidSprite(new Color(0.25f, 0.25f, 0.35f, 0.9f));
-
-            var btnTextObj = new GameObject("Text");
-            btnTextObj.transform.SetParent(button.transform, false);
-            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
-            btnTextRect.anchorMin = Vector2.zero;
-            btnTextRect.anchorMax = Vector2.one;
-            btnTextRect.sizeDelta = Vector2.zero;
-            _testVersionToggleText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            _testVersionToggleText.fontSize = 14;
-            _testVersionToggleText.fontStyle = TMPro.FontStyles.Bold;
-            _testVersionToggleText.alignment = TMPro.TextAlignmentOptions.Center;
-            UpdateTestVersionToggleText();
-
-            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
-            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
-                if (_updateAllRunning) return; // ein Download/Wechsel läuft bereits
-                bool nv = !VersionDisplay.ShowTestVersions();
-                bool stableChannel = !nv;            // AUS -> Stable, AN -> Test
-                string ch = stableChannel ? "STABLE" : "TEST";
-                int affected = CountChannelMods(stableChannel);
-                string onOffLabel = nv ? "ON" : "OFF";
-                string msg = affected > 0
-                    ? UTSLocalization.Tr("uts.modmanagerui.confirm_switch_msg_affected", onOffLabel, affected, ch)
-                    : UTSLocalization.Tr("uts.modmanagerui.confirm_switch_msg_none", onOffLabel, ch);
-                ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.confirm_switch_title"), msg, () => {
-                    VersionDisplay.SetShowTestVersions(nv);
-                    if (UsefulTORStuffPlugin.ShowTestVersionsConfig != null)
-                        UsefulTORStuffPlugin.ShowTestVersionsConfig.Value = nv;
-                    UpdateTestVersionToggleText();
-                    if (affected > 0) this.StartCoroutine(CoSwitchChannel(stableChannel));
-                });
-            }));
-            _testVersionToggle = button;
-        }
-
-        private void UpdateTestVersionToggleText()
-        {
-            if (_testVersionToggleText == null) return;
-            bool on = VersionDisplay.ShowTestVersions();
-            _testVersionToggleText.text = on ? UTSLocalization.Tr("uts.modmanagerui.test_versions_on") : UTSLocalization.Tr("uts.modmanagerui.test_versions_off");
-            _testVersionToggleText.color = on ? new Color(0.4f, 1f, 0.5f) : new Color(0.8f, 0.8f, 0.8f);
-        }
-
-        // F2: "Update All" header button (top-left) + a summary line. The button is enabled only
-        // when ≥1 registered mod reports an available update; clicking it runs the per-mod downloads
-        // sequentially (the updaters are single-_busy state machines).
-        private void CreateUpdateAllButton(GameObject parent)
-        {
-            var button = new GameObject("UpdateAllButton");
-            button.transform.SetParent(parent.transform, false);
-            var btnRect = button.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(0, 1);
-            btnRect.anchorMax = new Vector2(0, 1);
-            btnRect.pivot = new Vector2(0, 1);
-            btnRect.anchoredPosition = new Vector2(20, -18);
-            btnRect.sizeDelta = new Vector2(170, 34);
-
-            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            btnBg.sprite = GetSolidSprite(new Color(0.2f, 0.6f, 1f, 0.9f));
-
-            var btnTextObj = new GameObject("Text");
-            btnTextObj.transform.SetParent(button.transform, false);
-            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
-            btnTextRect.anchorMin = Vector2.zero;
-            btnTextRect.anchorMax = Vector2.one;
-            btnTextRect.sizeDelta = Vector2.zero;
-            _updateAllButtonText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            _updateAllButtonText.text = UTSLocalization.Tr("uts.modmanagerui.update_all_button");
-            _updateAllButtonText.fontSize = 15;
-            _updateAllButtonText.fontStyle = TMPro.FontStyles.Bold;
-            _updateAllButtonText.alignment = TMPro.TextAlignmentOptions.Center;
-            _updateAllButtonText.color = Color.white;
-
-            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
-            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
-                if (_updateAllRunning) return;
-                this.StartCoroutine(CoUpdateAll());
-            }));
-            _updateAllButton = button;
-
-            // Summary line under the title.
-            var sumObj = new GameObject("UpdateAllSummary");
-            sumObj.transform.SetParent(parent.transform, false);
-            var sumRect = sumObj.AddComponent<RectTransform>();
-            sumRect.anchorMin = new Vector2(0, 1);
-            sumRect.anchorMax = new Vector2(1, 1);
-            sumRect.pivot = new Vector2(0.5f, 1);
-            sumRect.anchoredPosition = new Vector2(0, -56);
-            sumRect.sizeDelta = new Vector2(-40, 22);
-            _headerSummaryText = sumObj.AddComponent<TMPro.TextMeshProUGUI>();
-            _headerSummaryText.text = "";
-            _headerSummaryText.fontSize = 15;
-            _headerSummaryText.alignment = TMPro.TextAlignmentOptions.Center;
-            _headerSummaryText.color = new Color(1f, 1f, 0.6f);
-
-            RefreshUpdateAllButton();
-        }
-
-        // Enables the "Update All" button only when ≥1 mod has an update (and not mid-run).
+        // ====================================================================
+        // Update all
+        // ====================================================================
         private void RefreshUpdateAllButton()
         {
             if (_updateAllButton == null) return;
             bool any = false;
             try { any = ModManagerRegistry.GetAllMods().Any(m => { try { return m.RuntimeEnabled && (m.HasUpdate?.Invoke() ?? false); } catch { return false; } }); }
             catch { }
-            var b = _updateAllButton.GetComponent<UnityEngine.UI.Button>();
-            if (b != null) b.interactable = any && !_updateAllRunning;
-            if (_updateAllButtonText != null)
-                _updateAllButtonText.color = (any && !_updateAllRunning) ? Color.white : new Color(0.6f, 0.6f, 0.6f);
+            bool on = any && !_updateAllRunning;
+            VanillaUI.Recolor(_updateAllButton, on ? VanillaUI.Blue : VanillaUI.Grey);
+            var b = _updateAllButton.GetComponentInChildren<Button>();
+            if (b != null) b.interactable = on;
         }
 
-        // F2: download every updatable mod's release SEQUENTIALLY, then show one summary line. Each
-        // updater is a single-_busy state machine, so we wait for one to finish (state 2/3) before
-        // starting the next. Resilient: a mod whose check/download failed is counted and skipped.
         private IEnumerator CoUpdateAll()
         {
             if (_updateAllRunning) yield break;
             _updateAllRunning = true;
             RefreshUpdateAllButton();
-            if (_updateAllButtonText != null) _updateAllButtonText.text = UTSLocalization.Tr("uts.modmanagerui.updating_label");
+            if (_updateAllButtonText != null) VanillaUI.SetText(_updateAllButtonText, UTSLocalization.Tr("uts.modmanagerui.updating_label"));
 
             int updated = 0, failed = 0;
             List<ModInfo> mods;
@@ -624,8 +418,6 @@ namespace UsefulTORStuff
                 bool has = false;
                 try { has = mod.RuntimeEnabled && (mod.HasUpdate?.Invoke() ?? false); } catch { }
                 if (!has || mod.TriggerUpdate == null || mod.GetUpdateState == null) continue;
-
-                // Already-succeeded mod (state 2) from a previous per-entry click: count, don't re-run.
                 int pre = 0; try { pre = mod.GetUpdateState(); } catch { }
                 if (pre == 2) { updated++; continue; }
 
@@ -636,236 +428,143 @@ namespace UsefulTORStuff
                     failed++;
                     continue;
                 }
-                // The updater ignores a trigger while it runs its own re-check (audit 04.10.): wait up to
-                // 2 s for it to start, trigger again while it is busy, give up after ~20 s.
-                {
-                    float startWait = 20f, retryIn = 2f;
-                    int st = 0;
-                    while (startWait > 0f)
-                    {
-                        try { st = mod.GetUpdateState?.Invoke() ?? 0; } catch { st = 3; }
-                        if (st == 1 || st == 2) break;
-                        startWait -= Time.deltaTime;
-                        retryIn -= Time.deltaTime;
-                        if (retryIn <= 0f) { retryIn = 2f; try { mod.TriggerUpdate(); } catch { } }
-                        yield return null;
-                    }
-                }
-
-                // Wait for this mod to reach success (2) or error (3), up to a timeout.
-                float timeout = 90f;
+                yield return WaitForUpdater(mod, () => mod.TriggerUpdate());
                 int state = 0;
-                while (timeout > 0f)
-                {
-                    try { state = mod.GetUpdateState?.Invoke() ?? 0; } catch { state = 3; }
-                    if (state == 2 || state == 3) break;
-                    timeout -= Time.deltaTime;
-                    yield return null;
-                }
-                if (state == 2) updated++;
-                else failed++;
+                try { state = mod.GetUpdateState?.Invoke() ?? 0; } catch { state = 3; }
+                if (state == 2) updated++; else failed++;
             }
 
             _updateAllRunning = false;
-            if (_headerSummaryText != null)
-            {
-                if (updated == 0 && failed == 0)
-                    _headerSummaryText.text = UTSLocalization.Tr("uts.modmanagerui.update_all_none");
-                else
-                    _headerSummaryText.text = failed == 0
-                        ? UTSLocalization.Tr("uts.modmanagerui.update_all_ok", updated)
-                        : UTSLocalization.Tr("uts.modmanagerui.update_all_partial", updated, failed);
-            }
-            if (_updateAllButtonText != null) _updateAllButtonText.text = UTSLocalization.Tr("uts.modmanagerui.update_all_button");
+            if (updated == 0 && failed == 0) SetSummary(UTSLocalization.Tr("uts.modmanagerui.update_all_none"), VanillaUI.Muted);
+            else SetSummary(failed == 0
+                    ? UTSLocalization.Tr("uts.modmanagerui.update_all_ok", updated)
+                    : UTSLocalization.Tr("uts.modmanagerui.update_all_partial", updated, failed),
+                    failed == 0 ? VanillaUI.Good : VanillaUI.Warn);
+            if (_updateAllButtonText != null) VanillaUI.SetText(_updateAllButtonText, UTSLocalization.Tr("uts.modmanagerui.update_all_button"));
             RefreshUpdateAllButton();
         }
 
-        // Breite des Scrollbalken-Streifens rechts (Spur + Abstand). Der Viewport wird um
-        // diesen Betrag schmaler, damit Mod-Inhalte nie unter der Scrollbar liegen.
+        // ====================================================================
+        // Content: a scroll view with the active tab's rows
+        // ====================================================================
         private const float ScrollbarWidth = 14f;
 
-        private void CreateContent(GameObject parent)
+        private void BuildContent(GameObject panel, float top)
         {
-            // ScrollView = Wurzel der scrollbaren Flaeche. Traegt die ScrollRect-Logik.
             var scrollView = new GameObject("ScrollView");
-            scrollView.transform.SetParent(parent.transform, false);
+            scrollView.transform.SetParent(panel.transform, false);
+            var svr = VanillaUI.Rect(scrollView, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f));
+            svr.offsetMin = new Vector2(VanillaUI.FrameW + Inset, VanillaUI.FrameW + 84f);
+            svr.offsetMax = new Vector2(-(VanillaUI.FrameW + Inset), top);
 
-            var scrollViewRect = scrollView.AddComponent<RectTransform>();
-            scrollViewRect.anchorMin = new Vector2(0, 0);
-            scrollViewRect.anchorMax = new Vector2(1, 1);
-            scrollViewRect.offsetMin = new Vector2(20, 80);
-            scrollViewRect.offsetMax = new Vector2(-20, -90);
-
-            var scrollRect = scrollView.AddComponent<UnityEngine.UI.ScrollRect>();
+            var scrollRect = scrollView.AddComponent<ScrollRect>();
             scrollRect.horizontal = false;
             scrollRect.vertical = true;
-            scrollRect.movementType = UnityEngine.UI.ScrollRect.MovementType.Clamped;
-            scrollRect.scrollSensitivity = 35f; // Mausrad-Tempo
+            scrollRect.movementType = ScrollRect.MovementType.Clamped;
+            scrollRect.scrollSensitivity = 35f;
             scrollRect.inertia = false;
 
-            // Viewport = sichtbarer Ausschnitt, clippt den Inhalt per RectMask2D.
-            // Rechts um die Scrollbar-Breite eingerueckt, damit Buttons frei bleiben.
             var viewport = new GameObject("Viewport");
             viewport.transform.SetParent(scrollView.transform, false);
-            var viewportRect = viewport.AddComponent<RectTransform>();
-            viewportRect.anchorMin = new Vector2(0, 0);
-            viewportRect.anchorMax = new Vector2(1, 1);
-            viewportRect.pivot = new Vector2(0, 1);
-            viewportRect.offsetMin = new Vector2(0, 0);
+            var viewportRect = VanillaUI.Rect(viewport, Vector2.zero, Vector2.one, new Vector2(0, 1));
+            viewportRect.offsetMin = Vector2.zero;
             viewportRect.offsetMax = new Vector2(-ScrollbarWidth, 0);
-            viewport.AddComponent<UnityEngine.UI.RectMask2D>();
+            viewport.AddComponent<RectMask2D>();
 
-            // Content = bewegter Container mit den Mod-Zeilen.
             var content = new GameObject("Content");
             content.transform.SetParent(viewport.transform, false);
-
-            var contentRect = content.AddComponent<RectTransform>();
-            contentRect.anchorMin = new Vector2(0, 1);
-            contentRect.anchorMax = new Vector2(1, 1);
-            contentRect.pivot = new Vector2(0.5f, 1);
+            var contentRect = VanillaUI.Rect(content, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1));
             contentRect.anchoredPosition = Vector2.zero;
-            contentRect.sizeDelta = new Vector2(0, 0);
-
-            // Vertikale Scrollbar rechts im freigehaltenen Streifen.
-            var scrollbar = CreateScrollbar(scrollView);
+            contentRect.sizeDelta = Vector2.zero;
 
             scrollRect.viewport = viewportRect;
             scrollRect.content = contentRect;
-            scrollRect.verticalScrollbar = scrollbar;
-            scrollRect.verticalScrollbarVisibility = UnityEngine.UI.ScrollRect.ScrollbarVisibility.AutoHide;
+            scrollRect.verticalScrollbar = CreateScrollbar(scrollView);
+            scrollRect.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
 
-            // Add mod entries
-            _entryRefs.Clear();
-            var mods = ModManagerRegistry.GetAllMods();
-            float yPos = -10;
-
-            foreach (var mod in mods)
+            float yPos = -4;
+            switch (_tab)
             {
-                yPos = CreateModEntry(content, mod, yPos);
+                case Tab.Installed:
+                    _entryRefs.Clear();
+                    foreach (var mod in ModManagerRegistry.GetAllMods()) yPos = CreateModEntry(content, mod, yPos);
+                    break;
+                case Tab.Catalog:
+                    _catalogRefs.Clear();
+                    yPos = CreateCatalogRows(content, yPos);
+                    break;
+                case Tab.Modpacks:
+                    yPos = CreateModpackRows(content, yPos);
+                    break;
             }
-
-            // Gesamthoehe des Inhalts. Ist sie groesser als der Viewport, wird automatisch
-            // gescrollt (Mausrad oder Scrollbar). So skaliert das UI mit beliebig vielen Mods.
-            contentRect.sizeDelta = new Vector2(0, Mathf.Abs(yPos) + 20);
-
-            // Nach oben scrollen (erste Mod sichtbar), sobald das Layout steht.
+            contentRect.sizeDelta = new Vector2(0, Mathf.Abs(yPos) + 12);
             scrollRect.verticalNormalizedPosition = 1f;
         }
 
-        // Baut eine schlichte vertikale Scrollbar (Spur + Griff) und gibt die Komponente zurueck.
         private UnityEngine.UI.Scrollbar CreateScrollbar(GameObject scrollView)
         {
-            var bar = new GameObject("Scrollbar");
-            bar.transform.SetParent(scrollView.transform, false);
-
-            var barRect = bar.AddComponent<RectTransform>();
-            barRect.anchorMin = new Vector2(1, 0);
-            barRect.anchorMax = new Vector2(1, 1);
-            barRect.pivot = new Vector2(1, 1);
-            barRect.sizeDelta = new Vector2(ScrollbarWidth - 2f, 0);
+            var bar = VanillaUI.Rounded(scrollView, VanillaUI.Field, 5);
+            bar.name = "Scrollbar";
+            var barRect = VanillaUI.Rect(bar, new Vector2(1, 0), new Vector2(1, 1), new Vector2(1, 1));
+            barRect.sizeDelta = new Vector2(ScrollbarWidth - 4f, 0);
             barRect.anchoredPosition = Vector2.zero;
 
-            var barBg = bar.AddComponent<UnityEngine.UI.Image>();
-            barBg.color = new Color(0.08f, 0.08f, 0.12f, 0.9f);
-
-            // Sliding-Area + Griff
             var slidingArea = new GameObject("SlidingArea");
             slidingArea.transform.SetParent(bar.transform, false);
-            var slidingRect = slidingArea.AddComponent<RectTransform>();
-            slidingRect.anchorMin = Vector2.zero;
-            slidingRect.anchorMax = Vector2.one;
-            slidingRect.sizeDelta = Vector2.zero;
-            slidingRect.anchoredPosition = Vector2.zero;
+            VanillaUI.Stretch(slidingArea);
 
-            var handle = new GameObject("Handle");
-            handle.transform.SetParent(slidingArea.transform, false);
-            var handleRect = handle.AddComponent<RectTransform>();
+            var handle = VanillaUI.Rounded(slidingArea, VanillaUI.Frame, 5);
+            handle.name = "Handle";
+            var handleRect = handle.GetComponent<RectTransform>();
             handleRect.sizeDelta = Vector2.zero;
-            var handleImg = handle.AddComponent<UnityEngine.UI.Image>();
-            handleImg.color = new Color(0.4f, 0.5f, 0.7f, 0.95f);
+            var handleImg = handle.GetComponent<Image>();
+            handleImg.raycastTarget = true;
 
             var scrollbar = bar.AddComponent<UnityEngine.UI.Scrollbar>();
             scrollbar.direction = UnityEngine.UI.Scrollbar.Direction.BottomToTop;
             scrollbar.handleRect = handleRect;
             scrollbar.targetGraphic = handleImg;
-
             return scrollbar;
         }
 
+        // ====================================================================
+        // Tab 1: installed mods
+        // ====================================================================
         private float CreateModEntry(GameObject parent, ModInfo mod, float yPos)
         {
-            var entry = new GameObject($"Mod_{mod.Guid}");
-            entry.transform.SetParent(parent.transform, false);
-
-            var entryRect = entry.AddComponent<RectTransform>();
-            entryRect.anchorMin = new Vector2(0, 1);
-            entryRect.anchorMax = new Vector2(1, 1);
-            entryRect.pivot = new Vector2(0.5f, 1);
-            entryRect.anchoredPosition = new Vector2(0, yPos);
-            entryRect.sizeDelta = new Vector2(-20, 140);
-
-            // Anzeige basiert auf dem Laufzeit-Zustand (läuft der Mod gerade?), nicht auf dem
-            // Config-Wert: nach einem Toggle läuft der Mod bis zum Neustart weiter und soll auch
-            // bis dahin als aktiv erscheinen (nur mit "Neustart erforderlich"-Hinweis).
             bool runtimeEnabled = mod.RuntimeEnabled;
             bool configEnabled = mod.Enabled?.Value ?? true;
 
-            // Background
-            var bg = entry.AddComponent<UnityEngine.UI.Image>();
-            bg.sprite = GetSolidSprite(runtimeEnabled ? new Color(0.15f, 0.2f, 0.15f, 0.8f) : new Color(0.2f, 0.15f, 0.15f, 0.6f));
+            var entry = VanillaUI.Row(parent, yPos, 132, 2, VanillaUI.Field);
+            entry.name = $"Mod_{mod.Guid}";
+            var entryRect = entry.GetComponent<RectTransform>();
 
-            // Mod name + version
-            var nameObj = new GameObject("Name");
-            nameObj.transform.SetParent(entry.transform, false);
-            var nameRect = nameObj.AddComponent<RectTransform>();
-            nameRect.anchorMin = new Vector2(0, 1);
-            nameRect.anchorMax = new Vector2(0.7f, 1);
-            nameRect.pivot = new Vector2(0, 1);
-            nameRect.anchoredPosition = new Vector2(15, -10);
-            nameRect.sizeDelta = new Vector2(0, 30);
+            // a coloured edge in the mod's colour, grey when it is not running
+            var edge = VanillaUI.Box(entry, Vector2.zero, new Vector2(6, 132), runtimeEnabled ? mod.ButtonColor : VanillaUI.Frame, 3);
+            edge.GetComponent<Image>().raycastTarget = false;
 
-            var nameText = nameObj.AddComponent<TMPro.TextMeshProUGUI>();
-            string statusIcon = runtimeEnabled ? UTSLocalization.Tr("uts.modmanagerui.status_on") : UTSLocalization.Tr("uts.modmanagerui.status_off");
-            nameText.text = $"{statusIcon} <b>{mod.Name}</b> <size=70%>v{mod.Version}</size>";
-            nameText.fontSize = 24;
-            nameText.alignment = TMPro.TextAlignmentOptions.Left;
-            nameText.color = runtimeEnabled ? mod.ButtonColor : Color.gray;
+            var name = VanillaUI.Text(entry, $"{mod.Name} <size=70%><color=#B9C1C5>v{VersionDisplay.Format(mod.Version)}</color></size>", 24,
+                runtimeEnabled ? Color.white : VanillaUI.Muted, new Vector2(20, -10), new Vector2(700, 32), TMPro.FontStyles.Bold);
+            name.enableWordWrapping = false; name.overflowMode = TMPro.TextOverflowModes.Ellipsis;
 
-            var statusObj = new GameObject("Status");
-            statusObj.transform.SetParent(entry.transform, false);
-            var statusRect = statusObj.AddComponent<RectTransform>();
-            statusRect.anchorMin = new Vector2(0, 1);
-            statusRect.anchorMax = new Vector2(0.6f, 1);
-            statusRect.pivot = new Vector2(0, 1);
-            statusRect.anchoredPosition = new Vector2(15, -45);
-            statusRect.sizeDelta = new Vector2(0, 20);
-
-            var statusText = statusObj.AddComponent<TMPro.TextMeshProUGUI>();
-            statusText.fontSize = 16;
-
-            // Referenzen für das Live-Polling sammeln.
+            var statusText = VanillaUI.Text(entry, "", 15, VanillaUI.Muted, new Vector2(20, -46), new Vector2(700, 22));
             var refs = new ModEntryRefs { Mod = mod, StatusText = statusText, RuntimeEnabled = runtimeEnabled };
 
-            // Enable/Disable toggle button. originalValue = Laufzeit-Zustand, damit ein Zurück-
-            // Toggeln den "Neustart erforderlich"-Hinweis wieder aufhebt.
+            // buttons, right: on/off and update in the first row, extra toggle and GitHub in the second
             CreateToggleButton(entry, mod, runtimeEnabled, configEnabled);
-
-            // Update-Button immer anlegen (startet inaktiv); RefreshEntry blendet ihn je nach
-            // Update-/Download-Zustand ein. So erscheinen auch spät geladene Releases live (Bug 3).
             CreateUpdateButton(entry, mod, refs);
-
-            // Optionaler Live-Toggle (z. B. HostFix' Snitch-Fallback). Wirkt sofort, kein Neustart.
-            if (mod.ExtraToggle != null)
-                CreateExtraToggleButton(entry, mod);
+            if (mod.ExtraToggle != null) CreateExtraToggleButton(entry, mod);
+            if (HasRepository(mod))
+                VanillaUI.Button(entry, UTSLocalization.Tr("uts.modmanagerui.github_button"), new Vector2(-14, -58), new Vector2(160, 36), VanillaUI.Grey,
+                    () => {
+                        try { Application.OpenURL($"https://github.com/{mod.RepositoryOwner}/{mod.RepositoryName}"); }
+                        catch (Exception ex) { UsefulTORStuffPlugin.Logger?.LogError($"Failed to open GitHub: {ex}"); }
+                    }, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
 
             _entryRefs.Add(refs);
-
-            // Status-Text und Update-Button sofort in den korrekten Zustand bringen.
             RefreshEntry(refs);
 
-            // F2: Release-Notes der neuesten Version anzeigen, wenn ein Update verfügbar ist und der
-            // Updater die Notes liefert (ältere installierte Updater haben GetReleaseNotes nicht →
-            // dann einfach ausgeblendet statt Fehler). Notes kommen aus dem bereits geladenen JSON.
+            // release notes of the newest version when an update is available and the updater has them
             float notesHeight = 0f;
             bool updateAvail = false;
             try { updateAvail = mod.HasUpdate?.Invoke() ?? false; } catch { }
@@ -878,293 +577,121 @@ namespace UsefulTORStuff
                 {
                     int lineCount = notes.Split('\n').Length;
                     notesHeight = Mathf.Clamp(lineCount * 18f + 26f, 50f, 200f);
-
-                    var notesObj = new GameObject("ReleaseNotes");
-                    notesObj.transform.SetParent(entry.transform, false);
-                    var notesRect = notesObj.AddComponent<RectTransform>();
-                    notesRect.anchorMin = new Vector2(0, 1);
-                    notesRect.anchorMax = new Vector2(1, 1);
-                    notesRect.pivot = new Vector2(0, 1);
-                    notesRect.anchoredPosition = new Vector2(15, -72);
-                    notesRect.sizeDelta = new Vector2(-30, notesHeight);
-
-                    var notesText = notesObj.AddComponent<TMPro.TextMeshProUGUI>();
-                    notesText.text = UTSLocalization.Tr("uts.modmanagerui.whats_new", notes);
-                    notesText.fontSize = 13;
-                    notesText.color = new Color(0.82f, 0.82f, 0.86f);
-                    notesText.alignment = TMPro.TextAlignmentOptions.TopLeft;
-                    notesText.enableWordWrapping = true;
+                    var notesBox = VanillaUI.Box(entry, new Vector2(20, -76), new Vector2(PanelW - 2 * (VanillaUI.FrameW + Inset) - 60, notesHeight), VanillaUI.Body, 6);
+                    notesBox.GetComponent<Image>().raycastTarget = false;
+                    var notesText = VanillaUI.Text(notesBox, UTSLocalization.Tr("uts.modmanagerui.whats_new", notes), 13, new Color(0.82f, 0.82f, 0.86f),
+                        new Vector2(12, -8), new Vector2(PanelW - 2 * (VanillaUI.FrameW + Inset) - 84, notesHeight - 12));
                     notesText.overflowMode = TMPro.TextOverflowModes.Truncate;
                     refs.NotesShown = true;
                 }
             }
-            // Entry-Höhe an die Notes anpassen (Basis 140); repo/guid sind bodengeankert und
-            // rutschen mit der neuen Unterkante mit.
-            entryRect.sizeDelta = new Vector2(-20, 140 + notesHeight);
+            float h = 132 + (notesHeight > 0 ? notesHeight + 10 : 0);
+            entryRect.sizeDelta = new Vector2(entryRect.sizeDelta.x, h);
+            edge.GetComponent<RectTransform>().sizeDelta = new Vector2(6, h);
 
-            // GitHub link button — nur fuer Mods mit hinterlegtem Repository.
-            // Lokale Mods (kein GitHub) bekommen keinen "Open GitHub"-Button.
-            if (HasRepository(mod))
-                CreateGitHubButton(entry, mod);
-
-            // Repository
-            var repoObj = new GameObject("Repo");
-            repoObj.transform.SetParent(entry.transform, false);
-            var repoRect = repoObj.AddComponent<RectTransform>();
-            repoRect.anchorMin = new Vector2(0, 0);
-            repoRect.anchorMax = new Vector2(1, 0);
-            repoRect.pivot = new Vector2(0, 0);
-            repoRect.anchoredPosition = new Vector2(15, 35);
-            repoRect.sizeDelta = new Vector2(-30, 15);
-
-            var repoText = repoObj.AddComponent<TMPro.TextMeshProUGUI>();
-            repoText.text = HasRepository(mod)
-                ? UTSLocalization.Tr("uts.modmanagerui.repository_line", mod.RepositoryOwner, mod.RepositoryName)
-                : UTSLocalization.Tr("uts.modmanagerui.local_mod_line");
-            repoText.fontSize = 14;
-            repoText.color = new Color(0.7f, 0.7f, 0.7f);
-
-            // GUID
-            var guidObj = new GameObject("GUID");
-            guidObj.transform.SetParent(entry.transform, false);
-            var guidRect = guidObj.AddComponent<RectTransform>();
-            guidRect.anchorMin = new Vector2(0, 0);
-            guidRect.anchorMax = new Vector2(1, 0);
-            guidRect.pivot = new Vector2(0, 0);
-            guidRect.anchoredPosition = new Vector2(15, 15);
-            guidRect.sizeDelta = new Vector2(-30, 15);
-
-            var guidText = guidObj.AddComponent<TMPro.TextMeshProUGUI>();
+            // repository and id at the bottom
+            VanillaUI.Label(entry, HasRepository(mod)
+                    ? UTSLocalization.Tr("uts.modmanagerui.repository_line", mod.RepositoryOwner, mod.RepositoryName)
+                    : UTSLocalization.Tr("uts.modmanagerui.local_mod_line"),
+                13, VanillaUI.Muted, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(20, 30), new Vector2(-40, 18), TMPro.TextAlignmentOptions.Left);
             string displayGuid = mod.Guid.Length > 50 ? mod.Guid.Substring(0, 47) + "..." : mod.Guid;
-            guidText.text = UTSLocalization.Tr("uts.modmanagerui.id_line", displayGuid);
-            guidText.fontSize = 12;
-            guidText.color = new Color(0.5f, 0.5f, 0.5f);
+            VanillaUI.Label(entry, UTSLocalization.Tr("uts.modmanagerui.id_line", displayGuid), 12, VanillaUI.Rule,
+                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(20, 12), new Vector2(-40, 16), TMPro.TextAlignmentOptions.Left);
 
-            return yPos - (150 + notesHeight);
+            return yPos - (h + 10);
         }
 
         private void CreateToggleButton(GameObject parent, ModInfo mod, bool runtimeEnabled, bool configEnabled)
         {
-            // Eine ausstehende Änderung liegt vor, wenn der gewünschte (Config-)Zustand vom
-            // tatsächlich laufenden Zustand abweicht — dann ist ein Neustart nötig.
+            // a pending change = the wanted (config) state differs from the running one: restart needed
             bool pendingChange = configEnabled != runtimeEnabled;
-            var button = new GameObject("ToggleButton");
-            button.transform.SetParent(parent.transform, false);
+            GameObject button = null;
+            TMPro.TextMeshProUGUI btnText = null;
 
-            var btnRect = button.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(1, 1);
-            btnRect.anchorMax = new Vector2(1, 1);
-            btnRect.pivot = new Vector2(1, 1);
-            btnRect.anchoredPosition = new Vector2(-165, -10);
-            btnRect.sizeDelta = new Vector2(140, 30);
+            void Apply(bool cfg)
+            {
+                bool pending = cfg != runtimeEnabled;
+                VanillaUI.SetText(btnText, pending ? UTSLocalization.Tr("uts.modmanagerui.restart_required")
+                    : cfg ? UTSLocalization.Tr("uts.modmanagerui.disable_button") : UTSLocalization.Tr("uts.modmanagerui.enable_button"));
+                VanillaUI.Recolor(button, pending ? VanillaUI.Amber : cfg ? VanillaUI.Red : VanillaUI.Green);
+            }
 
-            // Button background
-            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            // Ausstehende Änderung → orangefarbener Warn-Hintergrund, sonst grün/rot je nach Config.
-            Color bgColor = pendingChange ? new Color(1f, 0.6f, 0f, 0.9f)
-                : (configEnabled ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f));
-            btnBg.sprite = GetSolidSprite(bgColor);
-
-            // Button text
-            var btnTextObj = new GameObject("Text");
-            btnTextObj.transform.SetParent(button.transform, false);
-            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
-            btnTextRect.anchorMin = Vector2.zero;
-            btnTextRect.anchorMax = Vector2.one;
-            btnTextRect.sizeDelta = Vector2.zero;
-
-            var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = pendingChange ? UTSLocalization.Tr("uts.modmanagerui.restart_required") : (configEnabled ? UTSLocalization.Tr("uts.modmanagerui.disable_button") : UTSLocalization.Tr("uts.modmanagerui.enable_button"));
-            btnText.fontSize = pendingChange ? 12 : 14;
-            btnText.fontStyle = TMPro.FontStyles.Bold;
-            btnText.alignment = TMPro.TextAlignmentOptions.Center;
-            btnText.color = pendingChange ? new Color(1f, 1f, 0.5f) : Color.white;
-
-            // Track if changed. originalValue = Laufzeit-Zustand: ein Zurück-Toggeln auf diesen
-            // Wert hebt den Neustart-Hinweis wieder auf.
-            bool wasChanged = pendingChange;
-            bool originalValue = runtimeEnabled;
-
-            // Button interaction
-            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
-            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
+            button = VanillaUI.Button(parent, "", new Vector2(-184, -12), new Vector2(160, 36), VanillaUI.Grey, () => {
                 try
                 {
-                    if (mod.Enabled != null)
-                    {
-                        // Toggle the config value
-                        bool newValue = !mod.Enabled.Value;
-                        mod.Enabled.Value = newValue;
-
-                        // Check if different from original
-                        wasChanged = (newValue != originalValue);
-
-                        // Update button appearance based on new state
-                        if (wasChanged)
-                        {
-                            // Show restart required
-                            btnText.text = UTSLocalization.Tr("uts.modmanagerui.restart_required");
-                            btnText.fontSize = 12;
-                            btnText.color = new Color(1f, 1f, 0.5f);
-
-                            btnBg.sprite = GetSolidSprite(new Color(1f, 0.6f, 0f, 0.9f));
-                        }
-                        else
-                        {
-                            // Back to original state
-                            btnText.text = newValue ? UTSLocalization.Tr("uts.modmanagerui.disable_button") : UTSLocalization.Tr("uts.modmanagerui.enable_button");
-                            btnText.fontSize = 14;
-                            btnText.color = Color.white;
-
-                            Color normalColor = newValue ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f);
-                            btnBg.sprite = GetSolidSprite(normalColor);
-                        }
-
-                        // Always save the config
-                        var configFile = mod.Enabled.ConfigFile;
-                        configFile?.Save();
-
-                        UsefulTORStuffPlugin.Logger?.LogInfo($"Toggled {mod.Name} to {(newValue ? "ENABLED" : "DISABLED")} {(wasChanged ? "- restart required" : "- reverted")}");
-                    }
+                    if (mod.Enabled == null) return;
+                    bool newValue = !mod.Enabled.Value;
+                    mod.Enabled.Value = newValue;
+                    mod.Enabled.ConfigFile?.Save();
+                    Apply(newValue);
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"Toggled {mod.Name} to {(newValue ? "ENABLED" : "DISABLED")}{(newValue != runtimeEnabled ? " - restart required" : " - reverted")}");
                 }
                 catch (Exception ex)
                 {
                     UsefulTORStuffPlugin.Logger?.LogError($"Failed to toggle mod: {ex}");
-                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.error_label");
-                    btnText.color = Color.red;
+                    VanillaUI.SetText(btnText, UTSLocalization.Tr("uts.modmanagerui.error_label"));
                 }
-            }));
+            }, out btnText, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+            Apply(configEnabled);
+            _ = pendingChange;
         }
 
-        // Zusätzlicher Live-Toggle pro Mod (z. B. HostFix' Snitch-Fallback). Anders als der
-        // Enable/Disable-Toggle wirkt dieser SOFORT: der Mod liest ConfigEntry.Value zur Laufzeit,
-        // daher kein "Restart required". Position: unter dem Enable/Disable-Button (links neben GitHub).
+        // Extra live toggle per mod (HostFix' Snitch fallback): takes effect at once, no restart.
         private void CreateExtraToggleButton(GameObject parent, ModInfo mod)
         {
             string label = string.IsNullOrEmpty(mod.ExtraToggleLabel) ? UTSLocalization.Tr("uts.modmanagerui.extra_toggle_default_label") : mod.ExtraToggleLabel;
-
-            var button = new GameObject("ExtraToggleButton");
-            button.transform.SetParent(parent.transform, false);
-
-            var btnRect = button.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(1, 1);
-            btnRect.anchorMax = new Vector2(1, 1);
-            btnRect.pivot = new Vector2(1, 1);
-            btnRect.anchoredPosition = new Vector2(-165, -45);
-            btnRect.sizeDelta = new Vector2(140, 30);
-
-            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-
-            var btnTextObj = new GameObject("Text");
-            btnTextObj.transform.SetParent(button.transform, false);
-            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
-            btnTextRect.anchorMin = Vector2.zero;
-            btnTextRect.anchorMax = Vector2.one;
-            btnTextRect.sizeDelta = Vector2.zero;
-
-            var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.fontSize = 12;
-            btnText.fontStyle = TMPro.FontStyles.Bold;
-            btnText.alignment = TMPro.TextAlignmentOptions.Center;
-            btnText.color = Color.white;
-
-            // Lokale Funktion: Beschriftung + Hintergrund am aktuellen Zustand ausrichten.
+            GameObject button = null;
+            TMPro.TextMeshProUGUI btnText = null;
             void Apply(bool on)
             {
-                btnText.text = UTSLocalization.Tr("uts.modmanagerui.extra_toggle_label", label, on ? "ON" : "OFF");
-                btnBg.sprite = GetSolidSprite(on ? new Color(0.2f, 0.7f, 0.2f, 0.9f) : new Color(0.7f, 0.2f, 0.2f, 0.9f));
+                VanillaUI.SetText(btnText, UTSLocalization.Tr("uts.modmanagerui.extra_toggle_label", label, on ? "ON" : "OFF"));
+                VanillaUI.Recolor(button, on ? VanillaUI.Green : VanillaUI.Grey);
             }
-
-            Apply(mod.ExtraToggle.Value);
-
-            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
-            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
+            button = VanillaUI.Button(parent, "", new Vector2(-184, -58), new Vector2(160, 36), VanillaUI.Grey, () => {
                 try
                 {
                     bool newValue = !mod.ExtraToggle.Value;
-                    mod.ExtraToggle.Value = newValue;     // wirkt sofort (Mod liest live)
-                    mod.ExtraToggle.ConfigFile?.Save();   // persistiert über Neustart hinweg
+                    mod.ExtraToggle.Value = newValue;
+                    mod.ExtraToggle.ConfigFile?.Save();
                     Apply(newValue);
-                    UsefulTORStuffPlugin.Logger?.LogInfo($"{mod.Name}: {label} set to {(newValue ? "ON" : "OFF")}.");
                 }
                 catch (Exception ex)
                 {
                     UsefulTORStuffPlugin.Logger?.LogError($"Failed to toggle {label} for {mod.Name}: {ex}");
-                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.error_label");
-                    btnText.color = Color.red;
+                    VanillaUI.SetText(btnText, UTSLocalization.Tr("uts.modmanagerui.error_label"));
                 }
-            }));
+            }, out btnText, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+            Apply(mod.ExtraToggle.Value);
         }
 
         private void CreateUpdateButton(GameObject parent, ModInfo mod, ModEntryRefs refs)
         {
-            var button = new GameObject("UpdateButton");
-            button.transform.SetParent(parent.transform, false);
-
-            var btnRect = button.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(1, 1);
-            btnRect.anchorMax = new Vector2(1, 1);
-            btnRect.pivot = new Vector2(1, 1);
-            btnRect.anchoredPosition = new Vector2(-15, -10);
-            btnRect.sizeDelta = new Vector2(140, 30);
-
-            // Button background
-            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            btnBg.sprite = GetSolidSprite(new Color(0.2f, 0.6f, 1f, 0.9f));
-
-            // Button text
-            var btnTextObj = new GameObject("Text");
-            btnTextObj.transform.SetParent(button.transform, false);
-            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
-            btnTextRect.anchorMin = Vector2.zero;
-            btnTextRect.anchorMax = Vector2.one;
-            btnTextRect.sizeDelta = Vector2.zero;
-
-            var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = UTSLocalization.Tr("uts.modmanagerui.update_now_button");
-            btnText.fontSize = 14;
-            btnText.fontStyle = TMPro.FontStyles.Bold;
-            btnText.alignment = TMPro.TextAlignmentOptions.Center;
-            btnText.color = Color.white;
-
-            // Referenzen für Polling/RefreshEntry merken.
+            TMPro.TextMeshProUGUI btnText = null;
+            var button = VanillaUI.Button(parent, UTSLocalization.Tr("uts.modmanagerui.update_now_button"), new Vector2(-14, -12), new Vector2(160, 36),
+                VanillaUI.Blue, () => {
+                    try
+                    {
+                        UsefulTORStuffPlugin.Logger?.LogInfo($"Triggering update for {mod.Name}...");
+                        mod.TriggerUpdate?.Invoke();
+                        SetUpdateButton(refs, true, UTSLocalization.Tr("uts.modmanagerui.downloading_button"), false);
+                    }
+                    catch (Exception ex)
+                    {
+                        UsefulTORStuffPlugin.Logger?.LogError($"Failed to trigger update: {ex}");
+                        VanillaUI.SetText(btnText, UTSLocalization.Tr("uts.modmanagerui.error_label"));
+                    }
+                }, out btnText, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
             refs.UpdateButton = button;
             refs.UpdateButtonText = btnText;
-
-            // Button interaction. Der Download läuft im Manager-Modus (kein Among-Us-Popup);
-            // die Polling-Coroutine aktualisiert Label/Status anhand von GetUpdateState().
-            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
-            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
-                try
-                {
-                    UsefulTORStuffPlugin.Logger?.LogInfo($"Triggering update for {mod.Name}...");
-                    mod.TriggerUpdate?.Invoke();
-                    // Sofortiges Feedback; das Polling verfeinert die Anzeige danach.
-                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.downloading_button");
-                    btnText.fontSize = 12;
-                    btnText.color = new Color(1f, 1f, 0.5f);
-                    btnComponent.interactable = false;
-                }
-                catch (Exception ex)
-                {
-                    UsefulTORStuffPlugin.Logger?.LogError($"Failed to trigger update: {ex}");
-                    btnText.text = UTSLocalization.Tr("uts.modmanagerui.error_label");
-                    btnText.color = Color.red;
-                }
-            }));
         }
 
-        // Berechnet Statuszeile und Sichtbarkeit des Update-Buttons einer Mod-Zeile neu.
-        // Aufgerufen beim Aufbau (CreateModEntry) und laufend von CoRefreshStates, damit auch
-        // spät geladene Releases und Download-Fortschritte live erscheinen.
+        // Status line and update button of one installed-mod card; on build and from CoRefreshStates.
         private void RefreshEntry(ModEntryRefs r)
         {
             if (r == null || r.Mod == null || r.StatusText == null) return;
-
             bool runtime = r.RuntimeEnabled;
             bool config = r.Mod.Enabled?.Value ?? true;
 
-            // Download-Zustand (0 idle, 1 downloading, 2 success, 3 error). Nur sinnvoll für laufende Mods.
             int state = 0;
             float progress = 0f;
             if (runtime)
@@ -1173,106 +700,223 @@ namespace UsefulTORStuff
                 try { progress = r.Mod.GetUpdateProgress?.Invoke() ?? 0f; } catch { }
             }
 
-            // Laufender/abgeschlossener Download hat Vorrang vor allem anderen.
             switch (state)
             {
-                case 1: // downloading
+                case 1:
                     int pct = Mathf.RoundToInt(Mathf.Clamp01(progress) * 100f);
                     int stars = Mathf.CeilToInt(Mathf.Clamp01(progress) * 10);
-                    string bar = new String((char)0x25A0, stars) + new String((char)0x25A1, 10 - stars);
-                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_downloading_progress", pct, bar);
-                    r.StatusText.color = new Color(0.3f, 0.7f, 1f);
-                    SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.downloading_button"), 12, false);
+                    string bar = new string('#', stars) + new string('.', 10 - stars);
+                    Status(r, UTSLocalization.Tr("uts.modmanagerui.status_downloading_progress", pct, bar), VanillaUI.Blue);
+                    SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.downloading_button"), false);
                     return;
-
-                case 2: // success - restart required
-                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_updated_restart");
-                    r.StatusText.color = new Color(1f, 1f, 0.5f);
-                    SetUpdateButton(r, false, null, 0, false);
+                case 2:
+                    Status(r, UTSLocalization.Tr("uts.modmanagerui.status_updated_restart"), VanillaUI.Warn);
+                    SetUpdateButton(r, false, null, false);
                     return;
-
-                case 3: // error
-                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_update_failed");
-                    r.StatusText.color = new Color(1f, 0.4f, 0.4f);
-                    SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.retry_button"), 14, true);
+                case 3:
+                    Status(r, UTSLocalization.Tr("uts.modmanagerui.status_update_failed"), VanillaUI.Bad);
+                    SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.retry_button"), true);
                     return;
             }
 
-            // Kein Download: ausstehende Aktivierungs-Änderung anzeigen (läuft noch bis Neustart).
             if (config != runtime)
             {
-                r.StatusText.text = config ? UTSLocalization.Tr("uts.modmanagerui.status_restart_enable") : UTSLocalization.Tr("uts.modmanagerui.status_restart_disable");
-                r.StatusText.color = new Color(1f, 1f, 0.5f);
-                SetUpdateButton(r, false, null, 0, false);
+                Status(r, config ? UTSLocalization.Tr("uts.modmanagerui.status_restart_enable") : UTSLocalization.Tr("uts.modmanagerui.status_restart_disable"), VanillaUI.Warn);
+                SetUpdateButton(r, false, null, false);
                 return;
             }
-
-            // Deaktiviert (kommt für angezeigte Mods normalerweise nicht vor).
             if (!runtime)
             {
-                r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_disabled");
-                r.StatusText.color = Color.gray;
-                SetUpdateButton(r, false, null, 0, false);
+                Status(r, UTSLocalization.Tr("uts.modmanagerui.status_disabled"), VanillaUI.Muted);
+                SetUpdateButton(r, false, null, false);
                 return;
             }
 
-            // Aktiv und idle: Update verfügbar?
             bool hasUpdate = false;
             try { hasUpdate = r.Mod.HasUpdate?.Invoke() ?? false; } catch { }
-
             if (hasUpdate)
             {
-                r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_update_available");
-                r.StatusText.color = new Color(1f, 0.8f, 0.2f);
-                SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.update_now_button"), 14, true);
+                Status(r, UTSLocalization.Tr("uts.modmanagerui.status_update_available"), VanillaUI.Amber);
+                SetUpdateButton(r, true, UTSLocalization.Tr("uts.modmanagerui.update_now_button"), true);
+                return;
             }
-            else
-            {
-                // Distinguish a real "up to date" from a FAILED release check (GitHub rate-limit /
-                // offline): only claim "up to date" once the check has completed AND the release list
-                // was actually loaded. Otherwise the green "up to date" would be misleading.
-                bool completed = true, loaded = true;
-                try { completed = r.Mod.GetCheckCompleted?.Invoke() ?? true; } catch { }
-                try { loaded = r.Mod.ReleasesLoaded?.Invoke() ?? true; } catch { }
-
-                // A local mod is never checked, and a check still running has no verdict yet: no green
-                // "up to date" for either (audit 04.10.).
-                if (!HasRepository(r.Mod))
-                {
-                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_local");
-                    r.StatusText.color = Color.gray;
-                }
-                else if (!completed)
-                {
-                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_checking");
-                    r.StatusText.color = new Color(1f, 1f, 0.5f);
-                }
-                else if (!loaded)
-                {
-                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_check_unavailable");
-                    r.StatusText.color = new Color(1f, 0.8f, 0.3f);
-                }
-                else
-                {
-                    r.StatusText.text = UTSLocalization.Tr("uts.modmanagerui.status_up_to_date");
-                    r.StatusText.color = new Color(0.3f, 1f, 0.3f);
-                }
-                SetUpdateButton(r, false, null, 0, false);
-            }
+            // "up to date" only once the check has completed AND the release list was loaded
+            bool completed = true, loaded = true;
+            try { completed = r.Mod.GetCheckCompleted?.Invoke() ?? true; } catch { }
+            try { loaded = r.Mod.ReleasesLoaded?.Invoke() ?? true; } catch { }
+            if (!HasRepository(r.Mod)) Status(r, UTSLocalization.Tr("uts.modmanagerui.status_local"), VanillaUI.Muted);
+            else if (!completed) Status(r, UTSLocalization.Tr("uts.modmanagerui.status_checking"), VanillaUI.Warn);
+            else if (!loaded) Status(r, UTSLocalization.Tr("uts.modmanagerui.status_check_unavailable"), VanillaUI.Amber);
+            else Status(r, UTSLocalization.Tr("uts.modmanagerui.status_up_to_date"), VanillaUI.Good);
+            SetUpdateButton(r, false, null, false);
         }
 
-        // Hilfsfunktion: Update-Button ein-/ausblenden und Beschriftung/Interaktivität setzen.
-        private static void SetUpdateButton(ModEntryRefs r, bool active, string label, int fontSize, bool interactable)
+        private static void Status(ModEntryRefs r, string text, Color color)
+        {
+            r.StatusText.color = color;
+            VanillaUI.SetText(r.StatusText, text);
+        }
+
+        private static void SetUpdateButton(ModEntryRefs r, bool active, string label, bool interactable)
         {
             if (r.UpdateButton == null) return;
             r.UpdateButton.SetActive(active);
             if (!active) return;
-            if (label != null && r.UpdateButtonText != null) { r.UpdateButtonText.text = label; r.UpdateButtonText.fontSize = fontSize; }
-            var b = r.UpdateButton.GetComponent<UnityEngine.UI.Button>();
+            if (label != null) VanillaUI.SetText(r.UpdateButtonText, label);
+            var b = r.UpdateButton.GetComponentInChildren<Button>();
             if (b != null) b.interactable = interactable;
+            VanillaUI.Recolor(r.UpdateButton, interactable ? VanillaUI.Blue : VanillaUI.Grey);
         }
 
-        // Pollt Update-/Download-Zustand aller Mod-Zeilen, solange das Panel offen ist.
+        private static bool NotesWaiting(ModInfo mod)
+        {
+            try
+            {
+                if (mod.GetReleaseNotes == null || !(mod.HasUpdate?.Invoke() ?? false)) return false;
+                if ((mod.GetUpdateState?.Invoke() ?? 0) != 0) return false;
+                return StripAndTruncateNotes(mod.GetReleaseNotes()).Length > 0;
+            }
+            catch { return false; }
+        }
+
+        private static bool HasRepository(ModInfo mod) =>
+            mod != null && !string.IsNullOrWhiteSpace(mod.RepositoryOwner) && !string.IsNullOrWhiteSpace(mod.RepositoryName);
+
+        // ====================================================================
+        // Tab 2: the catalog
+        // ====================================================================
+        private float CreateCatalogRows(GameObject parent, float yPos)
+        {
+            VanillaUI.Text(parent, UTSLocalization.Tr("uts.modmanagerui.catalog_hint"), 14, VanillaUI.Muted, new Vector2(4, yPos), new Vector2(1000, 22));
+            yPos -= 30;
+            bool pre = false;
+            try { pre = VersionDisplay.ShowTestVersions(); } catch { }
+            foreach (var e in UTSModCatalog.Entries)
+            {
+                var row = VanillaUI.Row(parent, yPos, 66, 2);
+                var state = UTSModCatalog.StateOf(e, out var ver);
+                var edge = VanillaUI.Box(row, Vector2.zero, new Vector2(6, 66),
+                    state == LocalModState.Active ? VanillaUI.Green : state == LocalModState.Disabled ? VanillaUI.Amber : VanillaUI.Frame, 3);
+                edge.GetComponent<Image>().raycastTarget = false;
+                VanillaUI.Label(row, e.DisplayName, 20, state == LocalModState.Missing ? VanillaUI.Muted : Color.white,
+                    new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f), new Vector2(20, 8), new Vector2(420, 0), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
+                VanillaUI.Label(row, UTSLocalization.Tr("uts.modmanagerui.repository_line", e.RepositoryOwner, e.RepositoryName), 12, VanillaUI.Rule,
+                    new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f), new Vector2(20, -16), new Vector2(420, 0), TMPro.TextAlignmentOptions.Left);
+                var status = VanillaUI.Label(row, "", 15, VanillaUI.Muted,
+                    new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f), new Vector2(450, 0), new Vector2(420, 0), TMPro.TextAlignmentOptions.Left);
+                var refs = new CatalogRefs { Entry = e, StatusText = status };
+
+                var captured = e;
+                refs.DownloadButton = VanillaUI.Button(row, UTSLocalization.Tr(pre ? "uts.modmanagerui.download_pre_button" : "uts.modmanagerui.download_button"),
+                    new Vector2(-14, 0), new Vector2(200, 40), VanillaUI.Teal, () => {
+                        var dl = UTSModDownloader.Instance;
+                        if (dl == null) return;
+                        dl.EnqueueLatest(captured, pre);
+                        RefreshCatalogRow(refs);
+                    }, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+                _catalogRefs.Add(refs);
+                RefreshCatalogRow(refs);
+                yPos -= 74;
+            }
+            return yPos;
+        }
+
+        private void RefreshCatalogRow(CatalogRefs r)
+        {
+            if (r?.StatusText == null) return;
+            var dl = UTSModDownloader.Instance;
+            var job = dl != null ? dl.JobOf(r.Entry.Id) : null;
+            var state = UTSModCatalog.StateOf(r.Entry, out var ver);
+            string vs = ver != null ? "v" + VersionDisplay.Format(ver) : "";
+            string text; Color col; bool button = true;
+            if (job != null && job.State == JobState.Working)
+            {
+                int blocks = Mathf.Clamp(Mathf.CeilToInt(job.Progress * 10), 0, 10);
+                text = UTSLocalization.Tr("uts.modsync.row_downloading", new string('#', blocks) + new string('.', 10 - blocks), Mathf.RoundToInt(job.Progress * 100));
+                col = VanillaUI.Blue; button = false;
+            }
+            else if (job != null && job.State == JobState.Pending) { text = UTSLocalization.Tr("uts.modmanagerui.catalog_queued"); col = VanillaUI.Blue; button = false; }
+            else if (job != null && job.State == JobState.Failed) { text = UTSLocalization.Tr(job.ErrorKey ?? "uts.modsync.error_download"); col = VanillaUI.Bad; }
+            else if (job != null && job.State == JobState.Done && job.NoChange) { text = UTSLocalization.Tr("uts.modmanagerui.catalog_current", "v" + VersionDisplay.Format(job.TargetVersion)); col = VanillaUI.Good; }
+            else if (job != null && job.State == JobState.Done) { text = UTSLocalization.Tr("uts.modmanagerui.catalog_installed_restart", "v" + VersionDisplay.Format(job.TargetVersion)); col = VanillaUI.Warn; button = false; }
+            else if (state == LocalModState.Active) { text = UTSLocalization.Tr("uts.modmanagerui.catalog_active", vs); col = VanillaUI.Good; }
+            else if (state == LocalModState.Disabled) { text = UTSLocalization.Tr("uts.modmanagerui.catalog_disabled", vs); col = VanillaUI.Warn; }
+            else { text = UTSLocalization.Tr("uts.modmanagerui.catalog_missing"); col = VanillaUI.Muted; }
+            r.StatusText.color = col;
+            VanillaUI.SetText(r.StatusText, text);
+            if (r.DownloadButton != null && r.DownloadButton.activeSelf != button) r.DownloadButton.SetActive(button);
+        }
+
+        // ====================================================================
+        // Tab 3: modpacks
+        // ====================================================================
+        private float CreateModpackRows(GameObject parent, float yPos)
+        {
+            VanillaUI.Text(parent, UTSLocalization.Tr("uts.modmanagerui.modpacks_hint"), 14, VanillaUI.Muted, new Vector2(4, yPos), new Vector2(1100, 40));
+            yPos -= 46;
+            VanillaUI.Button(parent, UTSLocalization.Tr("uts.modmanagerui.modpack_new"), new Vector2(4, yPos), new Vector2(300, 44), VanillaUI.Teal, () => {
+                var p = UTSModpacks.FromCurrent(UTSModpacks.FreeName(UTSLocalization.Tr("uts.modmanagerui.modpack_stem")));
+                UTSModpacks.Add(p);
+                SetSummary(UTSLocalization.Tr("uts.modmanagerui.modpack_saved", p.Name, p.Mods.Count), VanillaUI.Good);
+                Rebuild();
+            }, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1));
+            VanillaUI.Button(parent, UTSLocalization.Tr("uts.modmanagerui.modpack_import"), new Vector2(316, yPos), new Vector2(300, 44), VanillaUI.Blue, () => {
+                string code = "";
+                try { code = GUIUtility.systemCopyBuffer ?? ""; } catch { }
+                var p = UTSModpacks.FromCode(code, out string err, out int unknown);
+                if (p == null) { SetSummary(UTSLocalization.Tr(err ?? "uts.modpacks.err_format"), VanillaUI.Bad); return; }
+                if (UTSModpacks.All.Any(x => UTSModpacks.ToCode(x) == UTSModpacks.ToCode(p)))
+                { SetSummary(UTSLocalization.Tr("uts.modmanagerui.modpack_duplicate", p.Name), VanillaUI.Warn); return; }
+                UTSModpacks.Add(p);
+                SetSummary(unknown > 0 ? UTSLocalization.Tr("uts.modmanagerui.modpack_imported_unknown", p.Name, unknown)
+                                       : UTSLocalization.Tr("uts.modmanagerui.modpack_imported", p.Name), unknown > 0 ? VanillaUI.Warn : VanillaUI.Good);
+                Rebuild();
+            }, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1));
+            yPos -= 60;
+
+            if (UTSModpacks.All.Count == 0)
+            {
+                VanillaUI.Text(parent, UTSLocalization.Tr("uts.modmanagerui.modpack_none"), 15, VanillaUI.Muted, new Vector2(4, yPos), new Vector2(1000, 24), TMPro.FontStyles.Italic);
+                return yPos - 30;
+            }
+
+            foreach (var pack in UTSModpacks.All.ToList())
+            {
+                var row = VanillaUI.Row(parent, yPos, 86, 2);
+                VanillaUI.Label(row, pack.Name, 20, Color.white, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1),
+                    new Vector2(20, -10), new Vector2(-560, 28), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
+                var desc = VanillaUI.Label(row, UTSModpacks.Describe(pack), 14, VanillaUI.Muted, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1),
+                    new Vector2(20, -42), new Vector2(-560, 36), TMPro.TextAlignmentOptions.TopLeft);
+                desc.enableWordWrapping = true;
+
+                var captured = pack;
+                VanillaUI.Button(row, UTSLocalization.Tr("uts.modmanagerui.modpack_apply"), new Vector2(-14, 0), new Vector2(160, 42), VanillaUI.Teal, () => {
+                    ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.modpack_apply_title"),
+                        UTSLocalization.Tr("uts.modmanagerui.modpack_apply_msg", captured.Name, UTSModpacks.Describe(captured)), () => {
+                            var res = UTSModpacks.Apply(captured);
+                            SetSummary(UTSLocalization.Tr("uts.modmanagerui.modpack_applied", res.Downloads, res.Enabled, res.Disabled)
+                                       + (res.Errors.Count > 0 ? " " + UTSLocalization.Tr("uts.modmanagerui.modpack_apply_errors", string.Join(", ", res.Errors)) : ""),
+                                       res.Errors.Count > 0 ? VanillaUI.Warn : VanillaUI.Good);
+                            _tab = Tab.Catalog;
+                            Rebuild();
+                        });
+                }, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+                VanillaUI.Button(row, UTSLocalization.Tr("uts.modmanagerui.modpack_copy"), new Vector2(-186, 0), new Vector2(190, 42), VanillaUI.Blue, () => {
+                    try { GUIUtility.systemCopyBuffer = UTSModpacks.ToCode(captured); } catch { }
+                    SetSummary(UTSLocalization.Tr("uts.modmanagerui.modpack_copied", captured.Name), VanillaUI.Good);
+                }, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+                VanillaUI.Button(row, UTSLocalization.Tr("uts.modmanagerui.modpack_delete"), new Vector2(-388, 0), new Vector2(130, 42), VanillaUI.Red, () => {
+                    ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.modpack_delete_title"),
+                        UTSLocalization.Tr("uts.modmanagerui.modpack_delete_msg", captured.Name), () => { UTSModpacks.Delete(captured); Rebuild(); });
+                }, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+                yPos -= 94;
+            }
+            return yPos;
+        }
+
+        // ====================================================================
+        // Polling while the panel is open
+        // ====================================================================
         private IEnumerator CoRefreshStates()
         {
             while (IsUIOpen)
@@ -1284,145 +928,30 @@ namespace UsefulTORStuff
                     RefreshEntry(r);
                     if (!r.NotesShown && NotesWaiting(r.Mod)) rebuildForNotes = true;
                 }
-                // An update found by the re-check AFTER the panel was built: its release notes (and
-                // the taller entry for them) only exist in a fresh build (audit 04.10.). Once.
+                foreach (var c in _catalogRefs) RefreshCatalogRow(c);
+                // an update found by the re-check AFTER the panel was built: its release notes only
+                // exist in a fresh build (audit 04.10.). Once.
                 if (rebuildForNotes && !_updateAllRunning && !_rebuiltForNotes)
                 {
                     _rebuiltForNotes = true;
-                    Hide();
-                    Show();
+                    Rebuild();
                     yield break;
                 }
-
-                // F2: keep the "Update All" button's enabled state in sync as checks complete.
                 if (!_updateAllRunning) RefreshUpdateAllButton();
-
                 yield return new WaitForSeconds(0.25f);
             }
-        }
-
-        // True, wenn der Mod ein GitHub-Repository hinterlegt hat. Lokale Mods lassen die
-        // Felder leer und erhalten daher keinen GitHub-Button. Future-proof: gilt automatisch
-        // fuer jede kuenftige Mod, die kein Repository angibt.
-        private bool _rebuiltForNotes;
-
-        private static bool NotesWaiting(ModInfo mod)
-        {
-            try
-            {
-                if (mod.GetReleaseNotes == null || !(mod.HasUpdate?.Invoke() ?? false)) return false;
-                if ((mod.GetUpdateState?.Invoke() ?? 0) != 0) return false;   // a download is under way
-                return StripAndTruncateNotes(mod.GetReleaseNotes()).Length > 0;
-            }
-            catch { return false; }
-        }
-
-        private static bool HasRepository(ModInfo mod) =>
-            mod != null
-            && !string.IsNullOrWhiteSpace(mod.RepositoryOwner)
-            && !string.IsNullOrWhiteSpace(mod.RepositoryName);
-
-        private void CreateGitHubButton(GameObject parent, ModInfo mod)
-        {
-            var button = new GameObject("GitHubButton");
-            button.transform.SetParent(parent.transform, false);
-
-            var btnRect = button.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(1, 1);
-            btnRect.anchorMax = new Vector2(1, 1);
-            btnRect.pivot = new Vector2(1, 1);
-            btnRect.anchoredPosition = new Vector2(-15, -45);
-            btnRect.sizeDelta = new Vector2(140, 30);
-
-            // Button background
-            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            btnBg.sprite = GetSolidSprite(new Color(0.3f, 0.3f, 0.35f, 0.9f));
-
-            // Button text
-            var btnTextObj = new GameObject("Text");
-            btnTextObj.transform.SetParent(button.transform, false);
-            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
-            btnTextRect.anchorMin = Vector2.zero;
-            btnTextRect.anchorMax = Vector2.one;
-            btnTextRect.sizeDelta = Vector2.zero;
-
-            var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = UTSLocalization.Tr("uts.modmanagerui.github_button");
-            btnText.fontSize = 14;
-            btnText.fontStyle = TMPro.FontStyles.Bold;
-            btnText.alignment = TMPro.TextAlignmentOptions.Center;
-            btnText.color = Color.white;
-
-            // Button interaction
-            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
-            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)(() => {
-                try
-                {
-                    string url = $"https://github.com/{mod.RepositoryOwner}/{mod.RepositoryName}";
-                    Application.OpenURL(url);
-                    UsefulTORStuffPlugin.Logger?.LogInfo($"Opening GitHub: {url}");
-                }
-                catch (Exception ex)
-                {
-                    UsefulTORStuffPlugin.Logger?.LogError($"Failed to open GitHub: {ex}");
-                }
-            }));
-        }
-
-        private void CreateCloseButton(GameObject parent)
-        {
-            var button = new GameObject("CloseButton");
-            button.transform.SetParent(parent.transform, false);
-
-            var btnRect = button.AddComponent<RectTransform>();
-            btnRect.anchorMin = new Vector2(0.5f, 0);
-            btnRect.anchorMax = new Vector2(0.5f, 0);
-            btnRect.pivot = new Vector2(0.5f, 0);
-            btnRect.anchoredPosition = new Vector2(0, 15);
-            btnRect.sizeDelta = new Vector2(200, 50);
-
-            // Button background
-            var btnBg = button.AddComponent<UnityEngine.UI.Image>();
-            btnBg.sprite = GetSolidSprite(new Color(0.8f, 0.2f, 0.2f, 0.9f));
-
-            // Button text
-            var btnTextObj = new GameObject("Text");
-            btnTextObj.transform.SetParent(button.transform, false);
-            var btnTextRect = btnTextObj.AddComponent<RectTransform>();
-            btnTextRect.anchorMin = Vector2.zero;
-            btnTextRect.anchorMax = Vector2.one;
-            btnTextRect.sizeDelta = Vector2.zero;
-
-            var btnText = btnTextObj.AddComponent<TMPro.TextMeshProUGUI>();
-            btnText.text = UTSLocalization.Tr("uts.modmanagerui.close_button");
-            btnText.fontSize = 20;
-            btnText.fontStyle = TMPro.FontStyles.Bold;
-            btnText.alignment = TMPro.TextAlignmentOptions.Center;
-            btnText.color = Color.white;
-
-            // Button interaction
-            var btnComponent = button.AddComponent<UnityEngine.UI.Button>();
-            btnComponent.onClick.AddListener((UnityEngine.Events.UnityAction)Hide);
         }
 
         public void Hide()
         {
             try
             {
-                // Set flag that UI is closed (stoppt auch CoRefreshStates)
                 IsUIOpen = false;
-                _entryRefs.Clear();
-
-                // Re-enable background UI first
+                _entryRefs.Clear(); _catalogRefs.Clear();
                 EnableBackgroundUI();
-
-                if (_popup != null)
-                {
-                    Destroy(_popup);
-                    _popup = null;
-                }
-
-                UsefulTORStuffPlugin.Logger?.LogInfo("Mod Manager UI hidden.");
+                if (_popup != null) { Destroy(_popup); _popup = null; }
+                _tab = Tab.Installed;
+                _summary = "";
             }
             catch (Exception ex)
             {

@@ -52,6 +52,7 @@ namespace UsefulTORStuff {
     public static class LobbyScreen {
         public static bool Exists {
             get {
+                if (UIGallery.Active) return true;   // autotest: the panels believe they are in a lobby
                 try { return DestroyableSingleton<GameStartManager>.InstanceExists; }
                 catch { return false; }
             }

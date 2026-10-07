@@ -38,14 +38,21 @@ namespace UsefulTORStuff {
 
     public enum JobState { Pending, Working, Done, Failed }
 
+    // Which release a job fetches: the host's exact version (mod sync), the newest stable, or the
+    // newest release of either channel (Mod Manager downloads and modpacks).
+    public enum JobMode { Exact, Latest, LatestPrerelease }
+
     public sealed class SyncJob {
         public CatalogEntry Catalog;
-        public Version TargetVersion;
+        public JobMode Mode = JobMode.Exact;
+        public Version TargetVersion;      // the exact target; filled in by the job for Latest modes
         public JobState State = JobState.Pending;
         public float Progress;
         public long SizeBytes;
         // Localization key describing why the job failed (shown in the panel), null while fine.
         public string ErrorKey;
+        // Done without a download: the newest release is the version already on disk.
+        public bool NoChange;
     }
 
     public class UTSModDownloader : MonoBehaviour {
@@ -93,6 +100,28 @@ namespace UsefulTORStuff {
             foreach (var r in rows) Enqueue(r);
         }
 
+        /// <summary>Queue the newest release of a catalog entry (Mod Manager, modpacks). Same double-click guard.</summary>
+        [HideFromIl2Cpp]
+        public SyncJob EnqueueLatest(CatalogEntry entry, bool prerelease) {
+            if (entry == null) return null;
+            foreach (var j in jobs) {
+                if (j.Catalog.Id != entry.Id) continue;
+                if (j.State == JobState.Pending || j.State == JobState.Working) return j;
+            }
+            var job = new SyncJob { Catalog = entry, Mode = prerelease ? JobMode.LatestPrerelease : JobMode.Latest };
+            jobs.Add(job);
+            StartPump();
+            return job;
+        }
+
+        /// <summary>The newest job of a catalog entry, or null.</summary>
+        [HideFromIl2Cpp]
+        public SyncJob JobOf(byte catalogId) {
+            SyncJob newest = null;
+            foreach (var j in jobs) if (j.Catalog.Id == catalogId) newest = j;
+            return newest;
+        }
+
         [HideFromIl2Cpp]
         private void StartPump() {
             if (running) return;
@@ -120,8 +149,13 @@ namespace UsefulTORStuff {
             job.State = JobState.Working;
             job.Progress = 0f;
 
-            // Pinned entries (Submerged): never fetch any other version, whatever the row said.
-            if (!job.Catalog.AllowsVersion(job.TargetVersion)) {
+            // Pinned entries (Submerged): never fetch any other version, whatever the row said. A
+            // "latest" job on a pinned entry simply means the pinned version.
+            if (job.Mode != JobMode.Exact && job.Catalog.PinnedVersion != null) {
+                job.Mode = JobMode.Exact;
+                job.TargetVersion = job.Catalog.PinnedVersion;
+            }
+            if (job.Mode == JobMode.Exact && !job.Catalog.AllowsVersion(job.TargetVersion)) {
                 Fail(job, "uts.modsync.error_no_matching_release");
                 yield break;
             }
@@ -159,17 +193,37 @@ namespace UsefulTORStuff {
                 yield break;
             }
 
-            // ---- 2. the release whose version matches the host EXACTLY ----
+            // ---- 2. the release: the host's EXACT version, or the newest of the wanted channel ----
+            // Channel from the tag format, as in UsefulTORStuffUpdater: stable = vX.Y.Z, test = vX.Y.Z.W.
+            // "Latest prerelease" takes the newest of BOTH channels so it never falls behind a stable.
             GithubRelease target = null;
             foreach (var r in releases) {
                 if (r == null || r.Draft) continue;
                 Version v;
                 try { v = r.Version; } catch { continue; }   // tags that are not versions at all
-                if (UsefulTORStuffUpdater.SemCompare(v, job.TargetVersion) == 0) { target = r; break; }
+                if (r.Assets == null || !r.Assets.Any(a => a != null && a.Name == job.Catalog.AssetName)) continue;
+                if (job.Mode == JobMode.Exact) {
+                    if (UsefulTORStuffUpdater.SemCompare(v, job.TargetVersion) == 0) { target = r; break; }
+                    continue;
+                }
+                if (job.Mode == JobMode.Latest && v.Revision > 0) continue;
+                if (target == null || UsefulTORStuffUpdater.SemCompare(v, target.Version) > 0) target = r;
             }
             if (target == null) {
                 Fail(job, "uts.modsync.error_no_matching_release");
                 yield break;
+            }
+            if (job.Mode != JobMode.Exact) {
+                job.TargetVersion = target.Version;
+                // nothing to do when that version is already installed (running or switched off)
+                var local = UTSModCatalog.StateOf(job.Catalog, out var localVersion);
+                if (local != LocalModState.Missing && localVersion != null
+                    && UsefulTORStuffUpdater.SemCompare(localVersion, job.TargetVersion) == 0) {
+                    job.NoChange = true;
+                    job.Progress = 1f;
+                    job.State = JobState.Done;
+                    yield break;
+                }
             }
 
             // ---- 3. the asset the CATALOG names ----

@@ -47,8 +47,6 @@ namespace UsefulTORStuff {
             }
         }
 
-        public static bool ButtonShown { get; private set; }
-
         // ====================================================================
         // Recording
         // ====================================================================
@@ -314,8 +312,8 @@ namespace UsefulTORStuff {
         // ====================================================================
         // Lobby button and player
         // ====================================================================
-        private static GameObject lobbyButton, panelRoot, mapArea, banner;
-        private static RectTransform lobbyButtonRect, progressFill;
+        private static GameObject panelRoot, mapArea, banner;
+        private static RectTransform progressFill;
         private static TMPro.TextMeshProUGUI timeLabel, bannerText, playLabel, speedLabel;
         private static readonly Dictionary<byte, (RectTransform Dot, Image Img, TMPro.TextMeshProUGUI Name)> dots =
             new Dictionary<byte, (RectTransform, Image, TMPro.TextMeshProUGUI)>();
@@ -323,7 +321,6 @@ namespace UsefulTORStuff {
         private static float viewT, speed = 2f;
         private static bool playing;
         private static float drawW, drawH, kScale;
-        private static float nextButtonPoll;
         private static float diagAt = -1f;
 
         // host perspective (RoundReplayHost records the data): the chosen player, his light, the chips
@@ -340,7 +337,7 @@ namespace UsefulTORStuff {
             } catch { return true; }
         }
 
-        private static bool ShouldShowButton() {
+        internal static bool ShouldShowButton() {
             try {
                 if (!ready || !LobbyScreen.Exists || AmongUsClient.Instance == null) return false;
                 if (AmongUsClient.Instance.AmHost) return Enabled != null && Enabled.getBool();
@@ -356,15 +353,6 @@ namespace UsefulTORStuff {
                 if (!LobbyScreen.Exists && !diag) { CloseView(); }
                 else Animate();
             }
-            if (Time.realtimeSinceStartup < nextButtonPoll) return;
-            nextButtonPoll = Time.realtimeSinceStartup + 0.5f;
-            bool show = ShouldShowButton() && !SettingsOverlayView.OverlayOpen();
-            ButtonShown = show;
-            if (show && lobbyButton == null) BuildLobbyButton();
-            if (lobbyButton == null) return;
-            if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
-            int slot = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (EarlyDeathShieldUI.ButtonShown ? 1 : 0) + (SessionStatsUI.ButtonShown ? 1 : 0);
-            if (lobbyButtonRect != null) lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(slot);
         }
 
         private static GameObject Canvas(string name, int order, bool blocking) {
@@ -382,22 +370,6 @@ namespace UsefulTORStuff {
             return go;
         }
 
-        private static void BuildLobbyButton() {
-            try {
-                lobbyButton = Canvas("UTSReplayButton", 9000, false);
-                var btn = SessionStatsUI.MakeButton(lobbyButton, UTSLocalization.Tr("uts.replay.button"), Vector2.zero, new Vector2(330, 46),
-                                                    new Color(0.2f, 0.45f, 0.35f, 0.95f), OpenView);
-                lobbyButtonRect = btn.GetComponent<RectTransform>();
-                lobbyButtonRect.anchorMin = lobbyButtonRect.anchorMax = lobbyButtonRect.pivot = Vector2.zero;
-                lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(0);
-                var label = btn.GetComponentInChildren<TMPro.TextMeshProUGUI>();
-                if (label != null) label.fontSize = 18;
-            } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] lobby button failed: {e.Message}");
-                lobbyButton = null;
-            }
-        }
-
         // map on the left, the event list (RoundReplayView) on the right, filters above, controls below
         private const float PanelW = 1760, PanelH = 1010, MapX = 30, MapY = -128, MapW = 1240, MapH = 712;
         private const float BarX = 560, BarW = PanelW - BarX - 190;
@@ -413,23 +385,14 @@ namespace UsefulTORStuff {
                 EarlyDeathShieldUI.Instance?.Close();
                 SessionStatsUI.Instance?.Close();
 
-                panelRoot = Canvas("UTSReplayUI", 9500, true);
+                panelRoot = VanillaUI.Canvas("UTSReplayUI", 9500, true);
                 LobbyPanelGuard.Track(panelRoot);
-                var backdrop = SessionStatsUI.Box(panelRoot, Vector2.zero, Vector2.zero, new Color(0f, 0f, 0f, 0.85f));
-                var brt = backdrop.GetComponent<RectTransform>();
-                brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one; brt.pivot = new Vector2(0.5f, 0.5f); brt.sizeDelta = Vector2.zero;
-                backdrop.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)CloseView);
+                VanillaUI.Backdrop(panelRoot, CloseView);
 
-                var panel = SessionStatsUI.Box(panelRoot, Vector2.zero, new Vector2(PanelW, PanelH), new Color(0.1f, 0.12f, 0.16f, 0.98f));
-                var prt = panel.GetComponent<RectTransform>();
-                prt.anchorMin = prt.anchorMax = prt.pivot = new Vector2(0.5f, 0.5f);
-                prt.anchoredPosition = Vector2.zero;
-
-                SessionStatsUI.Label(panel, UTSLocalization.Tr("uts.replay.title"), 28, TMPro.FontStyles.Bold, new Color(0.45f, 0.8f, 1f),
-                    new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -16), new Vector2(-40, 40), TMPro.TextAlignmentOptions.Center);
-                SessionStatsUI.Label(panel, UTSLocalization.Tr("uts.replay.subtitle", mapName, Clock(Duration), events.Count(e => e.Kind != EvMeeting)),
-                    15, TMPro.FontStyles.Normal, new Color(0.65f, 0.65f, 0.7f),
-                    new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -56), new Vector2(-80, 26), TMPro.TextAlignmentOptions.Top);
+                var panel = VanillaUI.CenterPanel(panelRoot, new Vector2(PanelW, PanelH));
+                float ty = VanillaUI.Title(panel, UTSLocalization.Tr("uts.replay.title"), 14f, 30f);
+                VanillaUI.Subtitle(panel, UTSLocalization.Tr("uts.replay.subtitle", mapName, Clock(Duration), events.Count(e => e.Kind != EvMeeting)),
+                                   ty - 4f, 26f);
 
                 // map, aspect-fitted into the map area
                 bool host = HostData;
@@ -504,7 +467,7 @@ namespace UsefulTORStuff {
                     float cw = Mathf.Min(150f, (MapW - 6f * (n - 1)) / n);
                     for (int k = 0; k < n; k++) {
                         byte id = k == 0 ? (byte)255 : tracks[k - 1].Id;
-                        Color col = k == 0 ? new Color(0.3f, 0.3f, 0.38f) : tracks[k - 1].Col;
+                        Color col = k == 0 ? VanillaUI.Grey : tracks[k - 1].Col;
                         string label = k == 0 ? UTSLocalization.Tr("uts.replay.persp_all") : tracks[k - 1].Name;
                         var chip = SessionStatsUI.MakeButton(panel, label, Vector2.zero, new Vector2(cw, 30), Color.white, () => persp = id);
                         Place(chip, new Vector2(MapX + k * (cw + 6f), rowY));
@@ -514,7 +477,7 @@ namespace UsefulTORStuff {
                             txt.enableWordWrapping = false;
                             txt.outlineWidth = 0.25f; txt.outlineColor = new Color32(0, 0, 0, 255);
                         }
-                        chips.Add((id, chip.GetComponent<Image>(), col));
+                        chips.Add((id, ButtonFill(chip), col));
                     }
                     if (host) {
                         seesLabel = SessionStatsUI.Text(panel, "", 15, TMPro.FontStyles.Normal, new Color(0.85f, 0.85f, 0.9f),
@@ -523,7 +486,7 @@ namespace UsefulTORStuff {
                         seesLabel.overflowMode = TMPro.TextOverflowModes.Ellipsis;
                     }
                     if (worldArea != null) {
-                        var vb = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(210, 26), new Color(0.3f, 0.3f, 0.38f, 0.95f), ToggleWorldView);
+                        var vb = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(210, 26), VanillaUI.Grey, ToggleWorldView);
                         Place(vb, new Vector2(MapX + MapW - 210, rowY - 36));
                         viewLabel = vb.GetComponentInChildren<TMPro.TextMeshProUGUI>();
                         if (viewLabel != null) viewLabel.fontSize = 13;
@@ -532,19 +495,19 @@ namespace UsefulTORStuff {
 
                 // controls: play/pause, previous/next event, speed, stop at kills, timeline, time
                 float cy = -PanelH + 150;
-                var play = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(140, 40), new Color(0.16f, 0.42f, 0.6f, 0.95f), TogglePlay);
+                var play = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(140, 40), VanillaUI.Teal, TogglePlay);
                 Place(play, new Vector2(30, cy));
                 playLabel = play.GetComponentInChildren<TMPro.TextMeshProUGUI>();
-                var prev = SessionStatsUI.MakeButton(panel, "<", Vector2.zero, new Vector2(46, 40), new Color(0.3f, 0.3f, 0.38f, 0.95f), () => StepEvent(-1));
+                var prev = SessionStatsUI.MakeButton(panel, "<", Vector2.zero, new Vector2(46, 40), VanillaUI.Grey, () => StepEvent(-1));
                 Place(prev, new Vector2(176, cy));
-                var next = SessionStatsUI.MakeButton(panel, ">", Vector2.zero, new Vector2(46, 40), new Color(0.3f, 0.3f, 0.38f, 0.95f), () => StepEvent(1));
+                var next = SessionStatsUI.MakeButton(panel, ">", Vector2.zero, new Vector2(46, 40), VanillaUI.Grey, () => StepEvent(1));
                 Place(next, new Vector2(228, cy));
-                var sp = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(70, 40), new Color(0.3f, 0.3f, 0.38f, 0.95f), CycleSpeed);
+                var sp = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(70, 40), VanillaUI.Grey, CycleSpeed);
                 Place(sp, new Vector2(280, cy));
                 speedLabel = sp.GetComponentInChildren<TMPro.TextMeshProUGUI>();
                 var ks = SessionStatsUI.MakeButton(panel, "", Vector2.zero, new Vector2(184, 40), Color.white, () => stopAtKill = !stopAtKill);
                 Place(ks, new Vector2(356, cy));
-                killStopImg = ks.GetComponent<Image>();
+                killStopImg = ButtonFill(ks);
                 killStopLabel = ks.GetComponentInChildren<TMPro.TextMeshProUGUI>();
                 if (killStopLabel != null) { killStopLabel.enableAutoSizing = true; killStopLabel.fontSizeMin = 10; killStopLabel.fontSizeMax = 15; }
 
@@ -578,8 +541,7 @@ namespace UsefulTORStuff {
                 BuildEventList(panel);
                 BuildMeetingCard(panel);
 
-                var close = SessionStatsUI.MakeButton(panel, UTSLocalization.Tr("uts.sessionstats.close"), new Vector2(0, 20), new Vector2(240, 44),
-                                                      new Color(0.3f, 0.3f, 0.38f, 0.95f), CloseView);
+                VanillaUI.CloseButton(panel, UTSLocalization.Tr("uts.sessionstats.close"), CloseView);
 
                 viewT = 0f;
                 playing = true;
@@ -588,6 +550,12 @@ namespace UsefulTORStuff {
                 UsefulTORStuffPlugin.Logger?.LogError($"[RoundReplay] panel failed: {e}");
                 CloseView();
             }
+        }
+
+        // the tinted part of a VanillaUI button (the root itself carries no Image)
+        private static Image ButtonFill(GameObject button) {
+            var fill = button.transform.Find("Fill");
+            return fill != null ? fill.GetComponent<Image>() : button.GetComponent<Image>();
         }
 
         private static void Place(GameObject go, Vector2 topLeft) {

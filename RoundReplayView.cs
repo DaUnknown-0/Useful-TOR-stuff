@@ -186,7 +186,7 @@ namespace UsefulTORStuff {
                     txt.enableWordWrapping = false;
                     txt.outlineWidth = 0.25f; txt.outlineColor = new Color32(0, 0, 0, 255);
                 }
-                catChips.Add((c, chip.GetComponent<Image>(), txt, TickColor(CatColorKind[c])));
+                catChips.Add((c, ButtonFill(chip), txt, TickColor(CatColorKind[c])));
             }
         }
 
@@ -203,7 +203,7 @@ namespace UsefulTORStuff {
             listRows.Clear();
             var list = SessionStatsUI.Box(panel, new Vector2(ListX, MapY), new Vector2(ListW, ListH), new Color(0f, 0f, 0f, 0.25f));
             listRt = list.GetComponent<RectTransform>();
-            var mb = SessionStatsUI.MakeButton(list, "", Vector2.zero, new Vector2(ListW, 30), new Color(0.3f, 0.3f, 0.38f, 0.95f), CycleMode);
+            var mb = SessionStatsUI.MakeButton(list, "", Vector2.zero, new Vector2(ListW, 30), VanillaUI.Grey, CycleMode);
             Place(mb, Vector2.zero);
             modeLabel = mb.GetComponentInChildren<TMPro.TextMeshProUGUI>();
             if (modeLabel != null) { modeLabel.enableAutoSizing = true; modeLabel.fontSizeMin = 10; modeLabel.fontSizeMax = 14; modeLabel.enableWordWrapping = false; }
@@ -304,7 +304,7 @@ namespace UsefulTORStuff {
             foreach (var e in events.Where(e => e.Kind == EvMeeting).OrderBy(e => e.T).ToList()) {
                 var ev = e;
                 n++;
-                var b = SessionStatsUI.MakeButton(panel, "M" + n, Vector2.zero, new Vector2(40, 20), new Color(0.55f, 0.45f, 0.12f, 0.95f), () => JumpTo(ev));
+                var b = SessionStatsUI.MakeButton(panel, "M" + n, Vector2.zero, new Vector2(40, 20), VanillaUI.Amber, () => JumpTo(ev));
                 Place(b, new Vector2(BarX + BarW * e.T / dur - 20, cy - 44));
                 var txt = b.GetComponentInChildren<TMPro.TextMeshProUGUI>();
                 if (txt != null) txt.fontSize = 12;
@@ -439,7 +439,7 @@ namespace UsefulTORStuff {
                 if (img != null) img.color = on ? new Color(col.r * 0.8f, col.g * 0.8f, col.b * 0.8f, 0.95f) : new Color(0.25f, 0.25f, 0.3f, 0.8f);
                 if (txt != null) txt.alpha = on ? 1f : 0.5f;
             }
-            if (killStopImg != null) killStopImg.color = stopAtKill ? new Color(0.7f, 0.2f, 0.2f, 0.95f) : new Color(0.3f, 0.3f, 0.38f, 0.95f);
+            if (killStopImg != null) killStopImg.color = stopAtKill ? VanillaUI.Red : VanillaUI.Grey;
             if (killStopLabel != null) {
                 string ks = UTSLocalization.Tr(stopAtKill ? "uts.replay.killstop_on" : "uts.replay.killstop_off");
                 if (killStopLabel.text != ks) killStopLabel.text = ks;

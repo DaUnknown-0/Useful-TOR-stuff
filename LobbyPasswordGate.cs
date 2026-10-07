@@ -444,55 +444,27 @@ namespace UsefulTORStuff
 
         private void BuildPanel()
         {
-            _panel = new GameObject("LobbyPasswordGatePanel");
-            DontDestroyOnLoad(_panel);
+            // The game's lobby-pane look (VanillaUI): dim backdrop that swallows the lobby's clicks,
+            // framed card, upper-case title, dark input field.
+            _panel = VanillaUI.Canvas("LobbyPasswordGatePanel", 8000, false);
+            VanillaUI.Backdrop(_panel, null);
 
-            var canvas = _panel.AddComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 8000;
+            var box = VanillaUI.CenterPanel(_panel, new Vector2(600, 340));
+            float ty = VanillaUI.Title(box, UTSLocalization.Tr("uts.lobbypasswordgate.title"), 16f, 30f);
+            _titleLabel = null;
 
-            var scaler = _panel.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.matchWidthOrHeight = 0.5f;
+            _hintLabel = MakeLabel(box, "Hint", new Vector2(0, ty - 8), new Vector2(-60, 30),
+                "", 17, FontStyles.Normal, VanillaUI.Muted);
 
-            _panel.AddComponent<GraphicRaycaster>();
-
-            // Full-screen overlay — blocks all mouse input from reaching the lobby behind it.
-            var overlay = new GameObject("Overlay");
-            overlay.transform.SetParent(_panel.transform, false);
-            var overlayRect = overlay.AddComponent<RectTransform>();
-            overlayRect.anchorMin = Vector2.zero;
-            overlayRect.anchorMax = Vector2.one;
-            overlayRect.sizeDelta = Vector2.zero;
-            overlay.AddComponent<Image>().color = new Color(0f, 0f, 0f, 0.72f);
-
-            // Centered dialog box.
-            var box = new GameObject("Box");
-            box.transform.SetParent(_panel.transform, false);
-            var boxRect = box.AddComponent<RectTransform>();
-            boxRect.anchorMin = new Vector2(0.5f, 0.5f);
-            boxRect.anchorMax = new Vector2(0.5f, 0.5f);
-            boxRect.pivot     = new Vector2(0.5f, 0.5f);
-            boxRect.sizeDelta = new Vector2(560, 310);
-            box.AddComponent<Image>().color = new Color(0.08f, 0.08f, 0.14f, 0.98f);
-
-            _titleLabel = MakeLabel(box, "Title", new Vector2(0, -22), new Vector2(-20, 52),
-                UTSLocalization.Tr("uts.lobbypasswordgate.title"), 30, FontStyles.Bold, new Color(0.3f, 0.7f, 1f));
-
-            _hintLabel = MakeLabel(box, "Hint", new Vector2(0, -82), new Vector2(-30, 30),
-                "", 17, FontStyles.Normal, new Color(0.82f, 0.82f, 0.82f));
-
-            // Masked input display.
-            var inputBox = new GameObject("InputBox");
-            inputBox.transform.SetParent(box.transform, false);
-            var inputBoxRect = inputBox.AddComponent<RectTransform>();
+            // Masked input display: a dark field like the game's text boxes.
+            var inputBox = VanillaUI.Rounded(box, VanillaUI.Field, VanillaUI.RadiusBox);
+            inputBox.name = "InputBox";
+            var inputBoxRect = inputBox.GetComponent<RectTransform>();
             inputBoxRect.anchorMin = new Vector2(0.08f, 1f);
             inputBoxRect.anchorMax = new Vector2(0.92f, 1f);
             inputBoxRect.pivot     = new Vector2(0.5f, 1f);
-            inputBoxRect.anchoredPosition = new Vector2(0, -122);
-            inputBoxRect.sizeDelta = new Vector2(0, 48);
-            inputBox.AddComponent<Image>().color = new Color(0.14f, 0.14f, 0.22f);
+            inputBoxRect.anchoredPosition = new Vector2(0, ty - 50);
+            inputBoxRect.sizeDelta = new Vector2(0, 50);
 
             var maskedObj = new GameObject("MaskedText");
             maskedObj.transform.SetParent(inputBox.transform, false);
@@ -521,17 +493,17 @@ namespace UsefulTORStuff
             statusRect.anchorMin = new Vector2(0, 1);
             statusRect.anchorMax = new Vector2(1, 1);
             statusRect.pivot     = new Vector2(0.5f, 1);
-            statusRect.anchoredPosition = new Vector2(0, -183);
-            statusRect.sizeDelta = new Vector2(-20, 28);
+            statusRect.anchoredPosition = new Vector2(0, ty - 112);
+            statusRect.sizeDelta = new Vector2(-40, 28);
             _statusLabel = statusObj.AddComponent<TextMeshProUGUI>();
             _statusLabel.text      = "";
             _statusLabel.fontSize  = 18;
             _statusLabel.alignment = TextAlignmentOptions.Center;
-            _statusLabel.color     = new Color(1f, 0.3f, 0.3f);
+            _statusLabel.color     = VanillaUI.Bad;
+            VanillaUI.SetText(_statusLabel, "");
 
-            _footerLabel = MakeLabel(box, "Footer", new Vector2(0, -240), new Vector2(-20, 24),
-                UTSLocalization.Tr("uts.lobbypasswordgate.footer"), 14, FontStyles.Normal,
-                new Color(0.5f, 0.5f, 0.5f));
+            _footerLabel = MakeLabel(box, "Footer", new Vector2(0, -340 + VanillaUI.FrameW + 40), new Vector2(-40, 24),
+                UTSLocalization.Tr("uts.lobbypasswordgate.footer"), 14, FontStyles.Normal, VanillaUI.Muted);
 
             _panel.SetActive(true);
             ApplyFetchStateToPanel();
@@ -572,11 +544,11 @@ namespace UsefulTORStuff
             rect.anchoredPosition = anchoredPos;
             rect.sizeDelta = sizeDelta;
             var tmp = obj.AddComponent<TextMeshProUGUI>();
-            tmp.text      = text;
             tmp.fontSize  = fontSize;
             tmp.fontStyle = style;
             tmp.alignment = TextAlignmentOptions.Center;
             tmp.color     = color;
+            VanillaUI.SetText(tmp, text);
             return tmp;
         }
 

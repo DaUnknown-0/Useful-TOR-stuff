@@ -12,8 +12,8 @@
  * Pies need no texture per chart: one cached circle sprite, drawn as stacked radial fills (largest
  * cumulative share at the bottom), so each slice shows between its neighbours' edges.
  *
- * Same screen-space canvas shape as EarlyDeathShieldUI; its lobby button sits in the shared
- * bottom row right of the early-death button.
+ * Same VanillaUI canvas shape as EarlyDeathShieldUI; its lobby entry sits in the lobby menu
+ * (LobbyMenuUI).
  */
 
 using System;
@@ -27,24 +27,12 @@ namespace UsefulTORStuff {
 
     public class SessionStatsUI : MonoBehaviour {
         public static SessionStatsUI Instance { get; private set; }
-        /// <summary>Read by EarlyDeathShieldUI for the shared lobby-button column.</summary>
-        public static bool ButtonShown { get; private set; }
 
         public SessionStatsUI(IntPtr ptr) : base(ptr) { }
 
-        private static readonly Dictionary<Color, Sprite> solidSprites = new Dictionary<Color, Sprite>();
-        private static Sprite circle;
-
-        private static readonly Color ColBackdrop = new Color(0f, 0f, 0f, 0.85f);
-        private static readonly Color ColPanel = new Color(0.1f, 0.12f, 0.16f, 0.98f);
-        private static readonly Color ColRow = new Color(1f, 1f, 1f, 0.05f);
-        private static readonly Color ColRowSel = new Color(0.35f, 0.75f, 1f, 0.22f);
-        private static readonly Color ColAccent = new Color(0.45f, 0.8f, 1f);
-        private static readonly Color ColMuted = new Color(0.65f, 0.65f, 0.7f);
-        private static readonly Color ColBtnGrey = new Color(0.3f, 0.3f, 0.38f, 0.95f);
-        private static readonly Color ColButton = new Color(0.16f, 0.42f, 0.6f, 0.95f);
         private static readonly Color ColOthers = new Color(0.45f, 0.45f, 0.5f);
         private static readonly Color ColEmpty = new Color(1f, 1f, 1f, 0.08f);
+        private static readonly Color ColGold = new Color(1f, 0.82f, 0.3f);
 
         // How the rounds ended, in SessionStats.Cat* order.
         private static readonly Color[] CatColors = {
@@ -67,8 +55,6 @@ namespace UsefulTORStuff {
         };
 
         private GameObject panelRoot;
-        private GameObject lobbyButton;
-        private RectTransform lobbyButtonRect;
         private float nextPoll;
         private float shownAt = -1f;
         private byte selected = byte.MaxValue;
@@ -82,6 +68,11 @@ namespace UsefulTORStuff {
         public void Awake() {
             if (Instance) Destroy(Instance);
             Instance = this;
+            // the lobby entry lives in the lobby menu (LobbyMenuUI)
+            LobbyMenu.Add("uts.sessionstats", 30, ShouldShow, () => UTSLocalization.Tr("uts.sessionstats.button"),
+                          () => Instance?.Toggle(), VanillaUI.Blue);
+            LobbyMenu.Add("uts.replay", 40, RoundReplay.ShouldShowButton, () => UTSLocalization.Tr("uts.replay.button"),
+                          RoundReplay.OpenView, VanillaUI.Teal);
         }
 
         public void Update() {
@@ -99,16 +90,6 @@ namespace UsefulTORStuff {
                 var t = SessionStats.LastTable;
                 if (t != null && t.ReceivedAt != shownAt) Rebuild();
             }
-
-            bool show = ShouldShow() && !SettingsOverlayView.OverlayOpen();
-            ButtonShown = show;
-            if (show && lobbyButton == null) BuildLobbyButton();
-            if (lobbyButton == null) return;
-            if (lobbyButton.activeSelf != show) lobbyButton.SetActive(show);
-            if (!show) return;
-            // the shared bottom row: right of the newcomer and early-death buttons that are shown
-            int slot = (NewcomerShieldUI.ButtonShown ? 1 : 0) + (EarlyDeathShieldUI.ButtonShown ? 1 : 0);
-            if (lobbyButtonRect != null) lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(slot);
         }
 
         [HideFromIl2Cpp]
@@ -119,38 +100,6 @@ namespace UsefulTORStuff {
                 // everyone else: only while the host's UTS actually runs it
                 return UTSGate.Bool(SessionStats.Enabled);
             } catch { return false; }
-        }
-
-        [HideFromIl2Cpp]
-        private void BuildLobbyButton() {
-            try {
-                lobbyButton = new GameObject("UTSSessionStatsButton");
-                DontDestroyOnLoad(lobbyButton);
-                var canvas = lobbyButton.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 9000;
-                var scaler = lobbyButton.AddComponent<CanvasScaler>();
-                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-                scaler.referenceResolution = new Vector2(1920, 1080);
-                scaler.matchWidthOrHeight = 0.5f;
-                lobbyButton.AddComponent<GraphicRaycaster>();
-
-                var btn = new GameObject("Btn");
-                btn.transform.SetParent(lobbyButton.transform, false);
-                lobbyButtonRect = btn.AddComponent<RectTransform>();
-                lobbyButtonRect.anchorMin = Vector2.zero; lobbyButtonRect.anchorMax = Vector2.zero;
-                lobbyButtonRect.pivot = Vector2.zero;
-                lobbyButtonRect.anchoredPosition = UTSModSyncUI.LobbySlot(0);
-                lobbyButtonRect.sizeDelta = new Vector2(330, 46);
-                btn.AddComponent<Image>().sprite = Solid(ColButton);
-                var t = Label(btn, UTSLocalization.Tr("uts.sessionstats.button"), 18, TMPro.FontStyles.Bold, Color.white,
-                              Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero,
-                              TMPro.TextAlignmentOptions.Center);
-                btn.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)Toggle);
-            } catch (Exception ex) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] lobby button failed: {ex.Message}");
-                lobbyButton = null;
-            }
         }
 
         [HideFromIl2Cpp]
@@ -184,6 +133,10 @@ namespace UsefulTORStuff {
             UsefulTORStuffPlugin.Logger?.LogInfo("[SessionStats] end-of-evening titles opened.");
         }
 
+        /// <summary>Autotest (UIGallery): switch the open panel to the titles tab.</summary>
+        [HideFromIl2Cpp]
+        public void DiagShowTitles() { titlesView = true; if (panelRoot != null) Rebuild(); }
+
         [HideFromIl2Cpp]
         private void Rebuild() {
             bool keep = ceremony;
@@ -195,7 +148,7 @@ namespace UsefulTORStuff {
         // ====================================================================
         // Panel
         // ====================================================================
-        private const float PanelW = 1500, PanelH = 860, RowStep = 40;
+        private const float PanelW = 1540, PanelH = 900, RowStep = 40, FooterH = 90;
 
         [HideFromIl2Cpp]
         private void Open() {
@@ -203,36 +156,13 @@ namespace UsefulTORStuff {
                 var t = SessionStats.LastTable;
                 shownAt = t != null ? t.ReceivedAt : -1f;
 
-                panelRoot = new GameObject("UTSSessionStatsUI");
+                panelRoot = VanillaUI.Canvas("UTSSessionStatsUI", 9500, true);
                 LobbyPanelGuard.Track(panelRoot);
-                DontDestroyOnLoad(panelRoot);
-                var canvas = panelRoot.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 9500;
-                var scaler = panelRoot.AddComponent<CanvasScaler>();
-                scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-                scaler.referenceResolution = new Vector2(1920, 1080);
-                scaler.matchWidthOrHeight = 0.5f;
-                panelRoot.AddComponent<GraphicRaycaster>().blockingObjects = GraphicRaycaster.BlockingObjects.All;
+                VanillaUI.Backdrop(panelRoot, Close);
 
-                var backdrop = new GameObject("Backdrop");
-                backdrop.transform.SetParent(panelRoot.transform, false);
-                var brt = backdrop.AddComponent<RectTransform>();
-                brt.anchorMin = Vector2.zero; brt.anchorMax = Vector2.one; brt.sizeDelta = Vector2.zero;
-                backdrop.AddComponent<Image>().sprite = Solid(ColBackdrop);
-                backdrop.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)Close);
-
-                var panel = new GameObject("Panel");
-                panel.transform.SetParent(panelRoot.transform, false);
-                var prt = panel.AddComponent<RectTransform>();
-                prt.anchorMin = prt.anchorMax = prt.pivot = new Vector2(0.5f, 0.5f);
-                prt.sizeDelta = new Vector2(PanelW, PanelH);
-                panel.AddComponent<Image>().sprite = Solid(ColPanel);
-
-                Label(panel, UTSLocalization.Tr(ceremony ? "uts.sessionstats.ceremony_title" : "uts.sessionstats.title"), 28, TMPro.FontStyles.Bold,
-                      ceremony ? new Color(1f, 0.82f, 0.3f) : ColAccent,
-                      new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -18), new Vector2(-40, 40),
-                      TMPro.TextAlignmentOptions.Center);
+                var panel = VanillaUI.CenterPanel(panelRoot, new Vector2(PanelW, PanelH));
+                float y = VanillaUI.Title(panel, UTSLocalization.Tr(ceremony ? "uts.sessionstats.ceremony_title" : "uts.sessionstats.title"),
+                                          16f, 34f, ceremony ? VanillaUI.Amber : (Color?)null);
 
                 // Everyone of the session: the players here, and below them the ones who left
                 // (User 2026-10-02: keep them, at the bottom), drawn in grey.
@@ -250,28 +180,22 @@ namespace UsefulTORStuff {
                 string sub = t == null || !t.Complete ? UTSLocalization.Tr("uts.sessionstats.waiting")
                            : t.SessionRounds == 0 ? UTSLocalization.Tr("uts.sessionstats.empty")
                            : UTSLocalization.Tr("uts.sessionstats.subtitle", t.SessionRounds);
-                Label(panel, sub, 15, TMPro.FontStyles.Normal, ColMuted,
-                      new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1), new Vector2(0, -60), new Vector2(-80, 30),
-                      TMPro.TextAlignmentOptions.Top);
+                VanillaUI.Subtitle(panel, sub, y - 6f, 30f);
 
                 if (rows.Count > 0) {
                     byte me = PlayerControl.LocalPlayer != null ? PlayerControl.LocalPlayer.PlayerId : byte.MaxValue;
                     // tab switch, top right
-                    var tab = MakeButton(panel, UTSLocalization.Tr(titlesView ? "uts.sessionstats.tab_stats" : "uts.sessionstats.tab_titles"),
-                                         Vector2.zero, new Vector2(260, 40), ColButton, () => { titlesView = !titlesView; Rebuild(); });
-                    var trt = tab.GetComponent<RectTransform>();
-                    trt.anchorMin = trt.anchorMax = trt.pivot = new Vector2(1, 1);
-                    trt.anchoredPosition = new Vector2(-30, -20);
+                    VanillaUI.Button(panel, UTSLocalization.Tr(titlesView ? "uts.sessionstats.tab_stats" : "uts.sessionstats.tab_titles"),
+                                     new Vector2(-VanillaUI.FrameW - 24, -VanillaUI.FrameW - 22), new Vector2(260, 44), VanillaUI.Teal,
+                                     () => { titlesView = !titlesView; Rebuild(); },
+                                     new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
                     if (titlesView) {
                         BuildTitles(panel, t, me);
                         // the host can turn the tab into the end-of-evening panel for everybody
-                        if (!ceremony && AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost && t.Titles.Count > 0) {
-                            var show = MakeButton(panel, UTSLocalization.Tr("uts.sessionstats.ceremony_button"), Vector2.zero,
-                                                  new Vector2(300, 44), new Color(0.6f, 0.45f, 0.1f, 0.95f), SessionStats.SendCeremony);
-                            var srt = show.GetComponent<RectTransform>();
-                            srt.anchorMin = srt.anchorMax = srt.pivot = new Vector2(1, 0);
-                            srt.anchoredPosition = new Vector2(-30, 20);
-                        }
+                        if (!ceremony && AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost && t.Titles.Count > 0)
+                            VanillaUI.Button(panel, UTSLocalization.Tr("uts.sessionstats.ceremony_button"),
+                                             new Vector2(-VanillaUI.FrameW - 24, VanillaUI.FrameW + 16), new Vector2(320, 48), VanillaUI.Amber,
+                                             SessionStats.SendCeremony, new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0));
                     } else {
                         if (!rows.Any(x => x.Row.PlayerId == selected))
                             selected = rows.Any(x => x.Row.PlayerId == me) ? me : rows[0].Row.PlayerId;
@@ -281,8 +205,7 @@ namespace UsefulTORStuff {
                     }
                 }
 
-                MakeButton(panel, UTSLocalization.Tr("uts.sessionstats.close"), new Vector2(0, 20), new Vector2(240, 44),
-                           ColBtnGrey, Close);
+                VanillaUI.CloseButton(panel, UTSLocalization.Tr("uts.sessionstats.close"), Close);
             } catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[SessionStats] panel failed: {ex}");
                 Close();
@@ -290,9 +213,9 @@ namespace UsefulTORStuff {
         }
 
         // Column x positions inside the left table (left edge of each column, width).
-        private static readonly float[] ColX = { 16, 270, 350, 430, 545, 665 };
-        private static readonly float[] ColW = { 250, 75, 75, 110, 115, 60 };
-        private const float TableW = 740, TableX = 30, TopY = -110;
+        private static readonly float[] ColX = { 16, 280, 360, 440, 555, 675 };
+        private static readonly float[] ColW = { 260, 75, 75, 110, 115, 60 };
+        private const float TableW = 750, TableX = 34, TopY = -128;
 
         // A player of the table: the live one if he is here, otherwise the name the host sent.
         private struct Who {
@@ -316,36 +239,41 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         private void BuildTable(GameObject panel, List<(SessionStats.Row Row, Who W)> rows, byte me) {
-            var head = Box(panel, new Vector2(TableX, TopY), new Vector2(TableW, 30), new Color(0, 0, 0, 0));
+            var head = VanillaUI.Box(panel, new Vector2(TableX, TopY), new Vector2(TableW, 30), new Color(0, 0, 0, 0));
             string[] heads = {
                 "uts.sessionstats.col_player", "uts.sessionstats.col_rounds", "uts.sessionstats.col_wins",
                 "uts.sessionstats.col_meetings", "uts.sessionstats.col_survived", "uts.sessionstats.col_kills"
             };
             for (int i = 0; i < heads.Length; i++)
-                Cell(head, UTSLocalization.Tr(heads[i]), i, 13, ColMuted, TMPro.FontStyles.Bold);
+                Cell(head, UTSLocalization.Tr(heads[i]), i, 13, VanillaUI.Muted, TMPro.FontStyles.Bold | TMPro.FontStyles.UpperCase);
 
             float y = TopY - 34;
             // rows shrink instead of falling off the panel once the players who left are listed too
-            float space = PanelH - 110 - 34 - 80;
+            float space = PanelH + TopY - 34 - FooterH;
             float step = rows.Count > 0 ? Mathf.Clamp(space / rows.Count, 22f, RowStep) : RowStep;
             int maxRows = Mathf.FloorToInt(space / step);
             float font = step >= 34f ? 1f : 0.82f;
             foreach (var (r, w) in rows.Take(maxRows)) {
                 bool isMe = r.PlayerId == me, isSel = r.PlayerId == selected;
-                var row = Box(panel, new Vector2(TableX, y), new Vector2(TableW, step - 4),
-                              isSel ? ColRowSel : isMe ? new Color(0.45f, 0.8f, 1f, 0.1f) : ColRow);
+                var row = VanillaUI.Box(panel, new Vector2(TableX, y), new Vector2(TableW, step - 4),
+                                        isSel ? VanillaUI.FieldLight : VanillaUI.Field);
                 byte id = r.PlayerId;
-                row.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)(() => { selected = id; Rebuild(); }));
+                VanillaUI.Clickable(row, () => { selected = id; Rebuild(); });
+                if (isSel) {
+                    // a teal edge on the selected row, like the game's selected tab
+                    var edge = VanillaUI.Box(row, new Vector2(0, 0), new Vector2(5, step - 4), VanillaUI.Teal, 2);
+                    edge.GetComponent<Image>().raycastTarget = false;
+                }
 
                 // colour dot + name; who left is grey and tagged
                 float dotSize = Mathf.Min(18f, step - 10f);
-                var dot = Box(row, new Vector2(ColX[0], -(step - 4 - dotSize) / 2f), new Vector2(dotSize, dotSize), w.Col);
-                dot.GetComponent<Image>().sprite = Circle();
+                var dot = VanillaUI.Box(row, new Vector2(ColX[0], -(step - 4 - dotSize) / 2f), new Vector2(dotSize, dotSize), w.Col);
+                dot.GetComponent<Image>().sprite = VanillaUI.Circle();
                 string name = w.Name;
                 if (isMe) name += " " + UTSLocalization.Tr("uts.sessionstats.you_tag");
                 if (!w.Here) name += " " + UTSLocalization.Tr("uts.sessionstats.left_tag");
                 Color text = w.Here ? Color.white : ColLeft;
-                var nl = Cell(row, name, 0, 16 * font, isMe ? ColAccent : text, TMPro.FontStyles.Bold);
+                var nl = Cell(row, name, 0, 16 * font, isMe ? VanillaUI.Blue : text, TMPro.FontStyles.Bold);
                 nl.rectTransform.anchoredPosition += new Vector2(26, 0);
                 nl.rectTransform.sizeDelta -= new Vector2(26, 0);
 
@@ -358,33 +286,33 @@ namespace UsefulTORStuff {
             }
         }
 
-        private const float DetailX = 800, DetailW = 670;
+        private const float DetailX = 820, DetailW = 680;
 
         [HideFromIl2Cpp]
         private void BuildDetail(GameObject panel, SessionStats.Row r, Who w, bool isMe) {
-            var d = Box(panel, new Vector2(DetailX, TopY), new Vector2(DetailW, 640), new Color(1f, 1f, 1f, 0.03f));
+            var d = VanillaUI.Box(panel, new Vector2(DetailX, TopY), new Vector2(DetailW, PanelH + TopY - FooterH), VanillaUI.Field, VanillaUI.RadiusBox);
 
             string name = w.Name + (isMe ? " " + UTSLocalization.Tr("uts.sessionstats.you_tag") : "")
                           + (!w.Here ? " " + UTSLocalization.Tr("uts.sessionstats.left_tag") : "");
-            var dot = Box(d, new Vector2(18, -16), new Vector2(26, 26), w.Col);
-            dot.GetComponent<Image>().sprite = Circle();
-            Text(d, name, 22, TMPro.FontStyles.Bold, Color.white, new Vector2(54, -12), new Vector2(DetailW - 70, 34));
-            Text(d, UTSLocalization.Tr("uts.sessionstats.detail_summary", r.Rounds, r.Wins, Pct(r.Wins, r.Rounds)),
-                 15, TMPro.FontStyles.Normal, ColMuted, new Vector2(18, -50), new Vector2(DetailW - 36, 24));
+            var dot = VanillaUI.Box(d, new Vector2(18, -16), new Vector2(26, 26), w.Col);
+            dot.GetComponent<Image>().sprite = VanillaUI.Circle();
+            VanillaUI.Text(d, name, 22, Color.white, new Vector2(54, -12), new Vector2(DetailW - 70, 34), TMPro.FontStyles.Bold);
+            VanillaUI.Text(d, UTSLocalization.Tr("uts.sessionstats.detail_summary", r.Rounds, r.Wins, Pct(r.Wins, r.Rounds)),
+                 15, VanillaUI.Muted, new Vector2(18, -50), new Vector2(DetailW - 36, 24));
 
             // wins per team, with a bar for the win rate
             float y = -84;
             for (int i = 0; i < 3; i++) {
-                Text(d, UTSLocalization.Tr("uts.sessionstats.team_line", UTSLocalization.Tr(TeamKeys[i]), r.TeamWins[i], r.TeamRounds[i]),
-                     14, TMPro.FontStyles.Normal, r.TeamRounds[i] > 0 ? Color.white : ColMuted, new Vector2(18, y), new Vector2(300, 22));
-                Box(d, new Vector2(330, y - 6), new Vector2(300, 10), ColEmpty);
+                VanillaUI.Text(d, UTSLocalization.Tr("uts.sessionstats.team_line", UTSLocalization.Tr(TeamKeys[i]), r.TeamWins[i], r.TeamRounds[i]),
+                     14, r.TeamRounds[i] > 0 ? Color.white : VanillaUI.Muted, new Vector2(18, y), new Vector2(300, 22));
+                VanillaUI.Box(d, new Vector2(330, y - 6), new Vector2(300, 10), ColEmpty, 4);
                 if (r.TeamRounds[i] > 0)
-                    Box(d, new Vector2(330, y - 6), new Vector2(300f * r.TeamWins[i] / r.TeamRounds[i], 10), TeamColors[i]);
+                    VanillaUI.Box(d, new Vector2(330, y - 6), new Vector2(Mathf.Max(10f, 300f * r.TeamWins[i] / r.TeamRounds[i]), 10), TeamColors[i], 4);
                 y -= 26;
             }
 
             string roles = r.Roles.Count == 0 ? "-" : string.Join(", ", r.Roles.Select(x => $"{x.Role} x{x.Count}"));
-            Text(d, UTSLocalization.Tr("uts.sessionstats.roles", roles), 14, TMPro.FontStyles.Normal, Color.white,
+            VanillaUI.Text(d, UTSLocalization.Tr("uts.sessionstats.roles", roles), 14, Color.white,
                  new Vector2(18, y - 4), new Vector2(DetailW - 36, 40));
 
             // three pies
@@ -398,29 +326,29 @@ namespace UsefulTORStuff {
         }
 
         // ---- titles of the evening ----
-        private const float CardW = 460, CardH = 200, CardGap = 20;
+        private const float CardW = 470, CardH = 200, CardGap = 20;
 
         [HideFromIl2Cpp]
         private void BuildTitles(GameObject panel, SessionStats.Table t, byte me) {
             if (t.Titles.Count == 0) {
-                Text(panel, UTSLocalization.Tr("uts.sessionstats.titles_none"), 16, TMPro.FontStyles.Italic, ColMuted,
-                     new Vector2(TableX, TopY), new Vector2(PanelW - 60, 30));
+                VanillaUI.Text(panel, UTSLocalization.Tr("uts.sessionstats.titles_none"), 16, VanillaUI.Muted,
+                     new Vector2(TableX, TopY), new Vector2(PanelW - 60, 30), TMPro.FontStyles.Italic);
                 return;
             }
             int i = 0;
             foreach (var ti in t.Titles) {
                 int col = i % 3, row = i / 3;
-                var card = Box(panel, new Vector2(TableX + col * (CardW + CardGap), TopY - row * (CardH + CardGap)),
-                               new Vector2(CardW, CardH),
-                               ti.Holders.Contains(me) ? new Color(0.45f, 0.8f, 1f, 0.12f) : new Color(1f, 1f, 1f, 0.05f));
+                var card = VanillaUI.Box(panel, new Vector2(TableX + col * (CardW + CardGap), TopY - row * (CardH + CardGap)),
+                               new Vector2(CardW, CardH), ti.Holders.Contains(me) ? VanillaUI.FieldLight : VanillaUI.Field);
                 string key = $"uts.sessionstats.title_{ti.Id}";
-                Text(card, UTSLocalization.Tr(key + "_name"), 22, TMPro.FontStyles.Bold, ColAccent, new Vector2(18, -14), new Vector2(CardW - 36, 32));
-                Text(card, TitleValue(ti), 14, TMPro.FontStyles.Normal, ColMuted, new Vector2(18, -50), new Vector2(CardW - 36, 40));
+                VanillaUI.Text(card, UTSLocalization.Tr(key + "_name"), 22, ColGold, new Vector2(18, -14), new Vector2(CardW - 36, 32),
+                               TMPro.FontStyles.Bold | TMPro.FontStyles.UpperCase);
+                VanillaUI.Text(card, TitleValue(ti), 14, VanillaUI.Muted, new Vector2(18, -50), new Vector2(CardW - 36, 40));
                 float y = -98;
                 if (ti.Id == SessionStats.TitleNemesis && ti.Holders.Count == 2) {
                     HolderLine(card, WhoOf(ti.Holders[0], t), y);
-                    Text(card, UTSLocalization.Tr("uts.sessionstats.nemesis_of"), 14, TMPro.FontStyles.Italic, ColMuted,
-                         new Vector2(52, y - 30), new Vector2(CardW - 70, 22));
+                    VanillaUI.Text(card, UTSLocalization.Tr("uts.sessionstats.nemesis_of"), 14, VanillaUI.Muted,
+                         new Vector2(52, y - 30), new Vector2(CardW - 70, 22), TMPro.FontStyles.Italic);
                     HolderLine(card, WhoOf(ti.Holders[1], t), y - 56);
                 } else {
                     foreach (byte h in ti.Holders) { HolderLine(card, WhoOf(h, t), y); y -= 32; }
@@ -439,12 +367,12 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         private static void HolderLine(GameObject card, Who w, float y) {
-            var dot = Box(card, new Vector2(18, y - 2), new Vector2(22, 22), w.Col);
-            dot.GetComponent<Image>().sprite = Circle();
+            var dot = VanillaUI.Box(card, new Vector2(18, y - 2), new Vector2(22, 22), w.Col);
+            dot.GetComponent<Image>().sprite = VanillaUI.Circle();
             string name = w.Name == "?" ? UTSLocalization.Tr("uts.sessionstats.others")
                         : w.Here ? w.Name : $"{w.Name} {UTSLocalization.Tr("uts.sessionstats.left_tag")}";
-            Text(card, name, 18, TMPro.FontStyles.Bold, w.Here ? Color.white : ColLeft,
-                 new Vector2(52, y), new Vector2(CardW - 70, 28));
+            VanillaUI.Text(card, name, 18, w.Here ? Color.white : ColLeft,
+                 new Vector2(52, y), new Vector2(CardW - 70, 28), TMPro.FontStyles.Bold);
         }
 
         [HideFromIl2Cpp]
@@ -465,14 +393,14 @@ namespace UsefulTORStuff {
 
         [HideFromIl2Cpp]
         private void PieBlock(GameObject parent, string title, List<(float Value, Color Col, string Text)> slices, Vector2 pos) {
-            Text(parent, title, 15, TMPro.FontStyles.Bold, ColAccent, pos, new Vector2(200, 22));
-            var holder = Box(parent, pos + new Vector2(25, -28), new Vector2(PieSize, PieSize), new Color(0, 0, 0, 0));
+            VanillaUI.Text(parent, title, 15, VanillaUI.TitleColor, pos, new Vector2(200, 22), TMPro.FontStyles.Bold | TMPro.FontStyles.UpperCase);
+            var holder = VanillaUI.Box(parent, pos + new Vector2(25, -28), new Vector2(PieSize, PieSize), new Color(0, 0, 0, 0));
             float total = slices.Sum(s => s.Value);
             if (total <= 0f) {
-                var e = Box(holder, Vector2.zero, new Vector2(PieSize, PieSize), ColEmpty);
-                e.GetComponent<Image>().sprite = Circle();
-                Text(parent, UTSLocalization.Tr("uts.sessionstats.none"), 13, TMPro.FontStyles.Italic, ColMuted,
-                     pos + new Vector2(0, -36 - PieSize), new Vector2(200, 20));
+                var e = VanillaUI.Box(holder, Vector2.zero, new Vector2(PieSize, PieSize), ColEmpty);
+                e.GetComponent<Image>().sprite = VanillaUI.Circle();
+                VanillaUI.Text(parent, UTSLocalization.Tr("uts.sessionstats.none"), 13, VanillaUI.Muted,
+                     pos + new Vector2(0, -36 - PieSize), new Vector2(200, 20), TMPro.FontStyles.Italic);
                 return;
             }
             // slice k covers [c(k-1), c(k)]: draw [0, c(k)] from the last slice to the first, each on top
@@ -480,9 +408,9 @@ namespace UsefulTORStuff {
             float acc = 0f;
             for (int i = 0; i < slices.Count; i++) { acc += slices[i].Value / total; cum[i] = acc; }
             for (int i = slices.Count - 1; i >= 0; i--) {
-                var go = Box(holder, Vector2.zero, new Vector2(PieSize, PieSize), slices[i].Col);
+                var go = VanillaUI.Box(holder, Vector2.zero, new Vector2(PieSize, PieSize), slices[i].Col);
                 var img = go.GetComponent<Image>();
-                img.sprite = Circle();
+                img.sprite = VanillaUI.Circle();
                 img.type = Image.Type.Filled;
                 img.fillMethod = Image.FillMethod.Radial360;
                 img.fillOrigin = 2;   // Origin360.Top
@@ -492,10 +420,10 @@ namespace UsefulTORStuff {
             // legend
             float ly = -36 - PieSize;
             foreach (var s in slices) {
-                var sq = Box(parent, pos + new Vector2(0, ly - 4), new Vector2(12, 12), s.Col);
-                sq.GetComponent<Image>().sprite = Circle();
+                var sq = VanillaUI.Box(parent, pos + new Vector2(0, ly - 4), new Vector2(12, 12), s.Col);
+                sq.GetComponent<Image>().sprite = VanillaUI.Circle();
                 int pct = Mathf.RoundToInt(s.Value / total * 100f);
-                Text(parent, $"{s.Text} ({pct}%)", 13, TMPro.FontStyles.Normal, Color.white, pos + new Vector2(18, ly), new Vector2(190, 20));
+                VanillaUI.Text(parent, $"{s.Text} ({pct}%)", 13, Color.white, pos + new Vector2(18, ly), new Vector2(190, 20));
                 ly -= 20;
             }
         }
@@ -541,41 +469,11 @@ namespace UsefulTORStuff {
             return ColOthers;
         }
 
-        internal static Sprite Solid(Color color) {
-            if (solidSprites.TryGetValue(color, out var cached) && cached != null) return cached;
-            var tex = new Texture2D(1, 1);
-            tex.SetPixel(0, 0, color);
-            tex.Apply();
-            var sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
-            tex.hideFlags |= HideFlags.DontUnloadUnusedAsset;     // survives the scene loads' asset sweep
-            sprite.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            solidSprites[color] = sprite;
-            return sprite;
-        }
+        // Kept for RoundReplay and GhostKillFeed, which draw with these; new code uses VanillaUI directly.
+        internal static Sprite Solid(Color color) => VanillaUI.Solid();
+        internal static Sprite Circle() => VanillaUI.Circle();
 
-        // White anti-aliased disc; tinted by Image.color. Built once, never destroyed.
-        internal static Sprite Circle() {
-            if (circle != null) return circle;
-            const int n = 128;
-            var tex = new Texture2D(n, n, TextureFormat.RGBA32, false);
-            float r = n / 2f - 1f;
-            var px = new Color[n * n];
-            for (int y = 0; y < n; y++)
-                for (int x = 0; x < n; x++) {
-                    float dx = x + 0.5f - n / 2f, dy = y + 0.5f - n / 2f;
-                    float a = Mathf.Clamp01(r - Mathf.Sqrt(dx * dx + dy * dy) + 0.5f);
-                    px[y * n + x] = new Color(1f, 1f, 1f, a);
-                }
-            tex.SetPixels(px);
-            tex.filterMode = FilterMode.Bilinear;
-            tex.Apply(false, true);
-            circle = Sprite.Create(tex, new Rect(0, 0, n, n), new Vector2(0.5f, 0.5f));
-            tex.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            circle.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-            return circle;
-        }
-
-        /// <summary>A rect anchored top-left of its parent, positioned by its top-left corner.</summary>
+        /// <summary>A rect anchored top-left of its parent, positioned by its top-left corner (plain, unrounded).</summary>
         [HideFromIl2Cpp]
         internal static GameObject Box(GameObject parent, Vector2 topLeft, Vector2 size, Color color) {
             var go = new GameObject("B");
@@ -584,7 +482,7 @@ namespace UsefulTORStuff {
             rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0, 1);
             rt.anchoredPosition = topLeft; rt.sizeDelta = size;
             var img = go.AddComponent<Image>();
-            img.sprite = Solid(Color.white);
+            img.sprite = VanillaUI.Solid();
             img.color = color;
             return go;
         }
@@ -592,44 +490,23 @@ namespace UsefulTORStuff {
         [HideFromIl2Cpp]
         internal static TMPro.TextMeshProUGUI Text(GameObject parent, string text, float size, TMPro.FontStyles style, Color color,
                                                   Vector2 topLeft, Vector2 box) =>
-            Label(parent, text, size, style, color, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1), topLeft, box,
-                  TMPro.TextAlignmentOptions.TopLeft);
+            VanillaUI.Text(parent, text, size, color, topLeft, box, style);
 
         [HideFromIl2Cpp]
         private static TMPro.TextMeshProUGUI Cell(GameObject row, string text, int col, float size, Color color,
                                                   TMPro.FontStyles style = TMPro.FontStyles.Normal) =>
-            Label(row, text, size, style, color, new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
+            VanillaUI.Label(row, text, size, color, new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
                   new Vector2(ColX[col], 0), new Vector2(ColW[col], 0),
-                  col == 0 ? TMPro.TextAlignmentOptions.Left : TMPro.TextAlignmentOptions.Center);
+                  col == 0 ? TMPro.TextAlignmentOptions.Left : TMPro.TextAlignmentOptions.Center, style);
 
         [HideFromIl2Cpp]
         internal static TMPro.TextMeshProUGUI Label(GameObject parent, string text, float size, TMPro.FontStyles style, Color color,
-                Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 pos, Vector2 sizeDelta, TMPro.TextAlignmentOptions align) {
-            var go = new GameObject("L");
-            go.transform.SetParent(parent.transform, false);
-            var rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = anchorMin; rt.anchorMax = anchorMax; rt.pivot = pivot;
-            rt.anchoredPosition = pos; rt.sizeDelta = sizeDelta;
-            var t = go.AddComponent<TMPro.TextMeshProUGUI>();
-            t.text = text; t.fontSize = size; t.fontStyle = style; t.color = color;
-            t.alignment = align; t.enableWordWrapping = true;
-            t.raycastTarget = false;
-            return t;
-        }
+                Vector2 anchorMin, Vector2 anchorMax, Vector2 pivot, Vector2 pos, Vector2 sizeDelta, TMPro.TextAlignmentOptions align) =>
+            VanillaUI.Label(parent, text, size, color, anchorMin, anchorMax, pivot, pos, sizeDelta, align, style);
 
         [HideFromIl2Cpp]
-        internal static GameObject MakeButton(GameObject parent, string label, Vector2 pos, Vector2 size, Color color, Action onClick) {
-            var go = new GameObject("Btn");
-            go.transform.SetParent(parent.transform, false);
-            var rt = go.AddComponent<RectTransform>();
-            rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0.5f, 0);
-            rt.anchoredPosition = pos; rt.sizeDelta = size;
-            go.AddComponent<Image>().sprite = Solid(color);
-            Label(go, label, 15, TMPro.FontStyles.Bold, Color.white, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f),
-                  Vector2.zero, Vector2.zero, TMPro.TextAlignmentOptions.Center);
-            go.AddComponent<Button>().onClick.AddListener((UnityEngine.Events.UnityAction)(() => onClick()));
-            return go;
-        }
+        internal static GameObject MakeButton(GameObject parent, string label, Vector2 pos, Vector2 size, Color color, Action onClick) =>
+            VanillaUI.Button(parent, label, pos, size, color, onClick);
 
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
         static class LobbyResetPatch {

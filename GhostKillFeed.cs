@@ -193,15 +193,13 @@ namespace UsefulTORStuff {
                 scaler.referenceResolution = new Vector2(1920, 1080);
                 scaler.matchWidthOrHeight = 0.5f;
 
-                var bg = new GameObject("Bg");
-                bg.transform.SetParent(root.transform, false);
-                var rt = bg.AddComponent<RectTransform>();
+                // a dark rounded field like the game's lobby pills (VanillaUI), translucent over the map
+                var bg = VanillaUI.Rounded(root, new Color(VanillaUI.Field.r, VanillaUI.Field.g, VanillaUI.Field.b, 0.78f), VanillaUI.RadiusBox);
+                bg.name = "Bg";
+                var rt = bg.GetComponent<RectTransform>();
                 rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(1, 1);
                 rt.anchoredPosition = new Vector2(-24, -230);
                 rt.sizeDelta = new Vector2(560, 0);
-                var img = bg.AddComponent<Image>();
-                img.color = new Color(0f, 0f, 0f, 0.55f);
-                img.raycastTarget = false;
                 var fit = bg.AddComponent<ContentSizeFitter>();
                 fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
                 var layout = bg.AddComponent<VerticalLayoutGroup>();
@@ -219,6 +217,8 @@ namespace UsefulTORStuff {
                 text.alignment = TMPro.TextAlignmentOptions.TopLeft;
                 text.enableWordWrapping = true;
                 text.raycastTarget = false;
+                var font = VanillaUI.Font();
+                if (font != null) text.font = font;
                 shown = "";
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[GhostKillFeed] UI failed: {e.Message}");
