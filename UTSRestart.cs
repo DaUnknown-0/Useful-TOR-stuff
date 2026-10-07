@@ -8,7 +8,8 @@
  * Restarting = start a detached cmd that waits about two seconds and launches the game executable
  * again, then quit. The wait lets this process release its files (BepInEx log, the DLLs that were
  * just replaced) before the new one opens them. The child inherits this process' environment, so a
- * game started through "Among Us (no tiering).cmd" comes back with the same settings. Before
+ * game started through "Among Us (no tiering).cmd" comes back with the same settings, minus
+ * Doorstop's own DOORSTOP_* markers (with them the new game would start without mods). Before
  * quitting, the current lobby is remembered so the main menu can offer the way back (UTSRejoin).
  */
 
@@ -59,6 +60,24 @@ namespace UsefulTORStuff {
             return false;
         }
 
+        // Autotest: a file BepInEx\restart_test.flag makes the main menu restart once. The file is
+        // deleted first, so the restarted game does not restart again.
+        [HarmonyLib.HarmonyPatch(typeof(MainMenuManager), nameof(MainMenuManager.Start))]
+        private static class RestartTestPatch {
+            private static void Postfix(MainMenuManager __instance) {
+                string flag = System.IO.Path.Combine(Paths.BepInExRootPath, "restart_test.flag");
+                if (!System.IO.File.Exists(flag)) return;
+                try { System.IO.File.Delete(flag); } catch { return; }
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[Restart] test: restarting from the main menu, TieredCompilation={Environment.GetEnvironmentVariable("DOTNET_TieredCompilation") ?? "-"}");
+                BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(__instance, Later());
+            }
+
+            private static System.Collections.IEnumerator Later() {
+                yield return new WaitForSeconds(3f);
+                Now();
+            }
+        }
+
         public static void Now() {
             try {
                 try { UTSRejoin.RememberCurrentLobby(forRestart: true); } catch { }
@@ -70,6 +89,14 @@ namespace UsefulTORStuff {
                     UseShellExecute = false,
                     WindowStyle = ProcessWindowStyle.Hidden,
                 };
+                // Doorstop (BepInEx' loader) marks this process with DOORSTOP_INITIALIZED and friends;
+                // a child that inherits them is taken for a sub-process and starts WITHOUT mods (the
+                // first "Restart now" opened plain Among Us, 2026-10-07). Everything else is kept, so
+                // DOTNET_TieredCompilation from the no-tiering starter survives.
+                var drop = new System.Collections.Generic.List<string>();
+                foreach (string key in psi.EnvironmentVariables.Keys)
+                    if (key.StartsWith("DOORSTOP_", StringComparison.OrdinalIgnoreCase)) drop.Add(key);
+                foreach (var key in drop) psi.EnvironmentVariables.Remove(key);
                 Process.Start(psi);
                 UsefulTORStuffPlugin.Logger?.LogInfo($"[Restart] relaunching {exe} in about 2 s.");
             } catch (Exception e) {
