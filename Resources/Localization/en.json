@@ -1379,5 +1379,7 @@
   "uts.trapperextras.log_trap": "Trap",
   "uts.trapperextras.log_empty": "No trap has been triggered often enough to be revealed yet.",
   "uts.trapperextras.good": "Good Role",
-  "uts.trapperextras.evil": "Evil Role"
+  "uts.trapperextras.evil": "Evil Role",
+  "uts.colorblind.light": "Light",
+  "uts.colorblind.dark": "Dark"
 }

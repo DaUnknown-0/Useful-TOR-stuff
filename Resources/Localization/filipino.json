@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Bitag",
  "uts.trapperextras.log_empty": "Wala pang bitag na napatakbo nang sapat para mabunyag.",
  "uts.trapperextras.good": "Magandang Role",
- "uts.trapperextras.evil": "Masamang Role"
+ "uts.trapperextras.evil": "Masamang Role",
+ "uts.colorblind.light": "Maliwanag",
+ "uts.colorblind.dark": "Madilim"
 }

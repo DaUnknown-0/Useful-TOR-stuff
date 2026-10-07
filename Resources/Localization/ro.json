@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Capcană",
  "uts.trapperextras.log_empty": "Nicio capcană nu a fost declanșată de suficiente ori ca să fie dezvăluită.",
  "uts.trapperextras.good": "Rol bun",
- "uts.trapperextras.evil": "Rol rău"
+ "uts.trapperextras.evil": "Rol rău",
+ "uts.colorblind.light": "Deschis",
+ "uts.colorblind.dark": "Închis"
 }

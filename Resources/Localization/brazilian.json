@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Armadilha",
  "uts.trapperextras.log_empty": "Nenhuma armadilha foi acionada vezes suficientes para ser revelada.",
  "uts.trapperextras.good": "Função Boa",
- "uts.trapperextras.evil": "Função Má"
+ "uts.trapperextras.evil": "Função Má",
+ "uts.colorblind.light": "Claro",
+ "uts.colorblind.dark": "Escuro"
 }

@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Armadilha",
  "uts.trapperextras.log_empty": "Nenhuma armadilha foi ativada vezes suficientes para ser revelada.",
  "uts.trapperextras.good": "Papel bom",
- "uts.trapperextras.evil": "Papel mau"
+ "uts.trapperextras.evil": "Papel mau",
+ "uts.colorblind.light": "Claro",
+ "uts.colorblind.dark": "Escuro"
 }

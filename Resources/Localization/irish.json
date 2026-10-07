@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Gaiste",
  "uts.trapperextras.log_empty": "Níor spreagadh aon ghaiste go leor uaireanta le nochtadh.",
  "uts.trapperextras.good": "Ról Maith",
- "uts.trapperextras.evil": "Ról Dona"
+ "uts.trapperextras.evil": "Ról Dona",
+ "uts.colorblind.light": "Geal",
+ "uts.colorblind.dark": "Dorcha"
 }

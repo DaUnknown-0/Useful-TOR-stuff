@@ -392,8 +392,13 @@ namespace UsefulTORStuff {
 
                 var panel = VanillaUI.CenterPanel(panelRoot, new Vector2(PanelW, PanelH));
                 float ty = VanillaUI.Title(panel, UTSLocalization.Tr("uts.replay.title"), 14f, 30f);
-                VanillaUI.Subtitle(panel, UTSLocalization.Tr("uts.replay.subtitle", mapName, Clock(Duration), events.Count(e => e.Kind != EvMeeting)),
-                                   ty - 4f, 26f);
+                // right of the title tab, so it does not run into the filter row below
+                var sub = VanillaUI.Subtitle(panel, UTSLocalization.Tr("uts.replay.subtitle", mapName, Clock(Duration), events.Count(e => e.Kind != EvMeeting)),
+                                             -VanillaUI.FrameW - 30f, 26f);
+                sub.alignment = TMPro.TextAlignmentOptions.TopRight;
+                sub.rectTransform.offsetMax = new Vector2(-VanillaUI.FrameW - 90f, sub.rectTransform.offsetMax.y);
+                sub.rectTransform.offsetMin = new Vector2(720f, sub.rectTransform.offsetMin.y);
+                sub.enableAutoSizing = true; sub.fontSizeMin = 11; sub.fontSizeMax = 15;
 
                 // map, aspect-fitted into the map area
                 bool host = HostData;
@@ -402,6 +407,7 @@ namespace UsefulTORStuff {
                 kScale = Mathf.Min(MapW / ww, mapH / wh);
                 drawW = ww * kScale; drawH = wh * kScale;
                 mapArea = SessionStatsUI.Box(panel, new Vector2(MapX + (MapW - drawW) / 2f, MapY - (mapH - drawH) / 2f), new Vector2(drawW, drawH), new Color(0, 0, 0, 0));
+                mapArea.AddComponent<RectMask2D>();   // the light circle can be far larger than the map
                 var raw = new GameObject("Map");
                 raw.transform.SetParent(mapArea.transform, false);
                 var rrt = raw.AddComponent<RectTransform>();

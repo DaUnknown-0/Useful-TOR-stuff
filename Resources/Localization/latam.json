@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Trampa",
  "uts.trapperextras.log_empty": "Ninguna trampa se ha activado aún las veces suficientes para revelarse.",
  "uts.trapperextras.good": "Rol bueno",
- "uts.trapperextras.evil": "Rol malvado"
+ "uts.trapperextras.evil": "Rol malvado",
+ "uts.colorblind.light": "Claro",
+ "uts.colorblind.dark": "Oscuro"
 }

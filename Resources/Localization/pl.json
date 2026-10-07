@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Pułapka",
  "uts.trapperextras.log_empty": "Żadna pułapka nie została jeszcze uruchomiona wystarczająco często, aby się ujawnić.",
  "uts.trapperextras.good": "Dobra rola",
- "uts.trapperextras.evil": "Zła rola"
+ "uts.trapperextras.evil": "Zła rola",
+ "uts.colorblind.light": "Jasny",
+ "uts.colorblind.dark": "Ciemny"
 }

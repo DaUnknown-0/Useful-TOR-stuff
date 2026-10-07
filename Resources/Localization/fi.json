@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Ansa",
  "uts.trapperextras.log_empty": "Mikään ansa ei ole laukennut tarpeeksi usein paljastuakseen.",
  "uts.trapperextras.good": "Hyvä rooli",
- "uts.trapperextras.evil": "Paha rooli"
+ "uts.trapperextras.evil": "Paha rooli",
+ "uts.colorblind.light": "Vaalea",
+ "uts.colorblind.dark": "Tumma"
 }

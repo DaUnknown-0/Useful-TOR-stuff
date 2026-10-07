@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Tuzak",
  "uts.trapperextras.log_empty": "Henüz hiçbir tuzak ortaya çıkarılacak kadar sık tetiklenmedi.",
  "uts.trapperextras.good": "İyi Rol",
- "uts.trapperextras.evil": "Kötü Rol"
+ "uts.trapperextras.evil": "Kötü Rol",
+ "uts.colorblind.light": "Açık",
+ "uts.colorblind.dark": "Koyu"
 }

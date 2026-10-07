@@ -104,7 +104,7 @@ namespace UsefulTORStuff {
             rt.sizeDelta = size; rt.anchoredPosition = pos;
 
             // hard offset shadow, dark body, thick pale outline on top (the game's heavy-outline look)
-            Stretch(Rounded(go, Shadow, RadiusPanel)).anchoredPosition = new Vector2(8, -10);
+            Stretch(Named(Rounded(go, Shadow, RadiusPanel), "Shadow")).anchoredPosition = new Vector2(8, -10);
             var body = Rounded(go, Body, RadiusPanel);
             Stretch(body);
             body.GetComponent<Image>().raycastTarget = true;   // swallows clicks so the backdrop behind does not close
@@ -193,7 +193,7 @@ namespace UsefulTORStuff {
 
             // a capsule: flat colour, hard drop shadow, a darker outline of the same hue
             int radius = Mathf.Clamp(Mathf.RoundToInt(size.y / 2f) - 1, 4, 30);
-            Stretch(Rounded(go, Shadow, radius)).anchoredPosition = new Vector2(3, -5);
+            Stretch(Named(Rounded(go, Shadow, radius), "Shadow")).anchoredPosition = new Vector2(3, -5);
             var fill = Rounded(go, color, radius);
             Stretch(fill);
             var edge = Ring(go, Darker(color), radius, 3);
@@ -387,7 +387,7 @@ namespace UsefulTORStuff {
                 img.raycastTarget = false;
             } else {
                 // the stand-in: light frame, darker body
-                Stretch(Rounded(go, Shadow, RadiusTile)).anchoredPosition = new Vector2(0, -4);
+                Stretch(Named(Rounded(go, Shadow, RadiusTile), "Shadow")).anchoredPosition = new Vector2(0, -4);
                 Stretch(Rounded(go, new Color(0.76f, 0.78f, 0.8f), RadiusTile));
                 Inset(Stretch(Rounded(go, new Color(0.4f, 0.43f, 0.46f), RadiusTile - 4)), 5f);
             }
@@ -489,6 +489,9 @@ namespace UsefulTORStuff {
         }
 
         /// <summary>A filled, sliced rounded rectangle with the given corner radius (canvas units).</summary>
+        // the drop shadows are Rounded too; renamed so Find("Fill") gets the real fill
+        private static GameObject Named(GameObject go, string name) { go.name = name; return go; }
+
         public static GameObject Rounded(GameObject parent, Color color, int radius) {
             var go = new GameObject(radius <= 1 ? "Rule" : "Fill");
             go.transform.SetParent(parent.transform, false);

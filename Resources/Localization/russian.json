@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Ловушка",
  "uts.trapperextras.log_empty": "Ни одна ловушка пока не срабатывала достаточно часто, чтобы раскрыться.",
  "uts.trapperextras.good": "Хорошая роль",
- "uts.trapperextras.evil": "Злая роль"
+ "uts.trapperextras.evil": "Злая роль",
+ "uts.colorblind.light": "Светлый",
+ "uts.colorblind.dark": "Тёмный"
 }

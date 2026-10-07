@@ -184,7 +184,7 @@ namespace UsefulTORStuff {
                 if (txt != null) {
                     txt.enableAutoSizing = true; txt.fontSizeMin = 9; txt.fontSizeMax = 14;
                     txt.enableWordWrapping = false;
-                    txt.outlineWidth = 0.25f; txt.outlineColor = new Color32(0, 0, 0, 255);
+                    txt.color = Color.white;   // the fill gets the category colour in ViewAnimate
                 }
                 catChips.Add((c, ButtonFill(chip), txt, TickColor(CatColorKind[c])));
             }

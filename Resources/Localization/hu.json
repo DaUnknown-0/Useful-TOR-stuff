@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Csapda",
  "uts.trapperextras.log_empty": "Még egy csapda sem aktiválódott elég gyakran a felfedéshez.",
  "uts.trapperextras.good": "Jó szerep",
- "uts.trapperextras.evil": "Rossz szerep"
+ "uts.trapperextras.evil": "Rossz szerep",
+ "uts.colorblind.light": "Világos",
+ "uts.colorblind.dark": "Sötét"
 }

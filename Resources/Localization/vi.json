@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Bẫy",
  "uts.trapperextras.log_empty": "Chưa có cái bẫy nào bị kích hoạt đủ nhiều lần để bị lộ.",
  "uts.trapperextras.good": "Vai Trò Tốt",
- "uts.trapperextras.evil": "Vai Trò Xấu"
+ "uts.trapperextras.evil": "Vai Trò Xấu",
+ "uts.colorblind.light": "Sáng",
+ "uts.colorblind.dark": "Tối"
 }

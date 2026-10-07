@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Falle",
  "uts.trapperextras.log_empty": "Noch keine Falle wurde oft genug ausgelöst, um aufgedeckt zu werden.",
  "uts.trapperextras.good": "Gute Rolle",
- "uts.trapperextras.evil": "Böse Rolle"
+ "uts.trapperextras.evil": "Böse Rolle",
+ "uts.colorblind.light": "Hell",
+ "uts.colorblind.dark": "Dunkel"
 }

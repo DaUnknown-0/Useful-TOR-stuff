@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Trappola",
  "uts.trapperextras.log_empty": "Nessuna trappola è stata attivata abbastanza volte da essere rivelata.",
  "uts.trapperextras.good": "Ruolo buono",
- "uts.trapperextras.evil": "Ruolo malvagio"
+ "uts.trapperextras.evil": "Ruolo malvagio",
+ "uts.colorblind.light": "Chiaro",
+ "uts.colorblind.dark": "Scuro"
 }

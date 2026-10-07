@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "함정",
  "uts.trapperextras.log_empty": "공개될 만큼 자주 발동된 함정이 아직 없습니다.",
  "uts.trapperextras.good": "선한 직업",
- "uts.trapperextras.evil": "악한 직업"
+ "uts.trapperextras.evil": "악한 직업",
+ "uts.colorblind.light": "밝은 색",
+ "uts.colorblind.dark": "어두운 색"
 }

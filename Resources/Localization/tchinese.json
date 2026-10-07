@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "陷阱",
  "uts.trapperextras.log_empty": "還沒有任何陷阱被觸發足夠多的次數而被揭示。",
  "uts.trapperextras.good": "好人角色",
- "uts.trapperextras.evil": "壞人角色"
+ "uts.trapperextras.evil": "壞人角色",
+ "uts.colorblind.light": "淺色",
+ "uts.colorblind.dark": "深色"
 }

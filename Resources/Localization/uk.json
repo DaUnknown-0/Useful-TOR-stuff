@@ -1380,5 +1380,7 @@
  "uts.trapperextras.log_trap": "Пастка",
  "uts.trapperextras.log_empty": "Жодна пастка ще не спрацьовувала достатньо часто, щоб розкритися.",
  "uts.trapperextras.good": "Добра роль",
- "uts.trapperextras.evil": "Зла роль"
+ "uts.trapperextras.evil": "Зла роль",
+ "uts.colorblind.light": "Світлий",
+ "uts.colorblind.dark": "Темний"
 }
