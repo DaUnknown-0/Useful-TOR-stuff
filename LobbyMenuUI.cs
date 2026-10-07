@@ -43,6 +43,20 @@ namespace UsefulTORStuff {
 
         internal static readonly List<Entry> Entries = new List<Entry>();
 
+        // Things that want a look, per entry (UTS-internal; the AppDomain contract stays unchanged):
+        // the tile shows their sum as a badge.
+        internal static readonly Dictionary<string, Func<int>> Badges = new Dictionary<string, Func<int>>();
+
+        internal static int BadgeCount() {
+            int n = 0;
+            foreach (var kv in Badges) {
+                var e = Entries.Find(x => x.Id == kv.Key);
+                if (e == null || !IsVisible(e)) continue;
+                try { n += Math.Max(0, kv.Value()); } catch { }
+            }
+            return n;
+        }
+
         /// <summary>Adds or replaces (same id) a menu entry. Lower order comes first.</summary>
         public static void Add(string id, int order, Func<bool> visible, Func<string> label, Action click, Color color) {
             if (string.IsNullOrEmpty(id) || label == null || click == null) return;
@@ -102,6 +116,8 @@ namespace UsefulTORStuff {
                 Animate();
                 if (Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
             }
+            // Tab opens and closes the menu (not while the chat takes the keyboard)
+            if (buttonRoot != null && buttonRoot.activeSelf && Input.GetKeyDown(KeyCode.Tab) && !ChatOpen()) { Toggle(); return; }
 
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
@@ -116,6 +132,7 @@ namespace UsefulTORStuff {
             if (buttonRoot != null) {
                 if (buttonRoot.activeSelf != show) buttonRoot.SetActive(show);
                 if (buttonRect != null) buttonRect.anchoredPosition = pos;
+                if (show) UpdateBadge();
             }
             // a UC from before the menu places its own button here: right of ours
             try { AppDomain.CurrentDomain.SetData(LobbyMenu.NextFreeXKey, pos.x + (show ? UTSModSyncUI.TileSize + 8f : 0f)); } catch { }
@@ -133,6 +150,26 @@ namespace UsefulTORStuff {
         public void Toggle() {
             if (menuRoot != null) Close();
             else Open();
+        }
+
+        private Image badgeImage;
+        private TMPro.TextMeshProUGUI badgeText;
+
+        [HideFromIl2Cpp]
+        private void UpdateBadge() {
+            if (badgeImage == null) return;
+            int n = LobbyMenu.BadgeCount();
+            bool show = n > 0 && menuRoot == null;
+            if (badgeImage.gameObject.activeSelf != show) badgeImage.gameObject.SetActive(show);
+            if (show) VanillaUI.SetText(badgeText, n > 9 ? "9+" : n.ToString());
+        }
+
+        private static bool ChatOpen() {
+            try {
+                if (!DestroyableSingleton<HudManager>.InstanceExists) return false;
+                var chat = HudManager.Instance.Chat;
+                return chat != null && chat.IsOpenOrOpening;
+            } catch { return false; }
         }
 
         [HideFromIl2Cpp]
@@ -153,6 +190,19 @@ namespace UsefulTORStuff {
                 var tile = VanillaUI.Tile(buttonRoot, UTSModSyncUI.TileSize, VanillaUI.GlyphMenu(), new Color(0.9f, 0.92f, 0.94f), Toggle);
                 buttonRect = tile.GetComponent<RectTransform>();
                 buttonRect.anchoredPosition = UTSModSyncUI.LobbySlot(0);
+
+                // badge, top right: how many things in the menu want a look (LobbyMenu.Badges)
+                var badge = new GameObject("Badge");
+                badge.transform.SetParent(tile.transform, false);
+                var brt = VanillaUI.Rect(badge, new Vector2(1, 1), new Vector2(1, 1), new Vector2(0.5f, 0.5f));
+                brt.anchoredPosition = new Vector2(-10f, -10f); brt.sizeDelta = new Vector2(30f, 30f);
+                badgeImage = badge.AddComponent<Image>();
+                badgeImage.sprite = VanillaUI.Circle();
+                badgeImage.color = VanillaUI.Red;
+                badgeImage.raycastTarget = false;
+                badgeText = VanillaUI.Label(badge, "", 17f, Color.white, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f),
+                                            Vector2.zero, Vector2.zero, TMPro.TextAlignmentOptions.Center, TMPro.FontStyles.Bold);
+                badge.SetActive(false);
             } catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[LobbyMenu] button failed: {ex.Message}");
                 if (buttonRoot != null) Destroy(buttonRoot);

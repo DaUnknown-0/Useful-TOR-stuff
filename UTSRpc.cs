@@ -71,6 +71,13 @@ namespace UsefulTORStuff {
         public static PlayerControl Sender { get; private set; }
 
         // Start a message on the consolidated channel. The module byte is written for you.
+        /// <summary>
+        /// True once a message can go out: right after joining a lobby the local player object does
+        /// not exist yet, and Begin() threw a NullReferenceException there on every join (2026-10-07).
+        /// </summary>
+        public static bool CanSend =>
+            AmongUsClient.Instance != null && PlayerControl.LocalPlayer != null;
+
         public static MessageWriter Begin(byte moduleId) {
             MessageWriter w = AmongUsClient.Instance.StartRpcImmediately(
                 PlayerControl.LocalPlayer.NetId, CallId, SendOption.Reliable, -1);

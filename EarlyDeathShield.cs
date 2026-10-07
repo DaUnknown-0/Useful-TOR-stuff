@@ -391,9 +391,12 @@ namespace UsefulTORStuff {
 
         private static void SendClear() {
             try {
-                MessageWriter w = UTSRpc.Begin(RpcId);
-                w.Write(SubClear);
-                AmongUsClient.Instance.FinishRpcImmediately(w);
+                // nobody to tell before the local player exists (lobby join); the local state is cleared regardless
+                if (UTSRpc.CanSend) {
+                    MessageWriter w = UTSRpc.Begin(RpcId);
+                    w.Write(SubClear);
+                    AmongUsClient.Instance.FinishRpcImmediately(w);
+                }
                 ApplyClear();
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[EarlyDeathShield] clear failed: {e}");

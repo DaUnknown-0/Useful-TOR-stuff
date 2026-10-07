@@ -94,6 +94,32 @@ namespace UsefulTORStuff {
             Save();
         }
 
+        /// <summary>Renames a stored pack (same cleaning as an imported name) and saves.</summary>
+        public static void Rename(Modpack p, string name) {
+            if (p == null) return;
+            name = Regex.Replace(name ?? "", @"[<>:\p{C}]", "").Trim();
+            if (name.Length > 40) name = name.Substring(0, 40);
+            if (name.Length == 0) return;
+            p.Name = name;
+            Save();
+        }
+
+        /// <summary>
+        /// The host's set-up as a pack: every catalog mod the host runs (host-only ones aside, a guest
+        /// never needs them), a prerelease where the host runs a test build. Null when the host sent
+        /// no inventory.
+        /// </summary>
+        public static Modpack FromHost(string name) {
+            if (!UTSModSync.HostReported) return null;
+            var p = new Modpack { Name = name ?? "" };
+            foreach (var row in UTSModSync.Rows()) {
+                if (row?.Catalog == null || row.HostVersion == null || row.Catalog.HostOnly) continue;
+                if (p.Contains(row.Catalog.Id)) continue;
+                p.Mods.Add(new ModpackEntry { Id = row.Catalog.Id, Prerelease = UTSModSync.IsTestBuild(row.HostVersion) });
+            }
+            return p;
+        }
+
         /// <summary>A name no stored pack has yet: "Modpack 1", "Modpack 2", ...</summary>
         public static string FreeName(string stem) {
             for (int i = 1; i < 1000; i++) {
@@ -196,6 +222,7 @@ namespace UsefulTORStuff {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[Modpacks] {e.ShortName}: {ex.Message}");
                 }
             }
+            if (res.Enabled + res.Disabled > 0) UTSRestart.Mark();
             UsefulTORStuffPlugin.Logger?.LogInfo(
                 $"[Modpacks] applied '{p.Name}': {res.Downloads} download(s), {res.Enabled} on, {res.Disabled} off, {res.Errors.Count} error(s).");
             return res;

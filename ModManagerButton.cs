@@ -17,9 +17,76 @@ namespace UsefulTORStuff
 
         private GameObject _button;
 
+        // Red badge on the button's top-right corner with the number of mods that have an update.
+        // A screen-space canvas placed over the world-space button every frame (the button lives in
+        // the menu's world, the badge is UGUI so it can use VanillaUI's circle and fonts).
+        private GameObject _badgeRoot;
+        private RectTransform _badgeRect;
+        private TMPro.TextMeshProUGUI _badgeText;
+        private int _badgeCount = -1;
+        private float _nextCount;
+
         public void Awake()
         {
             SceneManager.add_sceneLoaded((Action<Scene, LoadSceneMode>)OnSceneLoaded);
+        }
+
+        public void Update()
+        {
+            if (_button == null || !_button.activeInHierarchy || ModManagerUI.IsUIOpen)
+            {
+                if (_badgeRoot != null && _badgeRoot.activeSelf) _badgeRoot.SetActive(false);
+                return;
+            }
+            if (Time.realtimeSinceStartup >= _nextCount)
+            {
+                _nextCount = Time.realtimeSinceStartup + 1f;
+                int n = 0;
+                try
+                {
+                    foreach (var m in ModManagerRegistry.GetAllMods())
+                        try { if (m.RuntimeEnabled && (m.HasUpdate?.Invoke() ?? false)) n++; } catch { }
+                }
+                catch { }
+                if (n != _badgeCount) { _badgeCount = n; if (_badgeText != null) VanillaUI.SetText(_badgeText, n.ToString()); }
+            }
+            if (_badgeCount <= 0) { if (_badgeRoot != null && _badgeRoot.activeSelf) _badgeRoot.SetActive(false); return; }
+            if (_badgeRoot == null) BuildBadge();
+            if (_badgeRoot == null) return;
+            if (!_badgeRoot.activeSelf) _badgeRoot.SetActive(true);
+            try
+            {
+                var cam = Camera.main;
+                var col = _button.GetComponent<Collider2D>();
+                if (cam == null || col == null) return;
+                Vector3 corner = cam.WorldToScreenPoint(col.bounds.max);
+                _badgeRect.anchoredPosition = new Vector2(corner.x, corner.y) / VanillaUI.Scale(_badgeRoot);
+            }
+            catch { }
+        }
+
+        private void BuildBadge()
+        {
+            try
+            {
+                _badgeRoot = VanillaUI.Canvas("UTSModManagerBadge", 8900, false);
+                var go = new GameObject("Badge");
+                go.transform.SetParent(_badgeRoot.transform, false);
+                _badgeRect = VanillaUI.Rect(go, Vector2.zero, Vector2.zero, new Vector2(0.5f, 0.5f));
+                _badgeRect.sizeDelta = new Vector2(44, 44);
+                var img = go.AddComponent<Image>();
+                img.sprite = VanillaUI.Circle();
+                img.color = VanillaUI.Red;
+                img.raycastTarget = false;
+                _badgeText = VanillaUI.Label(go, _badgeCount.ToString(), 26, Color.white, Vector2.zero, Vector2.one,
+                    new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, TMPro.TextAlignmentOptions.Center, TMPro.FontStyles.Bold);
+            }
+            catch (Exception ex)
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"Mod Manager badge failed: {ex.Message}");
+                if (_badgeRoot != null) Destroy(_badgeRoot);
+                _badgeRoot = null;
+            }
         }
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)

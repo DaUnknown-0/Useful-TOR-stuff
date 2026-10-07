@@ -423,6 +423,8 @@ namespace UsefulTORStuff {
         private static byte seq;
 
         private static void SendTable(Table t) {
+            // before the local player exists (lobby join) nothing can be sent; the table stays local
+            if (!UTSRpc.CanSend) { LastTable = t; return; }
             try {
                 seq++;
                 t.Seq = seq;

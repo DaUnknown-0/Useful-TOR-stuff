@@ -177,7 +177,7 @@ namespace UsefulTORStuff {
             if (root == null) Build();
             if (root == null) return;
             if (!root.activeSelf) root.SetActive(true);
-            string body = $"<b>{UTSLocalization.Tr("uts.killfeed.title")}</b>\n" + string.Join("\n", lines);
+            string body = string.Join("\n", lines);
             if (body != shown) { text.text = body; shown = body; }
         }
 
@@ -193,9 +193,13 @@ namespace UsefulTORStuff {
                 scaler.referenceResolution = new Vector2(1920, 1080);
                 scaler.matchWidthOrHeight = 0.5f;
 
-                // a dark rounded field like the game's lobby pills (VanillaUI), translucent over the map
-                var bg = VanillaUI.Rounded(root, new Color(VanillaUI.Field.r, VanillaUI.Field.g, VanillaUI.Field.b, 0.78f), VanillaUI.RadiusBox);
+                // a card in the UTS look (VanillaUI): dark translucent body, pale outline, slanted
+                // title tab, so it reads as part of the same family as the lobby panels
+                var bg = VanillaUI.Rounded(root, new Color(VanillaUI.Body.r, VanillaUI.Body.g, VanillaUI.Body.b, 0.86f), VanillaUI.RadiusBox + 4);
                 bg.name = "Bg";
+                var ring = VanillaUI.Ring(bg, VanillaUI.Frame, VanillaUI.RadiusBox + 4, 3);
+                VanillaUI.Stretch(ring);
+                ring.AddComponent<LayoutElement>().ignoreLayout = true;
                 var rt = bg.GetComponent<RectTransform>();
                 rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(1, 1);
                 rt.anchoredPosition = new Vector2(-24, -230);
@@ -203,10 +207,24 @@ namespace UsefulTORStuff {
                 var fit = bg.AddComponent<ContentSizeFitter>();
                 fit.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
                 var layout = bg.AddComponent<VerticalLayoutGroup>();
-                var pad = new RectOffset(); pad.left = 14; pad.right = 14; pad.top = 10; pad.bottom = 10;
+                var pad = new RectOffset(); pad.left = 16; pad.right = 16; pad.top = 12; pad.bottom = 12;
                 layout.padding = pad;
+                layout.spacing = 6;
                 layout.childControlHeight = true; layout.childControlWidth = true;
                 layout.childForceExpandHeight = false;
+
+                // the title as a slanted tab, in Brook
+                var tab = new GameObject("TitleTab");
+                tab.transform.SetParent(bg.transform, false);
+                tab.AddComponent<RectTransform>();
+                var le = tab.AddComponent<LayoutElement>();
+                le.preferredHeight = 34; le.minHeight = 34;
+                var timg = tab.AddComponent<Image>();
+                timg.sprite = VanillaUI.Slant(); timg.type = Image.Type.Sliced; timg.color = VanillaUI.Red; timg.raycastTarget = false;
+                var title = VanillaUI.Label(tab, UTSLocalization.Tr("uts.killfeed.title"), 24, Color.white, Vector2.zero, Vector2.one,
+                    new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.UpperCase);
+                title.rectTransform.offsetMin = new Vector2(14, 0); title.rectTransform.offsetMax = new Vector2(-150, 0);
+                VanillaUI.Heading(title);
 
                 var t = new GameObject("T");
                 t.transform.SetParent(bg.transform, false);
@@ -241,7 +259,7 @@ namespace UsefulTORStuff {
             lines.Add(UTSLocalization.Tr("uts.killfeed.bomb", W(6), W(2)));
             if (root == null) Build();
             if (root != null) root.GetComponent<Canvas>().sortingOrder = 9700;   // above the stats panel for the screenshot
-            if (root != null) { root.SetActive(true); text.text = $"<b>{UTSLocalization.Tr("uts.killfeed.title")}</b>\n" + string.Join("\n", lines); }
+            if (root != null) { root.SetActive(true); text.text = string.Join("\n", lines); }
         }
     }
 }

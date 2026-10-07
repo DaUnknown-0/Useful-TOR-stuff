@@ -72,6 +72,7 @@ namespace UsefulTORStuff {
         // public, like every other Unity message in this plugin (LobbyPasswordGate): the Il2Cpp
         // class injector registers these by reflection and public is the shape that is known to work.
         public void Update() {
+            if (panelRoot != null && Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
             // The F1 settings overlay covers the whole screen and this button sits on top of its
             // text. Checked before the poll throttle below so it steps aside in the same frame F1 is
             // pressed instead of lingering for up to half a second.
@@ -190,7 +191,7 @@ namespace UsefulTORStuff {
         public void Close() {
             if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; }
             rowRefs.Clear();
-            footerText = null; bulkButton = null; bulkButtonText = null;
+            footerText = null; bulkButton = null; bulkButtonText = null; restartButton = null;
         }
 
         private const float Inset = 34f, RowH = 54f, RowStep = 62f;
@@ -236,9 +237,26 @@ namespace UsefulTORStuff {
                                     new Vector2(320, 48), VanillaUI.Teal, OnBulkClick, out bulkButtonText);
             if (bulk.Count == 0) bulkButton.SetActive(false);
 
-            VanillaUI.Button(panel, UTSLocalization.Tr("uts.modsync.close"), new Vector2(170, VanillaUI.FrameW + 16),
-                       new Vector2(240, 48), VanillaUI.Grey, Close);
+            // same spot as the bulk button, once the downloads are through: restart straight away
+            restartButton = VanillaUI.Button(panel, UTSLocalization.Tr("uts.modmanagerui.restart_now"), new Vector2(-150, VanillaUI.FrameW + 16),
+                                    new Vector2(320, 48), VanillaUI.Amber, () => { if (!UTSRestart.Busy()) UTSRestart.Now(); });
+            restartButton.SetActive(false);
+
+            // the host's mods as a modpack, to apply later or hand around as a code
+            VanillaUI.Button(panel, UTSLocalization.Tr("uts.modsync.save_pack"), new Vector2(190, VanillaUI.FrameW + 16),
+                       new Vector2(320, 48), VanillaUI.Blue, () => {
+                           var p = UTSModpacks.FromHost(UTSModpacks.FreeName(UTSLocalization.Tr("uts.modsync.pack_stem")));
+                           if (p == null || p.Mods.Count == 0) return;
+                           UTSModpacks.Add(p);
+                           if (footerText != null) VanillaUI.SetText(footerText, UTSLocalization.Tr("uts.modsync.pack_saved", p.Name, p.Mods.Count));
+                           packNoteUntil = Time.realtimeSinceStartup + 4f;
+                       });
+
+            VanillaUI.CloseButton(panel, UTSLocalization.Tr("uts.modsync.close"), Close);
         }
+
+        private GameObject restartButton;
+        private float packNoteUntil;
 
         [HideFromIl2Cpp]
         private void BuildRow(GameObject parent, SyncRow row, float y) {
@@ -399,7 +417,11 @@ namespace UsefulTORStuff {
         [HideFromIl2Cpp]
         private void RefreshAll() {
             foreach (var r in rowRefs) UpdateRow(r);
-            if (footerText != null) VanillaUI.SetText(footerText, FooterMessage());
+            if (footerText != null && Time.realtimeSinceStartup > packNoteUntil) VanillaUI.SetText(footerText, FooterMessage());
+            if (restartButton != null) {
+                bool show = UTSRestart.Needed() && !UTSRestart.Busy() && (bulkButton == null || !bulkButton.activeSelf);
+                if (restartButton.activeSelf != show) restartButton.SetActive(show);
+            }
             if (bulkButton != null) {
                 var dl = UTSModDownloader.Instance;
                 bool busy = dl != null && dl.IsRunning;

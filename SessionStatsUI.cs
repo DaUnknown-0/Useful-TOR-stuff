@@ -79,6 +79,7 @@ namespace UsefulTORStuff {
             SessionStats.Tick();
             GhostKillFeed.Tick();
             RoundReplay.Tick();
+            if (panelRoot != null && Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
 
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
@@ -131,6 +132,34 @@ namespace UsefulTORStuff {
             SessionStats.RequestTable();
             Open();
             UsefulTORStuffPlugin.Logger?.LogInfo("[SessionStats] end-of-evening titles opened.");
+        }
+
+        /// <summary>True while the statistics can be opened here (lobby, feature on for this host).</summary>
+        public static bool CanOpen() => ShouldShow();
+
+        /// <summary>Opens the statistics with one player selected (from a name in the shield panels).</summary>
+        [HideFromIl2Cpp]
+        public void OpenFor(byte playerId) {
+            if (!ShouldShow()) return;
+            NewcomerShieldUI.Instance?.Close();
+            EarlyDeathShieldUI.Instance?.Close();
+            if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; }
+            selected = playerId;
+            titlesView = false;
+            ceremony = false;
+            SessionStats.RequestTable();
+            Open();
+        }
+
+        /// <summary>
+        /// Makes a player's name clickable: a transparent box over the given area that opens the
+        /// statistics for that player. Nothing happens while the statistics are not available.
+        /// </summary>
+        [HideFromIl2Cpp]
+        internal static void LinkName(GameObject row, Vector2 topLeft, Vector2 size, byte playerId) {
+            if (!ShouldShow()) return;
+            var box = VanillaUI.Box(row, topLeft, size, new Color(0, 0, 0, 0), VanillaUI.RadiusBox);
+            VanillaUI.Clickable(box, () => Instance?.OpenFor(playerId));
         }
 
         /// <summary>Autotest (UIGallery): switch the open panel to the titles tab.</summary>

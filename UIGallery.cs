@@ -82,9 +82,18 @@ namespace UsefulTORStuff {
                 mm.DiagShowTab(1);
                 yield return new WaitForSeconds(1f);
                 yield return Shot("modmanager_allmods");
+                // a sample pack and a pending restart, so the modpack row and the restart button show
+                var sample = UTSModpacks.FromCurrent("Gallery pack");
+                UTSModpacks.Add(sample);
+                UTSRestart.Mark();
                 mm.DiagShowTab(2);
                 yield return new WaitForSeconds(1f);
                 yield return Shot("modmanager_modpacks");
+                mm.DiagRename(sample);
+                yield return new WaitForSeconds(1f);
+                yield return Shot("modmanager_rename");
+                mm.DiagRename(null);
+                UTSModpacks.Delete(sample);
                 mm.Hide();
                 yield return new WaitForSeconds(0.5f);
             } else Log("no ModManagerUI");
@@ -157,16 +166,24 @@ namespace UsefulTORStuff {
                 yield return new WaitForSeconds(1.5f); yield return Shot("role_control");
                 Invoke("ForceImpostorMod.RoleControlUI, ForceImpostorMod", "DiagToggle");
             }
+            // UC's colour grant: player list, hex entry, the question the target sees
+            try { AppDomain.CurrentDomain.SetData("UTS.UIGallery.Active", true); } catch { }
+            string[] grant = { "colorgrant_list", "colorgrant_hex", "colorgrant_prompt" };
+            for (int s = 0; s < grant.Length; s++) {
+                if (!Invoke("UnknownsCollection.UCColorGrantUI, UnknownsCollection", "DiagShow", s)) break;
+                yield return new WaitForSeconds(1.2f); yield return Shot(grant[s]);
+            }
+            Invoke("UnknownsCollection.UCColorGrantUI, UnknownsCollection", "DiagShow", -1);
             yield return new WaitForSeconds(0.5f);
             Log("done");
         }
 
-        private static bool Invoke(string typeName, string method) {
+        private static bool Invoke(string typeName, string method, params object[] args) {
             try {
                 var t = Type.GetType(typeName);
                 var m = t?.GetMethod(method, BindingFlags.Public | BindingFlags.Static);
                 if (m == null) { Log($"{typeName}.{method} not found"); return false; }
-                m.Invoke(null, null);
+                m.Invoke(null, args.Length == 0 ? null : args);
                 return true;
             } catch (Exception e) { Log($"{typeName}.{method} failed: {e.Message}"); return false; }
         }

@@ -40,6 +40,11 @@ namespace UsefulTORStuff {
             LobbyMenu.Add("uts.earlydeath", 20, () => Instance != null && Instance.ShouldShow(),
                           () => Instance != null ? Instance.ButtonLabel() : "", () => Instance?.Toggle(),
                           VanillaUI.Pink);
+            // badge on the menu tile (host only): players who get the pink shield next round
+            LobbyMenu.Badges["uts.earlydeath"] = () => {
+                try { return AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost ? EarlyDeathShield.Evaluate().ShieldCount : 0; }
+                catch { return 0; }
+            };
         }
 
         public void Update() {
@@ -47,6 +52,7 @@ namespace UsefulTORStuff {
             // needed; the clock must not, it measures meeting boundaries).
             DeathTimeHistory.Tick();
             EarlyDeathShield.Tick();
+            if (panelRoot != null && Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
 
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
@@ -149,6 +155,7 @@ namespace UsefulTORStuff {
             VanillaUI.Label(holder, v.Name, 17, Color.white,
                   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
                   new Vector2(16, 0), new Vector2(220, 0), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
+            SessionStatsUI.LinkName(holder, new Vector2(4, -3), new Vector2(228, rowH - 6), v.PlayerId);
 
             string stats = StatsText(v.Qualified, v.Stat.Rounds, v.Stat.Mean, ev.MinRounds, ev.HasAverage, ev.LobbyMean);
             VanillaUI.Label(holder, stats, 14, v.Qualified ? Color.white : VanillaUI.Muted,
@@ -279,6 +286,7 @@ namespace UsefulTORStuff {
                   isMe ? VanillaUI.Pink : Color.white,
                   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
                   new Vector2(16, 0), new Vector2(240, 0), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
+            SessionStatsUI.LinkName(holder, new Vector2(4, -3), new Vector2(248, rowH - 6), r.PlayerId);
             VanillaUI.Label(holder, StatsText(r.Qualified, r.Rounds, r.Mean, st.MinRounds, st.HasAverage, st.LobbyMean), 14,
                   r.Qualified ? Color.white : VanillaUI.Muted,
                   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),

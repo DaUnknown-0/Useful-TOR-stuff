@@ -36,6 +36,18 @@ namespace UsefulTORStuff {
             LobbyMenu.Add("uts.newcomershield", 10, () => Instance != null && Instance.ShouldShow(),
                           () => Instance != null ? Instance.ButtonLabel() : "", () => Instance?.Toggle(),
                           VanillaUI.Green);
+            // badge on the menu tile: players the automatic rule marks as new
+            LobbyMenu.Badges["uts.newcomershield"] = () => Instance != null ? Instance.CountAutoNew() : 0;
+        }
+
+        [HideFromIl2Cpp]
+        private int CountAutoNew() {
+            int n = 0;
+            try {
+                foreach (var p in PlayerControl.AllPlayerControls.ToArray())
+                    if (p != null && NewcomerShield.WouldShield(p) && !NewcomerShield.IsManual(p)) n++;
+            } catch { }
+            return n;
         }
 
         // public, like every other Unity message in this plugin (see UTSModSyncUI).
@@ -45,6 +57,7 @@ namespace UsefulTORStuff {
             // can ever keep it from running (see the NewcomerShield header). Every frame, before
             // this component's own poll throttle; Tick throttles itself.
             NewcomerShield.Tick();
+            if (panelRoot != null && Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
 
             if (Time.realtimeSinceStartup < nextPoll) return;
             nextPoll = Time.realtimeSinceStartup + 0.5f;
@@ -139,6 +152,7 @@ namespace UsefulTORStuff {
             VanillaUI.Label(holder, name, 17, Color.white,
                   new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
                   new Vector2(14 + dot + 10, 0), new Vector2(280, 0), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
+            SessionStatsUI.LinkName(holder, new Vector2(4, -3), new Vector2(300, rowH - 6), p.PlayerId);
 
             bool shielded = NewcomerShield.WouldShield(p);
             bool manual = NewcomerShield.IsManual(p);

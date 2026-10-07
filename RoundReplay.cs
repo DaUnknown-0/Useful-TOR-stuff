@@ -348,6 +348,7 @@ namespace UsefulTORStuff {
         private static void ViewTick() {
             DiagTick();
             WorldTick();
+            if (panelRoot != null && Input.GetKeyDown(KeyCode.Escape)) { CloseView(); return; }
             if (panelRoot != null) {
                 bool diag = DiagViewer != null && DiagViewer.Value;
                 if (!LobbyScreen.Exists && !diag) { CloseView(); }

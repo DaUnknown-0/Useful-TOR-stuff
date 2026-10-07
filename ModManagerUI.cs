@@ -68,8 +68,13 @@ namespace UsefulTORStuff
         private GameObject _confirmOverlay;
         private bool _rebuiltForNotes;
         private string _summary = "";     // survives a rebuild (tab switch)
+        private GameObject _restartButton;
+        // modpack rename: the pack being renamed, what has been typed, the label showing it
+        private Modpack _renaming;
+        private string _renameBuffer = "";
+        private TMPro.TextMeshProUGUI _renameLabel;
 
-        private const float PanelW = 1240f, PanelH = 880f, Inset = 30f;
+        private const float PanelW = 1240f, PanelH = 880f, Inset = 30f, CardH = 92f;
 
         // Release notes for display: crude Markdown strip to the first ~10 lines / ~600 characters,
         // with an ellipsis when cut. TMP rich text is neutralised so notes cannot inject tags.
@@ -103,6 +108,47 @@ namespace UsefulTORStuff
         {
             if (Instance) Destroy(Instance);
             Instance = this;
+        }
+
+        // Keyboard while the panel is open: the rename field takes typed text; Escape closes the
+        // innermost thing (rename, then the confirmation, then the panel).
+        public void Update()
+        {
+            if (_popup == null) return;
+            if (_renaming != null)
+            {
+                if (Input.GetKeyDown(KeyCode.Escape)) { _renaming = null; Rebuild(); return; }
+                string typed = Input.inputString;
+                if (!string.IsNullOrEmpty(typed))
+                {
+                    foreach (char c in typed)
+                    {
+                        if (c == '\b') { if (_renameBuffer.Length > 0) _renameBuffer = _renameBuffer.Substring(0, _renameBuffer.Length - 1); }
+                        else if (c == '\n' || c == '\r') { FinishRename(); return; }
+                        else if (!char.IsControl(c) && _renameBuffer.Length < 40) _renameBuffer += c;
+                    }
+                }
+                if (_renameLabel != null)
+                    VanillaUI.SetText(_renameLabel, _renameBuffer + (Mathf.Repeat(Time.unscaledTime, 1f) < 0.55f ? "_" : " "));
+                return;
+            }
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                if (_confirmOverlay != null) HideConfirm();
+                else Hide();
+            }
+        }
+
+        private void FinishRename()
+        {
+            var p = _renaming;
+            _renaming = null;
+            if (p != null && _renameBuffer.Trim().Length > 0)
+            {
+                UTSModpacks.Rename(p, _renameBuffer);
+                SetSummary(UTSLocalization.Tr("uts.modmanagerui.modpack_renamed", p.Name), VanillaUI.Good);
+            }
+            Rebuild();
         }
 
         public void Show()
@@ -149,6 +195,14 @@ namespace UsefulTORStuff
             }
         }
 
+        /// <summary>Autotest (UIGallery): show the rename field of a pack (null ends it).</summary>
+        public void DiagRename(Modpack p)
+        {
+            _renaming = p;
+            _renameBuffer = p != null ? p.Name + " 2" : "";
+            if (_popup != null) Rebuild();
+        }
+
         /// <summary>Autotest (UIGallery): switch to a tab by index while the panel is open.</summary>
         public void DiagShowTab(int index)
         {
@@ -159,6 +213,7 @@ namespace UsefulTORStuff
         private void Rebuild()
         {
             _entryRefs.Clear(); _catalogRefs.Clear();
+            _renameLabel = null; _restartButton = null;
             EnableBackgroundUI();
             if (_popup != null) { Destroy(_popup); _popup = null; }
             IsUIOpen = false;
@@ -240,7 +295,15 @@ namespace UsefulTORStuff
             RefreshUpdateAllButton();
 
             _headerSummaryText = VanillaUI.Label(panel, _summary, 15, VanillaUI.Warn, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1),
-                new Vector2(0, y - 50), new Vector2(-2 * (VanillaUI.FrameW + Inset), 24), TMPro.TextAlignmentOptions.Center);
+                new Vector2(-130, y - 50), new Vector2(-2 * (VanillaUI.FrameW + Inset) - 260, 40), TMPro.TextAlignmentOptions.Center);
+
+            // appears once something waits for the next start (downloads, switched mods, modpacks)
+            _restartButton = VanillaUI.Button(panel, UTSLocalization.Tr("uts.modmanagerui.restart_now"),
+                new Vector2(-VanillaUI.FrameW - Inset, y - 50), new Vector2(240, 40), VanillaUI.Amber, () => {
+                    if (UTSRestart.Busy()) { SetSummary(UTSLocalization.Tr("uts.modmanagerui.restart_busy"), VanillaUI.Warn); return; }
+                    ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.restart_title"), UTSLocalization.Tr("uts.modmanagerui.restart_msg"), UTSRestart.Now);
+                }, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+            _restartButton.SetActive(UTSRestart.Needed());
         }
 
         private void TabButton(GameObject panel, Tab tab, string label, float x, float y)
@@ -535,19 +598,19 @@ namespace UsefulTORStuff
             bool runtimeEnabled = mod.RuntimeEnabled;
             bool configEnabled = mod.Enabled?.Value ?? true;
 
-            var entry = VanillaUI.Row(parent, yPos, 132, 2, VanillaUI.Field);
+            var entry = VanillaUI.Row(parent, yPos, CardH, 2, VanillaUI.Field);
             entry.name = $"Mod_{mod.Guid}";
             var entryRect = entry.GetComponent<RectTransform>();
 
             // a coloured edge in the mod's colour, grey when it is not running
-            var edge = VanillaUI.Box(entry, Vector2.zero, new Vector2(6, 132), runtimeEnabled ? mod.ButtonColor : VanillaUI.Frame, 3);
+            var edge = VanillaUI.Box(entry, Vector2.zero, new Vector2(6, CardH), runtimeEnabled ? mod.ButtonColor : VanillaUI.Frame, 3);
             edge.GetComponent<Image>().raycastTarget = false;
 
             var name = VanillaUI.Text(entry, $"{mod.Name} <size=70%><color=#B9C1C5>v{VersionDisplay.Format(mod.Version)}</color></size>", 24,
-                runtimeEnabled ? Color.white : VanillaUI.Muted, new Vector2(20, -10), new Vector2(700, 32), TMPro.FontStyles.Bold);
+                runtimeEnabled ? Color.white : VanillaUI.Muted, new Vector2(20, -8), new Vector2(700, 32), TMPro.FontStyles.Bold);
             name.enableWordWrapping = false; name.overflowMode = TMPro.TextOverflowModes.Ellipsis;
 
-            var statusText = VanillaUI.Text(entry, "", 15, VanillaUI.Muted, new Vector2(20, -46), new Vector2(700, 22));
+            var statusText = VanillaUI.Text(entry, "", 15, VanillaUI.Muted, new Vector2(20, -40), new Vector2(700, 22));
             var refs = new ModEntryRefs { Mod = mod, StatusText = statusText, RuntimeEnabled = runtimeEnabled };
 
             // buttons, right: on/off and update in the first row, extra toggle and GitHub in the second
@@ -555,7 +618,7 @@ namespace UsefulTORStuff
             CreateUpdateButton(entry, mod, refs);
             if (mod.ExtraToggle != null) CreateExtraToggleButton(entry, mod);
             if (HasRepository(mod))
-                VanillaUI.Button(entry, UTSLocalization.Tr("uts.modmanagerui.github_button"), new Vector2(-14, -58), new Vector2(160, 36), VanillaUI.Grey,
+                VanillaUI.Button(entry, UTSLocalization.Tr("uts.modmanagerui.github_button"), new Vector2(-14, -50), new Vector2(160, 34), VanillaUI.Grey,
                     () => {
                         try { Application.OpenURL($"https://github.com/{mod.RepositoryOwner}/{mod.RepositoryName}"); }
                         catch (Exception ex) { UsefulTORStuffPlugin.Logger?.LogError($"Failed to open GitHub: {ex}"); }
@@ -577,7 +640,7 @@ namespace UsefulTORStuff
                 {
                     int lineCount = notes.Split('\n').Length;
                     notesHeight = Mathf.Clamp(lineCount * 18f + 26f, 50f, 200f);
-                    var notesBox = VanillaUI.Box(entry, new Vector2(20, -76), new Vector2(PanelW - 2 * (VanillaUI.FrameW + Inset) - 60, notesHeight), VanillaUI.Body, 6);
+                    var notesBox = VanillaUI.Box(entry, new Vector2(20, -CardH), new Vector2(PanelW - 2 * (VanillaUI.FrameW + Inset) - 60, notesHeight), VanillaUI.Body, 6);
                     notesBox.GetComponent<Image>().raycastTarget = false;
                     var notesText = VanillaUI.Text(notesBox, UTSLocalization.Tr("uts.modmanagerui.whats_new", notes), 13, new Color(0.82f, 0.82f, 0.86f),
                         new Vector2(12, -8), new Vector2(PanelW - 2 * (VanillaUI.FrameW + Inset) - 84, notesHeight - 12));
@@ -585,18 +648,17 @@ namespace UsefulTORStuff
                     refs.NotesShown = true;
                 }
             }
-            float h = 132 + (notesHeight > 0 ? notesHeight + 10 : 0);
+            float h = CardH + (notesHeight > 0 ? notesHeight + 10 : 0);
             entryRect.sizeDelta = new Vector2(entryRect.sizeDelta.x, h);
             edge.GetComponent<RectTransform>().sizeDelta = new Vector2(6, h);
 
-            // repository and id at the bottom
-            VanillaUI.Label(entry, HasRepository(mod)
-                    ? UTSLocalization.Tr("uts.modmanagerui.repository_line", mod.RepositoryOwner, mod.RepositoryName)
-                    : UTSLocalization.Tr("uts.modmanagerui.local_mod_line"),
-                13, VanillaUI.Muted, new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(20, 30), new Vector2(-40, 18), TMPro.TextAlignmentOptions.Left);
+            // repository and id in one small grey line under the status (compact cards, 2026-10-07)
             string displayGuid = mod.Guid.Length > 50 ? mod.Guid.Substring(0, 47) + "..." : mod.Guid;
-            VanillaUI.Label(entry, UTSLocalization.Tr("uts.modmanagerui.id_line", displayGuid), 12, VanillaUI.Rule,
-                new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 0), new Vector2(20, 12), new Vector2(-40, 16), TMPro.TextAlignmentOptions.Left);
+            string repo = HasRepository(mod)
+                ? UTSLocalization.Tr("uts.modmanagerui.repository_line", mod.RepositoryOwner, mod.RepositoryName)
+                : UTSLocalization.Tr("uts.modmanagerui.local_mod_line");
+            VanillaUI.Text(entry, $"{repo}   <color=#4D5C70>{displayGuid}</color>", 12, VanillaUI.Muted,
+                new Vector2(20, -64), new Vector2(760, 18)).enableWordWrapping = false;
 
             return yPos - (h + 10);
         }
@@ -616,7 +678,7 @@ namespace UsefulTORStuff
                 VanillaUI.Recolor(button, pending ? VanillaUI.Amber : cfg ? VanillaUI.Red : VanillaUI.Green);
             }
 
-            button = VanillaUI.Button(parent, "", new Vector2(-184, -12), new Vector2(160, 36), VanillaUI.Grey, () => {
+            button = VanillaUI.Button(parent, "", new Vector2(-184, -10), new Vector2(160, 34), VanillaUI.Grey, () => {
                 try
                 {
                     if (mod.Enabled == null) return;
@@ -647,7 +709,7 @@ namespace UsefulTORStuff
                 VanillaUI.SetText(btnText, UTSLocalization.Tr("uts.modmanagerui.extra_toggle_label", label, on ? "ON" : "OFF"));
                 VanillaUI.Recolor(button, on ? VanillaUI.Green : VanillaUI.Grey);
             }
-            button = VanillaUI.Button(parent, "", new Vector2(-184, -58), new Vector2(160, 36), VanillaUI.Grey, () => {
+            button = VanillaUI.Button(parent, "", new Vector2(-184, -50), new Vector2(160, 34), VanillaUI.Grey, () => {
                 try
                 {
                     bool newValue = !mod.ExtraToggle.Value;
@@ -667,7 +729,7 @@ namespace UsefulTORStuff
         private void CreateUpdateButton(GameObject parent, ModInfo mod, ModEntryRefs refs)
         {
             TMPro.TextMeshProUGUI btnText = null;
-            var button = VanillaUI.Button(parent, UTSLocalization.Tr("uts.modmanagerui.update_now_button"), new Vector2(-14, -12), new Vector2(160, 36),
+            var button = VanillaUI.Button(parent, UTSLocalization.Tr("uts.modmanagerui.update_now_button"), new Vector2(-14, -10), new Vector2(160, 34),
                 VanillaUI.Blue, () => {
                     try
                     {
@@ -883,10 +945,20 @@ namespace UsefulTORStuff
             foreach (var pack in UTSModpacks.All.ToList())
             {
                 var row = VanillaUI.Row(parent, yPos, 86, 2);
-                VanillaUI.Label(row, pack.Name, 20, Color.white, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1),
-                    new Vector2(20, -10), new Vector2(-560, 28), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
+                bool renaming = _renaming == pack;
+                if (renaming)
+                {
+                    // the name becomes a typing field: Enter saves, Escape cancels
+                    var field = VanillaUI.Box(row, new Vector2(14, -6), new Vector2(420, 34), VanillaUI.Body, 8);
+                    field.GetComponent<Image>().raycastTarget = false;
+                    _renameLabel = VanillaUI.Text(field, _renameBuffer, 20, Color.white, new Vector2(10, -4), new Vector2(400, 28), TMPro.FontStyles.Bold);
+                    _renameLabel.enableWordWrapping = false;
+                }
+                else
+                    VanillaUI.Label(row, pack.Name, 20, Color.white, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1),
+                        new Vector2(20, -10), new Vector2(-700, 28), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
                 var desc = VanillaUI.Label(row, UTSModpacks.Describe(pack), 14, VanillaUI.Muted, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1),
-                    new Vector2(20, -42), new Vector2(-560, 36), TMPro.TextAlignmentOptions.TopLeft);
+                    new Vector2(20, -42), new Vector2(-700, 36), TMPro.TextAlignmentOptions.TopLeft);
                 desc.enableWordWrapping = true;
 
                 var captured = pack;
@@ -905,6 +977,11 @@ namespace UsefulTORStuff
                     try { GUIUtility.systemCopyBuffer = UTSModpacks.ToCode(captured); } catch { }
                     SetSummary(UTSLocalization.Tr("uts.modmanagerui.modpack_copied", captured.Name), VanillaUI.Good);
                 }, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+                VanillaUI.Button(row, UTSLocalization.Tr(renaming ? "uts.modmanagerui.modpack_rename_save" : "uts.modmanagerui.modpack_rename"),
+                    new Vector2(-530, 0), new Vector2(130, 42), renaming ? VanillaUI.Green : VanillaUI.Grey, () => {
+                        if (_renaming == captured) { FinishRename(); return; }
+                        _renaming = captured; _renameBuffer = captured.Name; Rebuild();
+                    }, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
                 VanillaUI.Button(row, UTSLocalization.Tr("uts.modmanagerui.modpack_delete"), new Vector2(-388, 0), new Vector2(130, 42), VanillaUI.Red, () => {
                     ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.modpack_delete_title"),
                         UTSLocalization.Tr("uts.modmanagerui.modpack_delete_msg", captured.Name), () => { UTSModpacks.Delete(captured); Rebuild(); });
@@ -938,6 +1015,11 @@ namespace UsefulTORStuff
                     yield break;
                 }
                 if (!_updateAllRunning) RefreshUpdateAllButton();
+                if (_restartButton != null)
+                {
+                    bool need = UTSRestart.Needed();
+                    if (_restartButton.activeSelf != need) _restartButton.SetActive(need);
+                }
                 yield return new WaitForSeconds(0.25f);
             }
         }
@@ -952,6 +1034,7 @@ namespace UsefulTORStuff
                 if (_popup != null) { Destroy(_popup); _popup = null; }
                 _tab = Tab.Installed;
                 _summary = "";
+                _renaming = null; _renameLabel = null;
             }
             catch (Exception ex)
             {
