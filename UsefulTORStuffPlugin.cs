@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.19.6";
+    public const string PluginVersion = "1.4.19.7";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -172,6 +172,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         RoundReplay.DiagViewer = Config.Bind("Diagnostics", "Replay Viewer Test", false,
             "Autotest only: finishes the freeplay recording after 12 s, opens the round replay and saves a screenshot.");
         UIGallery.Bind(Config);
+        SeparateSaveFiles.Bind(Config);
 
         // Repair path for Harmony patches that stop executing mid-session (see DetourWatchdog.cs for
         // the measurements). Only the config entries are bound here; arming happens after PatchAll,
