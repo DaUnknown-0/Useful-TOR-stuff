@@ -44,6 +44,27 @@ namespace UsefulTORStuff {
                 "(files settings.amogus_TOR / player.amogus_TOR). The first start copies the plain files once.");
         }
 
+        /*
+         * The game loads settings.amogus very early, before BepInEx runs this plugin (Player.log of
+         * 2026-10-07: "loaded data from JSON file 'settings.amogus'", player.amogus_TOR only later).
+         * The patch alone then only redirected the SAVING, and every start read the plain settings
+         * again. So once the patch is in place, the settings are loaded a second time; that load
+         * asks for the file name and gets settings.amogus_TOR (copied from the plain file the first
+         * time). The player data loads later and needs no help.
+         */
+        public static void ReloadIfLoadedEarly() {
+            if (Enabled == null || !Enabled.Value) return;
+            try {
+                if (!AmongUs.Data.DataManager.IsSettingsLoaded) return;
+                AmongUs.Data.DataManager.Settings.ForceLoad();
+                float music = -1f;
+                try { music = AmongUs.Data.DataManager.Settings.Audio.MusicVolume; } catch { }
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[SaveFiles] settings had been read before the patch; reloaded from settings.amogus_TOR (music volume {music:0.####})");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[SaveFiles] reloading the settings failed: {e.Message}");
+            }
+        }
+
         private static string Redirect(string name) {
             if (string.IsNullOrEmpty(name) || Enabled == null || !Enabled.Value) return name;
             if (name.EndsWith(Suffix, StringComparison.Ordinal)) return name;

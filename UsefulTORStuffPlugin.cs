@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.19.7";
+    public const string PluginVersion = "1.4.19.8";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -444,6 +444,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.
         harmony.PatchAll(typeof(UsefulTORStuffPlugin).Assembly);
+
+        // The game reads settings.amogus before this plugin loads; with the file-name patch now in
+        // place, read them again from settings.amogus_TOR (see SeparateSaveFiles).
+        SeparateSaveFiles.ReloadIfLoadedEarly();
 
         // Must follow PatchAll: the watchdog's canary postfix is attribute-based, so it only exists
         // once the line above ran, and the surface scan it logs wants the full patch set in place.
