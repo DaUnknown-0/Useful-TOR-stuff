@@ -71,6 +71,14 @@ namespace UsefulTORStuff {
         // plus 104/105/139/167/200-202/250/251 (see ID-Registry.md).
         public const byte SidekickAllowedRpcId = 244;
 
+        // Largest impostor count the range can roll (large lobbies, 20 to 25 players). TOR clamps
+        // GetAdjustedNumImpostors to 1..3 (RoleAssignmentPatch.cs:30); our lower-priority postfix below
+        // overrides that while the roles are assigned. The VANILLA setting NumImpostors must stay at 3
+        // or below though: TOR's own AreInvalid (CustomOptions.cs:1151) and the vanilla one treat
+        // NumImpostors > 3 as invalid options.
+        public const int HardMax = 5;
+        private const int VanillaSettingMax = 3;
+
         public static CustomOption OptionEnable;         // 1370
         public static CustomOption OptionMin;            // 1371
         public static CustomOption OptionMax;            // 1372
@@ -96,11 +104,11 @@ namespace UsefulTORStuff {
                 UTSLocalization.BindOptionTitle(OptionEnable, "uts.impcount.enable_option");
 
                 OptionMin = CustomOption.Create(
-                    1371, Types.General, "Minimum Impostors", 1f, 1f, 3f, 1f, OptionEnable);
+                    1371, Types.General, "Minimum Impostors", 1f, 1f, (float)HardMax, 1f, OptionEnable);
                 UTSLocalization.BindOptionTitle(OptionMin, "uts.impcount.min_option");
 
                 OptionMax = CustomOption.Create(
-                    1372, Types.General, "Maximum Impostors", 2f, 1f, 3f, 1f, OptionEnable);
+                    1372, Types.General, "Maximum Impostors", 2f, 1f, (float)HardMax, 1f, OptionEnable);
                 UTSLocalization.BindOptionTitle(OptionMax, "uts.impcount.max_option");
 
                 // Only meaningful with a real range: at Min == Max no impostor can ever be missing, so
@@ -179,11 +187,11 @@ namespace UsefulTORStuff {
         // ---- shared state helpers -------------------------------------------------------------
 
         public static int EffectiveMax =>
-            OptionMax == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMax)), 1, 3);
+            OptionMax == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMax)), 1, HardMax);
 
         public static int EffectiveMin {
             get {
-                int min = OptionMin == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMin)), 1, 3);
+                int min = OptionMin == null ? 1 : Mathf.Clamp(Mathf.RoundToInt(UTSGate.Num(OptionMin)), 1, HardMax);
                 int max = EffectiveMax;
                 return min > max ? max : min; // TOR convention for min/max pairs
             }
@@ -246,7 +254,9 @@ namespace UsefulTORStuff {
                     if (OptionAllowMore == null || !UTSGate.Bool(OptionAllowMore)) {
                         int players = PlayerControl.AllPlayerControls.ToArray()
                             .Count(p => p != null && p.Data != null && !p.Data.Disconnected);
-                        int cap = players <= 6 ? 1 : players <= 8 ? 2 : 3;   // the vanilla table
+                        // The vanilla table up to 15 players, scaled further for the bigger lobbies the
+                        // lobby size option allows (16 to 20: 4, more: 5).
+                        int cap = players <= 6 ? 1 : players <= 8 ? 2 : players <= 15 ? 3 : players <= 20 ? 4 : 5;
                         if (rolledCount > cap) {
                             UsefulTORStuffPlugin.Logger?.LogInfo($"[ImpostorCountRange] rolled {rolledCount}, capped to {cap} for {players} players.");
                             rolledCount = cap;
@@ -281,7 +291,7 @@ namespace UsefulTORStuff {
             [HarmonyPostfix]
             [HarmonyPriority(Priority.Low)]
             public static void Postfix(ref int __result) {
-                if (assignmentActive) __result = Mathf.Clamp(rolledCount, 1, 3);
+                if (assignmentActive) __result = Mathf.Clamp(rolledCount, 1, HardMax);
             }
         }
 
@@ -305,7 +315,8 @@ namespace UsefulTORStuff {
                     if (!FeatureEnabled) { RestoreOnce(opts); return; }
 
                     CaptureOnce(opts);
-                    int max = EffectiveMax;
+                    // Never above 3: more is invalid for TOR's and the vanilla AreInvalid (see HardMax).
+                    int max = Math.Min(EffectiveMax, VanillaSettingMax);
                     if (opts.NumImpostors == max) return;
                     opts.SetInt(Int32OptionNames.NumImpostors, max);
                     GameManager.Instance?.LogicOptions?.SyncOptions();
