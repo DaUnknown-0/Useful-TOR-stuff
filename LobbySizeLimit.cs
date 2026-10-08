@@ -88,40 +88,36 @@ namespace UsefulTORStuff {
 
         // ---- "/size N" above 15 -------------------------------------------------------------
 
-        [HarmonyPatch]
+        // Hooked on the game's own ChatController.SendChat (an Il2Cpp method) and NOT on TOR's managed
+        // DynamicLobbies.SendChatPatch.Prefix: a detour on a managed TOR method can silently die under
+        // .NET tiered compilation (see DetourWatchdog / project notes), and that is exactly what happened
+        // in the first playtest (the option showed 25, TOR answered "changed to 15", ours never ran).
+        // TOR's own prefix on SendChat still runs and clamps to 15 as before.
+        [HarmonyPatch(typeof(ChatController), nameof(ChatController.SendChat))]
         private static class SizeCommandPatch {
-            private static MethodBase TargetMethod() {
-                var t = typeof(CustomOption).Assembly.GetType("TheOtherRoles.Modules.DynamicLobbies+SendChatPatch");
-                return t?.GetMethod("Prefix", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-            }
-
-            private static bool Prepare(MethodBase original) {
-                bool found = TargetMethod() != null;
-                if (!found)
-                    UsefulTORStuffPlugin.Logger?.LogWarning(
-                        "[LobbySizeLimit] DynamicLobbies.SendChatPatch.Prefix not found - /size above 15 inactive.");
-                return found;
-            }
-
             // First: TOR's handler clears freeChatField, so the text has to be read before it runs.
             [HarmonyPriority(Priority.First)]
-            // TOR's Prefix is STATIC and its first parameter is merely NAMED __instance, so it is
-            // picked by index here (Harmony would hand a real __instance injection a null).
-            public static void Prefix([HarmonyArgument(0)] ChatController chat) {
+            public static void Prefix(ChatController __instance) {
+                var chat = __instance;
                 pendingSize = 0;
                 try {
                     if (CurrentMax <= VanillaMax || !IsLobbyHost()) return;
                     string text = chat.freeChatField.Text;
                     if (text == null || !text.ToLower().StartsWith("/size ")) return;
-                    if (int.TryParse(text.Substring(6), out int n)) pendingSize = n;
+                    if (int.TryParse(text.Substring(6), out int n)) {
+                        pendingSize = n;
+                        UsefulTORStuffPlugin.Logger?.LogInfo(
+                            $"[LobbySizeLimit] /size {n} seen (limit {CurrentMax}, LobbyLimit {DynamicLobbies.LobbyLimit}).");
+                    }
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[LobbySizeLimit] reading /size failed: {e.Message}");
                 }
             }
 
-            // Last: after TOR's clamp to 15 and after TorLobbyFixes' M23 postfix.
+            // Last: after TOR's clamp to 15 (it skips the original, but postfixes still run).
             [HarmonyPriority(Priority.Last)]
-            public static void Postfix([HarmonyArgument(0)] ChatController chat) {
+            public static void Postfix(ChatController __instance) {
+                var chat = __instance;
                 int requested = pendingSize;
                 pendingSize = 0;
                 if (requested <= VanillaMax) return;

@@ -534,7 +534,7 @@
  "tor.role.prop.desc": "Tarne dich als Objekt",
  "tor.modifier.bloody.name": "Bloody",
  "tor.modifier.bloody.desc": "Dein Mörder hinterlässt eine blutige Spur",
- "tor.modifier.antiTeleport.name": "Anti-TP",
+ "tor.modifier.antiTeleport.name": "Anti tp",
  "tor.modifier.antiTeleport.desc": "Du wirst nicht teleportiert",
  "tor.modifier.tiebreaker.name": "Tiebreaker",
  "tor.modifier.tiebreaker.intro": "Deine Stimme entscheidet bei Gleichstand",

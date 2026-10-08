@@ -511,7 +511,7 @@
  "tor.role.pursuer.intro": "Üresítsd ki az Impostorokat",
  "tor.role.impostor.name": "Impostor",
  "tor.role.impostor.intro": "Szabotálj és ölj meg mindenkit",
- "tor.role.crewmate.name": "Személyzet tagja",
+ "tor.role.crewmate.name": "Crewmate",
  "tor.role.crewmate.intro": "Találd meg az Impostorokat",
  "tor.role.witch.name": "Witch",
  "tor.role.witch.intro": "Bűvölj el ellenségeidre egy varázslatot",
