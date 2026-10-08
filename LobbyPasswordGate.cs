@@ -264,6 +264,7 @@ namespace UsefulTORStuff
             www.SetUrl(HashFileUrl);
             www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
             www.downloadHandler = new DownloadHandlerBuffer();
+            www.timeout = 15; // a hanging request would otherwise keep the state on Loading forever
             var op = www.SendWebRequest();
 
             while (!op.isDone)
@@ -311,6 +312,7 @@ namespace UsefulTORStuff
             www.SetUrl(HashFileUrl);
             www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
             www.downloadHandler = new DownloadHandlerBuffer();
+            www.timeout = 15; // a hanging request would otherwise keep the state on Loading forever
             var op = www.SendWebRequest();
 
             while (!op.isDone)

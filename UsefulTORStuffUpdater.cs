@@ -114,6 +114,45 @@ namespace UsefulTORStuff {
         [HideFromIl2Cpp]
         private IEnumerator CoCheckForUpdate() {
             _busy = true;
+
+            // First the Atom feed: not counted against the API's 60 requests per hour (ReleaseFeed).
+            var feed = new UnityWebRequest();
+            feed.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
+            feed.SetUrl(ReleaseFeed.Url(RepositoryOwner, RepositoryName));
+            feed.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
+            feed.downloadHandler = new DownloadHandlerBuffer();
+            var feedOp = feed.SendWebRequest();
+            while (!feedOp.isDone) yield return new WaitForEndOfFrame();
+            bool fromFeed = false;
+            try {
+                if (!feed.isNetworkError && !feed.isHttpError) {
+                    var entries = ReleaseFeed.Parse(feed.downloadHandler.text);
+                    if (entries.Count > 0) {
+                        var list = new List<GithubRelease>();
+                        foreach (var e in entries)
+                            list.Add(new GithubRelease {
+                                Tag = e.Tag, Name = e.Title, Description = e.Notes, PublishedAt = e.Updated,
+                                Assets = new List<GithubAsset> { new GithubAsset {
+                                    Name = PluginAssetName,
+                                    DownloadUrl = ReleaseFeed.DownloadUrl(RepositoryOwner, RepositoryName, e.Tag, PluginAssetName) } }
+                            });
+                        list.Sort(SortReleases);
+                        Releases = list;
+                        fromFeed = true;
+                    }
+                }
+            } catch (Exception ex) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[Updater] release feed unreadable ({ex.Message}), asking the API.");
+            } finally {
+                feed.downloadHandler.Dispose();
+                feed.Dispose();
+            }
+            if (fromFeed) {
+                _checkCompleted = true;
+                _busy = false;
+                yield break;
+            }
+
             var www = new UnityWebRequest();
             www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
             www.SetUrl($"https://api.github.com/repos/{RepositoryOwner}/{RepositoryName}/releases");

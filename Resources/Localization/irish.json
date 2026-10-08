@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Uasmhéid Impostors",
  "uts.impcount.refill_option": "Ní Líonann Sidekick ach Impostor atá ar Iarraidh (Min < Max)",
  "uts.impcount.allow_more_option": "Ceadaigh níos mó Impostors ná vanilla",
+ "uts.lobbysize.limit_option": "Uasmhéid an lobby (/size)",
+ "uts.lobbysize.applied": "Socraíodh méid an lobby go {0} imreoir (teorainn {1}). Is turgnamhach é níos mó ná 15 imreoir.",
  "uts.impcount.sidekick_chance_option": "An Seans gur Féidir le Jackal Sidekick a Chruthú",
  "uts.truemodifierchances.enabled": "Fíorsheansanna Modhnóra (Íos/Uas = uasteorainn)",
  "uts.mapping.option_name": "Pingeáil Léarscáile sa Chruinniú (Cliceáil ar an Léarscáil)",

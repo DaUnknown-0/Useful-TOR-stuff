@@ -233,6 +233,10 @@ namespace UsefulTORStuff {
                         row.State = LocalModState.Disabled;
                         row.Version = approx;
                     }
+                } else if (e.External) {
+                    // Parked by a modpack (UTSModpacks.SetSwitchedOn renames it to .disabled): that is
+                    // "switched off", not missing, or Mod Sync would offer to download it right back.
+                    try { if (File.Exists(e.TargetPath + ".disabled") && !File.Exists(e.TargetPath)) row.State = LocalModState.Disabled; } catch { }
                 }
                 list.Add(row);
             }

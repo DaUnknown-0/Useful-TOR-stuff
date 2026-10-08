@@ -206,7 +206,7 @@ namespace UsefulTORStuff {
                 try {
                     if (want != null) {
                         // a DLL parked as .disabled comes back without a download
-                        if (state == LocalModState.Missing && File.Exists(e.TargetPath + ".disabled") && !File.Exists(e.TargetPath)) {
+                        if (state != LocalModState.Active && File.Exists(e.TargetPath + ".disabled") && !File.Exists(e.TargetPath)) {
                             File.Move(e.TargetPath + ".disabled", e.TargetPath);
                             res.Enabled++;
                         } else if (dl != null) {
@@ -214,7 +214,8 @@ namespace UsefulTORStuff {
                             res.Downloads++;
                         }
                         if (SetSwitchedOn(e, true)) res.Enabled++;
-                    } else if (state != LocalModState.Missing) {
+                    } else if (state != LocalModState.Missing && e.Guid != UsefulTORStuffPlugin.PluginGuid) {
+                        // never this mod itself: a pack without it would take the Mod Manager away
                         if (SetSwitchedOn(e, false)) res.Disabled++;
                     }
                 } catch (Exception ex) {

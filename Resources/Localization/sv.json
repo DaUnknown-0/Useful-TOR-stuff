@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Högsta antal Impostors",
  "uts.impcount.refill_option": "Sidekick fyller bara i en saknad Impostor (min < max)",
  "uts.impcount.allow_more_option": "Tillåt fler Impostors än i vanilla",
+ "uts.lobbysize.limit_option": "Maximal lobbystorlek (/size)",
+ "uts.lobbysize.applied": "Lobbystorleken satt till {0} spelare (gräns {1}). Fler än 15 spelare är experimentellt.",
  "uts.impcount.sidekick_chance_option": "Chans att Jackal kan skapa en Sidekick",
  "uts.truemodifierchances.enabled": "Verkliga modifierarchanser (Min/Max = tak)",
  "uts.mapping.option_name": "Kartping under möte (klicka på kartan)",

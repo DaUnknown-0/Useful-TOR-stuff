@@ -484,12 +484,20 @@ namespace UsefulTORStuff {
             // `voteAreaPlayer.AmOwner` on a possibly-null Helpers.playerById lookup) sits inside a
             // long vote-return loop in the middle of a much larger method (killer/lover/lawyer death
             // handling, sounds, overlays, CheckForEndVoting). Rebuilding all of that from the outside
-            // to reach one dereference was judged too risky - a Finalizer at least keeps
-            // CheckForEndVoting and everything after it running instead of losing the whole meeting.
+            // to reach one dereference was judged too risky. A Finalizer does NOT resume the method:
+            // it keeps the exception away from the RPC handler, and runs TOR's own host-side
+            // CheckForEndVoting, which sits right after the loop and was skipped by the throw.
             public static Exception Finalizer(Exception __exception) {
-                if (__exception != null)
+                if (__exception != null) {
                     UsefulTORStuffPlugin.Logger?.LogError(
                         $"[TorNullGuards] guesserShoot threw (likely a disconnected voter) - swallowed: {__exception}");
+                    try {
+                        if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost && MeetingHud.Instance)
+                            MeetingHud.Instance.CheckForEndVoting();
+                    } catch (Exception e) {
+                        UsefulTORStuffPlugin.Logger?.LogError($"[TorNullGuards] CheckForEndVoting after guesserShoot failed: {e}");
+                    }
+                }
                 return null;
             }
         }

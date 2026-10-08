@@ -180,7 +180,7 @@ namespace UsefulTORStuff {
         [HideFromIl2Cpp]
         public void Open() {
             if (panelRoot != null) return;
-            try { Build(); this.StartCoroutine(CoRefresh()); }
+            try { Build(); this.StartCoroutine(CoRefresh(++refreshGen)); }
             catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[ModSync] panel failed: {ex}");
                 Close();
@@ -435,9 +435,12 @@ namespace UsefulTORStuff {
             }
         }
 
+        // A quick Close/Open must end the old refresh loop instead of running two over the same rows.
+        private int refreshGen;
+
         [HideFromIl2Cpp]
-        private IEnumerator CoRefresh() {
-            while (panelRoot != null) {
+        private IEnumerator CoRefresh(int gen) {
+            while (panelRoot != null && gen == refreshGen) {
                 RefreshAll();
                 yield return new WaitForSeconds(0.2f);
             }

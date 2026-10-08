@@ -1217,24 +1217,31 @@ namespace UsefulTORStuff {
             // The HOST flags the win before the kill runs (audit 04.10.): the Revenger's own SendWin
             // below only arrives after the kill, and a kill that removes the last evil player could
             // end the round as a normal win first. Every client knows revenger/killerId/revengerOwnKill.
+            //
+            // Only for a kill that actually succeeds (audit 08.10.): MurderPlayer is also called for a
+            // blocked kill (Medic shield, armored target: resultFlags without Succeeded) so the animation
+            // plays, and flagging the win there handed the Lovers a victory for a kill that never landed.
+            // The flags are known BEFORE the kill runs, so the race fix above is kept.
             [HarmonyPriority(Priority.First)]
-            public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
+            public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target, [HarmonyArgument(1)] MurderResultFlags resultFlags) {
                 try {
                     if (!active || revengerWon || revenger == null || !revengerOwnKill) return;
                     if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
                     if (__instance != revenger || target == null || target.PlayerId != killerId) return;
+                    if ((resultFlags & MurderResultFlags.Succeeded) == 0) return;
                     SendWin(revenger.PlayerId);
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] host revenger win failed: {e}");
                 }
             }
 
-            public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
+            public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target, [HarmonyArgument(1)] MurderResultFlags resultFlags) {
                 try {
                     if (!active || revengerWon || revenger == null) return;
                     if (__instance != revenger || __instance != PlayerControl.LocalPlayer) return; // own kill only, once
                     if (!revengerOwnKill) return;                  // non-killers use the Revenger button
                     if (target == null || target.PlayerId != killerId) return; // only the Lover's killer wins
+                    if ((resultFlags & MurderResultFlags.Succeeded) == 0) return; // a blocked kill is no revenge
                     SendWin(revenger.PlayerId);
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] killer-revenger win failed: {e}");

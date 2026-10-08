@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Максимум Impostor",
  "uts.impcount.refill_option": "Sidekick только восполняет недостающего Impostor (мин < макс)",
  "uts.impcount.allow_more_option": "Разрешить больше Impostor, чем в ванилле",
+ "uts.lobbysize.limit_option": "Максимальный размер лобби (/size)",
+ "uts.lobbysize.applied": "Размер лобби установлен на {0} игроков (лимит {1}). Больше 15 игроков: экспериментально.",
  "uts.impcount.sidekick_chance_option": "Шанс, что Jackal может создать Sidekick",
  "uts.truemodifierchances.enabled": "Настоящие шансы модификаторов (Мин/Макс = предел)",
  "uts.mapping.option_name": "Метка на карте во время собрания (клик по карте)",

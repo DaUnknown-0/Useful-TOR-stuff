@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Số Kẻ Giả Mạo Tối Đa",
  "uts.impcount.refill_option": "Sidekick chỉ lấp một Impostor còn thiếu (tối thiểu < tối đa)",
  "uts.impcount.allow_more_option": "Cho phép nhiều Impostor hơn bản gốc",
+ "uts.lobbysize.limit_option": "Kích thước phòng chờ tối đa (/size)",
+ "uts.lobbysize.applied": "Đã đặt kích thước phòng chờ là {0} người chơi (giới hạn {1}). Hơn 15 người chơi là thử nghiệm.",
  "uts.impcount.sidekick_chance_option": "Tỉ Lệ Jackal Có Thể Tạo Sidekick",
  "uts.truemodifierchances.enabled": "Tỷ lệ modifier thực tế (Min/Max = giới hạn)",
  "uts.mapping.option_name": "Ping bản đồ trong cuộc họp (nhấp vào bản đồ)",

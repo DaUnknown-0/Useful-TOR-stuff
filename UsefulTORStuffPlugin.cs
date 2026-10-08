@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.4.19.9";
+    public const string PluginVersion = "1.4.19.10";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -359,6 +359,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // (PatchAll); TryPatch adds the reflection postfix on getRoleAssignmentData (Spy unlock).
         ImpostorCountRange.CreateOptions();
         ImpostorCountRange.TryPatch(harmony);
+
+        // Maximum Lobby Size (option 1378, General tab, default 15 = off): lets the host raise the
+        // lobby above 15 (up to 25) with TOR's /size command. The patches are attribute-based
+        // (PatchAll); only the option needs explicit creation here.
+        LobbySizeLimit.CreateOptions();
 
         // True Modifier Chances (option 1375, Modifier tab, default OFF): the modifier percentages
         // become real independent spawn chances instead of TOR's lottery tickets. TryPatch adds the

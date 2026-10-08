@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Impostores máximos",
  "uts.impcount.refill_option": "El Sidekick solo rellena un Impostor que falte (mín < máx)",
  "uts.impcount.allow_more_option": "Permitir más Impostors que en el juego base",
+ "uts.lobbysize.limit_option": "Tamaño máximo de la sala (/size)",
+ "uts.lobbysize.applied": "Tamaño de la sala establecido en {0} jugadores (límite {1}). Más de 15 jugadores es experimental.",
  "uts.impcount.sidekick_chance_option": "Probabilidad de que el Jackal pueda crear un Sidekick",
  "uts.truemodifierchances.enabled": "Probabilidades reales de modificadores (Mín/Máx = tope)",
  "uts.mapping.option_name": "Ping en el mapa durante la reunión (clic en el mapa)",

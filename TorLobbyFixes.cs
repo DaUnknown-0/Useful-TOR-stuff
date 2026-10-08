@@ -223,11 +223,13 @@ namespace UsefulTORStuff {
             // clamp's 4 (audit 04.10.).
             public static void Postfix(int __state) {
                 try {
-                    if (__state >= 4 && __state <= 15 && (DynamicLobbies.LobbyLimit < 4 || DynamicLobbies.LobbyLimit > 15)) {
+                    // The ceiling is 15 unless the host raised "Maximum Lobby Size (/size)" (LobbySizeLimit).
+                    int max = LobbySizeLimit.CurrentMax;
+                    if (__state >= 4 && __state <= max && (DynamicLobbies.LobbyLimit < 4 || DynamicLobbies.LobbyLimit > max)) {
                         DynamicLobbies.LobbyLimit = __state;
                         return;
                     }
-                    DynamicLobbies.LobbyLimit = Math.Clamp(DynamicLobbies.LobbyLimit, 4, 15);
+                    DynamicLobbies.LobbyLimit = Math.Clamp(DynamicLobbies.LobbyLimit, 4, max);
                 } catch (Exception e) {
                     ThrottledLog("M23", $"clamp failed: {e.GetType().Name}: {e.Message}");
                 }

@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Maksimum İmpostor",
  "uts.impcount.refill_option": "Sidekick yalnızca eksik bir Impostor'u doldurur (min < maks)",
  "uts.impcount.allow_more_option": "Vanilla'dan fazla Impostor'a izin ver",
+ "uts.lobbysize.limit_option": "Maksimum lobi boyutu (/size)",
+ "uts.lobbysize.applied": "Lobi boyutu {0} oyuncuya ayarlandı (sınır {1}). 15'ten fazla oyuncu deneyseldir.",
  "uts.impcount.sidekick_chance_option": "Jackal'ın Sidekick Oluşturabilme Şansı",
  "uts.truemodifierchances.enabled": "Gerçek Modifiye Şansları (Min/Maks = üst sınır)",
  "uts.mapping.option_name": "Toplantıda Harita İşareti (Haritaya Tıkla)",

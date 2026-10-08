@@ -182,7 +182,7 @@ namespace UsefulTORStuff
 
                 IsUIOpen = true;
                 DisableBackgroundUI();
-                this.StartCoroutine(CoRefreshStates());
+                this.StartCoroutine(CoRefreshStates(++_refreshGen));
             }
             catch (Exception ex)
             {
@@ -994,9 +994,13 @@ namespace UsefulTORStuff
         // ====================================================================
         // Polling while the panel is open
         // ====================================================================
-        private IEnumerator CoRefreshStates()
+        // Each Build starts a new poller; a Rebuild or a quick Hide/Show must end the old one,
+        // otherwise they stack (IsUIOpen is true again before the old loop looks).
+        private int _refreshGen;
+
+        private IEnumerator CoRefreshStates(int gen)
         {
-            while (IsUIOpen)
+            while (IsUIOpen && gen == _refreshGen)
             {
                 bool rebuildForNotes = false;
                 foreach (var r in _entryRefs)

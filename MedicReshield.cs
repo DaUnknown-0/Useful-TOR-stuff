@@ -265,7 +265,14 @@ namespace UsefulTORStuff {
                     bool used = Medic.usedShield;
                     // A Medic role that just came to this client brings the old holder's state along:
                     // taken as it is, not counted (audit 04.10.).
-                    if (countedMedic != lp) { countedMedic = lp; prevUsedShield = used; }
+                    // The charges themselves start fresh for the new holder (decision 08.10.): the old
+                    // holder's count lives on his own client and is not handed over.
+                    if (countedMedic != lp) {
+                        countedMedic = lp;
+                        prevUsedShield = used;
+                        placementsUsed = 0;
+                        lastDeadShieldedId = null;
+                    }
                     if (used && !prevUsedShield) {
                         placementsUsed++;
                         lastDeadShieldedId = null;   // a new shield: its holder may die (again) and re-arm

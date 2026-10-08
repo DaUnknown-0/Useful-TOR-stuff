@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Maximum Impostors",
  "uts.impcount.refill_option": "Pupunan Lang ng Sidekick ang Kulang na Impostor (Min < Max)",
  "uts.impcount.allow_more_option": "Payagan ang mas maraming Impostor kaysa vanilla",
+ "uts.lobbysize.limit_option": "Pinakamataas na laki ng lobby (/size)",
+ "uts.lobbysize.applied": "Itinakda ang laki ng lobby sa {0} manlalaro (limitasyon {1}). Ang higit sa 15 manlalaro ay eksperimental.",
  "uts.impcount.sidekick_chance_option": "Chance That The Jackal Can Create A Sidekick",
  "uts.truemodifierchances.enabled": "Tunay na Tsansa ng Modifier (Min/Max = hangganan)",
  "uts.mapping.option_name": "Map Ping sa Miting (I-click ang Mapa)",

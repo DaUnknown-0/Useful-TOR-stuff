@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "最大冒名者數",
  "uts.impcount.refill_option": "Sidekick 僅補充缺少的 Impostor（最小 < 最大）",
  "uts.impcount.allow_more_option": "允許比原版更多的 Impostor",
+ "uts.lobbysize.limit_option": "最大大廳人數 (/size)",
+ "uts.lobbysize.applied": "大廳人數已設定為 {0} 人(上限 {1})。超過 15 人屬於實驗性功能。",
  "uts.impcount.sidekick_chance_option": "Jackal能創建Sidekick的機率",
  "uts.truemodifierchances.enabled": "真實輔助技能機率 (最小/最大 = 上限)",
  "uts.mapping.option_name": "會議地圖標記（點擊地圖）",

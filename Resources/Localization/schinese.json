@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "最大内鬼数",
  "uts.impcount.refill_option": "Sidekick 仅补充缺失的 Impostor（最小 < 最大）",
  "uts.impcount.allow_more_option": "允许比原版更多的 Impostor",
+ "uts.lobbysize.limit_option": "最大大厅人数 (/size)",
+ "uts.lobbysize.applied": "大厅人数已设置为 {0} 人(上限 {1})。超过 15 人属于实验性功能。",
  "uts.impcount.sidekick_chance_option": "Jackal能创建Sidekick的概率",
  "uts.truemodifierchances.enabled": "真实辅助技能概率 (最小/最大 = 上限)",
  "uts.mapping.option_name": "会议地图标记（点击地图）",

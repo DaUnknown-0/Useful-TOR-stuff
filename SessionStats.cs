@@ -128,6 +128,10 @@ namespace UsefulTORStuff {
 
         // One player-round per line, tab separated:
         // unix end, code, name, team, role, won, reason, killer code, meetings, kills, share
+        // A file that exists but could not be read (locked by a scanner, say) must not be overwritten
+        // by a Save holding only the new rounds: that would drop the rest of the evening for good.
+        private static bool loadFailed;
+
         private static void EnsureLoaded() {
             if (loaded) return;
             loaded = true;
@@ -163,13 +167,15 @@ namespace UsefulTORStuff {
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[SessionStats] loaded {rounds.Count} round(s), {dropped} player-round(s) older than 24 h left out{session}.");
             } catch (Exception e) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] load failed: {e.Message}");
+                loadFailed = true;
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] load failed: {e.Message} (the file is left untouched this session)");
             }
         }
 
         private static string Clean(string s) => (s ?? "").Replace('\t', ' ').Replace('\n', ' ').Replace('\r', ' ');
 
         private static void Save() {
+            if (loadFailed) return;
             try {
                 var lines = new List<string>();
                 foreach (var r in rounds) {

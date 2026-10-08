@@ -502,6 +502,9 @@ namespace UsefulTORStuff {
                     if (__instance == null || __instance.name == null || !__instance.name.StartsWith("SealedVent_")) return;
                     PlayerControl player = pc?.Object;
                     if (player == null || !player.inVent) return; // Only rescue a trapped occupant, never permit a fresh entry.
+                    // ... of THIS vent: sitting in a neighbouring vent must not open a way out through
+                    // a sealed one (CanUse is only asked for the local player, see DESYNC above).
+                    if (player.AmOwner && Vent.currentVent != __instance) return;
 
                     couldUse = !pc.IsDead && (player.CanMove || player.inVent);
                     canUse = couldUse;

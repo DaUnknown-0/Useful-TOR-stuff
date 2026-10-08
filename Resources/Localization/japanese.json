@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "インポスターの最大数",
  "uts.impcount.refill_option": "Sidekickは不足しているImpostorだけを補う (Min < Max)",
  "uts.impcount.allow_more_option": "バニラより多いImpostorを許可",
+ "uts.lobbysize.limit_option": "ロビーの最大人数 (/size)",
+ "uts.lobbysize.applied": "ロビーの人数を{0}人に設定しました(上限{1})。15人を超える設定は実験的です。",
  "uts.impcount.sidekick_chance_option": "JackalがSidekickを作成できる確率",
  "uts.truemodifierchances.enabled": "実際のモディファイア確率 (最小/最大 = 上限)",
  "uts.mapping.option_name": "会議中のマップピン（マップをクリック）",

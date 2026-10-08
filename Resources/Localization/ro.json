@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Impostori maximi",
  "uts.impcount.refill_option": "Sidekick completează doar un Impostor lipsă (min < max)",
  "uts.impcount.allow_more_option": "Permite mai mulți Impostori decât în vanilla",
+ "uts.lobbysize.limit_option": "Dimensiunea maximă a lobby-ului (/size)",
+ "uts.lobbysize.applied": "Dimensiunea lobby-ului setată la {0} jucători (limită {1}). Peste 15 jucători este experimental.",
  "uts.impcount.sidekick_chance_option": "Șansa ca Jackal să poată crea un Sidekick",
  "uts.truemodifierchances.enabled": "Șanse reale pentru modificatori (Min/Max = plafon)",
  "uts.mapping.option_name": "Ping pe hartă în ședință (clic pe hartă)",

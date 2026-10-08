@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Impostor Maksimum",
  "uts.impcount.refill_option": "Sidekick hanya mengisi Impostor yang kurang (Min < Maks)",
  "uts.impcount.allow_more_option": "Izinkan lebih banyak Impostor daripada vanilla",
+ "uts.lobbysize.limit_option": "Ukuran lobi maksimum (/size)",
+ "uts.lobbysize.applied": "Ukuran lobi diatur ke {0} pemain (batas {1}). Lebih dari 15 pemain bersifat eksperimental.",
  "uts.impcount.sidekick_chance_option": "Peluang Jackal Bisa Membuat Sidekick",
  "uts.truemodifierchances.enabled": "Peluang Modifier Sebenarnya (Min/Maks = batas)",
  "uts.mapping.option_name": "Ping Peta Saat Rapat (Klik Peta)",

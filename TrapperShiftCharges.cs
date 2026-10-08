@@ -37,15 +37,21 @@ namespace UsefulTORStuff {
         // "local player was NOT the trapper -> now IS the trapper" without any game-start bookkeeping.
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.shifterShift))]
         static class ShifterShiftPatch {
+            // Holder before the shift, on every client: selfLimping is synced to all of them, so a
+            // change of hands has to clear it everywhere, not only on the old and new holder.
+            private static byte prevTrapperId = byte.MaxValue;
+
             public static void Prefix(out bool __state) {
                 __state = Trapper.trapper != null && Trapper.trapper == PlayerControl.LocalPlayer;
+                prevTrapperId = Trapper.trapper != null ? Trapper.trapper.PlayerId : byte.MaxValue;
             }
 
             public static void Postfix(bool __state) {
                 try {
                     bool localIsTrapperNow = Trapper.trapper != null && Trapper.trapper == PlayerControl.LocalPlayer;
                     // The role changed hands: the self-limp was the old holder's (audit 04.10.).
-                    if (localIsTrapperNow != __state) TrapperLimp.ResetSelfLimp();
+                    byte nowTrapperId = Trapper.trapper != null ? Trapper.trapper.PlayerId : byte.MaxValue;
+                    if (localIsTrapperNow != __state || nowTrapperId != prevTrapperId) TrapperLimp.ResetSelfLimp();
                     // The traps in the world go with the role: TOR only shows them to whoever placed
                     // them (audit 04.10.). A living former Trapper loses the view, the new one gets it.
                     if (localIsTrapperNow && !__state) TrapperExtras.SetTrapsVisible(true);

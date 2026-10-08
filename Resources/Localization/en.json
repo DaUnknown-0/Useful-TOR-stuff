@@ -1091,6 +1091,8 @@
   "uts.impcount.max_option": "Maximum Impostors",
   "uts.impcount.refill_option": "Sidekick Only Fills A Missing Impostor (Min < Max)",
   "uts.impcount.allow_more_option": "Allow More Impostors Than Vanilla",
+  "uts.lobbysize.limit_option": "Maximum Lobby Size (/size)",
+  "uts.lobbysize.applied": "Lobby size set to {0} players (limit {1}). More than 15 players is experimental.",
   "uts.impcount.sidekick_chance_option": "Chance That The Jackal Can Create A Sidekick",
   "uts.truemodifierchances.enabled": "True Modifier Chances (Min/Max = Cap)",
   "uts.mapping.option_name": "Meeting Map Ping (Click On Map)",

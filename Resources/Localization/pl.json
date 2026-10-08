@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Maksymalna liczba Impostorów",
  "uts.impcount.refill_option": "Sidekick uzupełnia tylko brakującego Impostora (min < maks.)",
  "uts.impcount.allow_more_option": "Zezwól na więcej Impostorów niż w wersji podstawowej",
+ "uts.lobbysize.limit_option": "Maksymalny rozmiar lobby (/size)",
+ "uts.lobbysize.applied": "Rozmiar lobby ustawiono na {0} graczy (limit {1}). Więcej niż 15 graczy jest eksperymentalne.",
  "uts.impcount.sidekick_chance_option": "Szansa, że Jackal może stworzyć Sidekicka",
  "uts.truemodifierchances.enabled": "Prawdziwe szanse modyfikatorów (Min/Maks = limit)",
  "uts.mapping.option_name": "Ping na mapie podczas zebrania (kliknij mapę)",

@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Maximum Impostorok",
  "uts.impcount.refill_option": "A Sidekick csak hiányzó Impostort pótol (Min < Max)",
  "uts.impcount.allow_more_option": "Több Impostor engedélyezése, mint a vanillában",
+ "uts.lobbysize.limit_option": "Maximális lobbyméret (/size)",
+ "uts.lobbysize.applied": "A lobby mérete {0} játékosra állítva (korlát: {1}). 15 játékosnál több kísérleti.",
  "uts.impcount.sidekick_chance_option": "Az esély, hogy a Jackal létrehozhat egy Sidekicket",
  "uts.truemodifierchances.enabled": "Valódi módosító esélyek (Min/Max = felső határ)",
  "uts.mapping.option_name": "Térkép-jelölés gyűlés alatt (kattints a térképre)",

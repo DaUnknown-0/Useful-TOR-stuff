@@ -161,31 +161,60 @@ namespace UsefulTORStuff {
             }
 
             // ---- 1. release list (URL built from the catalog, never received) ----
-            var www = new UnityWebRequest();
-            www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
-            www.SetUrl(job.Catalog.ReleasesApiUrl);
-            // GitHub rejects clients without a User-Agent (same fix as UsefulTORStuffUpdater).
-            www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
-            www.downloadHandler = new DownloadHandlerBuffer();
-            var op = www.SendWebRequest();
-            while (!op.isDone) yield return new WaitForEndOfFrame();
-
-            if (www.isNetworkError || www.isHttpError) {
-                www.downloadHandler.Dispose(); www.Dispose();
-                Fail(job, "uts.modsync.error_network");
-                yield break;
+            // Our own mods go without the REST API (60 requests per hour, see ReleaseFeed): an exact
+            // version is one known download URL (tags are vX.Y.Z / vX.Y.Z.W), "the newest" comes from
+            // the Atom feed. Submerged keeps the API: its tag scheme is not ours.
+            List<GithubRelease> releases = null;
+            if (!job.Catalog.External && job.Mode == JobMode.Exact) {
+                releases = new List<GithubRelease> { Synthetic(job.Catalog, "v" + TagVersion(job.TargetVersion)) };
+            } else if (!job.Catalog.External) {
+                var feed = new UnityWebRequest();
+                feed.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
+                feed.SetUrl(ReleaseFeed.Url(job.Catalog.RepositoryOwner, job.Catalog.RepositoryName));
+                feed.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
+                feed.downloadHandler = new DownloadHandlerBuffer();
+                feed.timeout = 15; // without a limit a hanging request kept the pump (running) busy for good
+                var fop = feed.SendWebRequest();
+                while (!fop.isDone) yield return new WaitForEndOfFrame();
+                try {
+                    if (!feed.isNetworkError && !feed.isHttpError) {
+                        var entries = ReleaseFeed.Parse(feed.downloadHandler.text);
+                        if (entries.Count > 0) releases = entries.Select(e => Synthetic(job.Catalog, e.Tag)).ToList();
+                    }
+                } catch (Exception ex) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[ModSync] {job.Catalog.DisplayName}: release feed unreadable ({ex.Message}), asking the API.");
+                } finally {
+                    feed.downloadHandler.Dispose(); feed.Dispose();
+                }
             }
 
-            List<GithubRelease> releases = null;
-            // No yield inside, so try/catch is allowed here. A rate-limited GitHub answers with a
-            // JSON object instead of an array; that must not throw out of the coroutine.
-            try {
-                releases = JsonSerializer.Deserialize<List<GithubRelease>>(www.downloadHandler.text);
-            } catch (Exception ex) {
-                UsefulTORStuffPlugin.Logger?.LogWarning(
-                    $"[ModSync] {job.Catalog.DisplayName}: release list unreadable ({ex.Message}).");
-            } finally {
-                www.downloadHandler.Dispose(); www.Dispose();
+            if (releases == null) {
+                var www = new UnityWebRequest();
+                www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
+                www.SetUrl(job.Catalog.ReleasesApiUrl);
+                // GitHub rejects clients without a User-Agent (same fix as UsefulTORStuffUpdater).
+                www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
+                www.downloadHandler = new DownloadHandlerBuffer();
+                www.timeout = 15;
+                var op = www.SendWebRequest();
+                while (!op.isDone) yield return new WaitForEndOfFrame();
+
+                if (www.isNetworkError || www.isHttpError) {
+                    www.downloadHandler.Dispose(); www.Dispose();
+                    Fail(job, "uts.modsync.error_network");
+                    yield break;
+                }
+
+                // No yield inside, so try/catch is allowed here. A rate-limited GitHub answers with a
+                // JSON object instead of an array; that must not throw out of the coroutine.
+                try {
+                    releases = JsonSerializer.Deserialize<List<GithubRelease>>(www.downloadHandler.text);
+                } catch (Exception ex) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning(
+                        $"[ModSync] {job.Catalog.DisplayName}: release list unreadable ({ex.Message}).");
+                } finally {
+                    www.downloadHandler.Dispose(); www.Dispose();
+                }
             }
 
             if (releases == null || releases.Count == 0) {
@@ -310,6 +339,21 @@ namespace UsefulTORStuff {
             UsefulTORStuffPlugin.Logger?.LogInfo(
                 $"[ModSync] installed {job.Catalog.DisplayName} v{job.TargetVersion} -> {filePath} (restart required).");
         }
+
+        // A release as the feed or a known version describes it: the tag and the catalog's file at
+        // the github.com download URL (no size known; the MZ check below still guards the write).
+        [HideFromIl2Cpp]
+        private static GithubRelease Synthetic(CatalogEntry entry, string tag) => new GithubRelease {
+            Tag = tag,
+            Assets = new List<GithubAsset> { new GithubAsset {
+                Name = entry.AssetName,
+                DownloadUrl = ReleaseFeed.DownloadUrl(entry.RepositoryOwner, entry.RepositoryName, tag, entry.AssetName) } }
+        };
+
+        // our tags: three parts, the fourth only on test builds
+        [HideFromIl2Cpp]
+        private static string TagVersion(Version v) =>
+            v.Revision > 0 ? $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}" : $"{v.Major}.{v.Minor}.{Math.Max(0, v.Build)}";
 
         [HideFromIl2Cpp]
         private static void Fail(SyncJob job, string errorKey) {

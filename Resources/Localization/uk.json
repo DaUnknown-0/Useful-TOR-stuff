@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "Максимум Зрадників",
  "uts.impcount.refill_option": "Sidekick лише заповнює відсутнього Impostor (мін < макс)",
  "uts.impcount.allow_more_option": "Дозволити більше Impostor, ніж у ванілі",
+ "uts.lobbysize.limit_option": "Максимальний розмір лобі (/size)",
+ "uts.lobbysize.applied": "Розмір лобі встановлено на {0} гравців (ліміт {1}). Понад 15 гравців: експериментально.",
  "uts.impcount.sidekick_chance_option": "Шанс, що Jackal може створити Sidekick",
  "uts.truemodifierchances.enabled": "Справжні шанси модифікаторів (Мін/Макс = межа)",
  "uts.mapping.option_name": "Мітка на мапі під час зборів (клік по мапі)",

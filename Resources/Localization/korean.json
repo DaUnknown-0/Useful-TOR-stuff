@@ -1080,6 +1080,8 @@
  "uts.impcount.max_option": "최대 임포스터 수",
  "uts.impcount.refill_option": "Sidekick은 부족한 임포스터만 채움 (Min < Max)",
  "uts.impcount.allow_more_option": "바닐라보다 많은 Impostor 허용",
+ "uts.lobbysize.limit_option": "최대 로비 인원 (/size)",
+ "uts.lobbysize.applied": "로비 인원을 {0}명으로 설정했습니다 (한도 {1}). 15명 초과는 실험적 기능입니다.",
  "uts.impcount.sidekick_chance_option": "Jackal가 Sidekick을 생성할 수 있는 확률",
  "uts.truemodifierchances.enabled": "실제 모디파이어 확률 (최소/최대 = 상한)",
  "uts.mapping.option_name": "회의 중 지도 핑 (지도 클릭)",
