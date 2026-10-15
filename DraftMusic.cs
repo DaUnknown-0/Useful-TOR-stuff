@@ -419,7 +419,7 @@ namespace UsefulTORStuff {
         private static void RestoreTorSource() {
             try {
                 var tor = TorClip();
-                var sm = SoundManager.Instance;
+                var sm = SoundManager.instance;
                 if (tor == null || sm == null || !sm.allSources.TryGetValue(tor, out var src) || src == null) return;
                 if (src.clip == tor) return;
                 src.Stop();
@@ -465,7 +465,7 @@ namespace UsefulTORStuff {
             if (clip == null) return;   // still decoding: TOR's track plays until the clip is ready
 
             var tor = TorClip();
-            var sm = SoundManager.Instance;
+            var sm = SoundManager.instance;
             if (tor == null || sm == null) return;
             AudioSource src = null;
             try { if (!sm.allSources.TryGetValue(tor, out src)) src = null; } catch { src = null; }
@@ -483,7 +483,7 @@ namespace UsefulTORStuff {
         private static void ApplyDraftVolume() {
             try {
                 var tor = TorClip();
-                var sm = SoundManager.Instance;
+                var sm = SoundManager.instance;
                 if (tor == null || sm == null || !sm.allSources.TryGetValue(tor, out var src) || src == null) return;
                 float v = Mathf.Clamp01(Slot.Level);              // TOR plays at 1: above 100 % is not possible here
                 if (!Mathf.Approximately(src.volume, v)) src.volume = v;
@@ -495,7 +495,7 @@ namespace UsefulTORStuff {
         private static void RestoreIfOurs() {
             try {
                 var tor = TorClip();
-                var sm = SoundManager.Instance;
+                var sm = SoundManager.instance;
                 if (tor == null || sm == null || !sm.allSources.TryGetValue(tor, out var src) || src == null) return;
                 if (src.clip == tor || !src.isPlaying) return;
                 src.clip = tor;
@@ -561,7 +561,7 @@ namespace UsefulTORStuff {
             }
             if (clip == null) return;   // decoding; Update retries
             try {
-                var sm = SoundManager.Instance;
+                var sm = SoundManager.instance;
                 if (sm == null) return;
                 sm.PlaySound(clip, true, 1f, sm.MusicChannel);
                 previewClip = clip;
@@ -574,7 +574,7 @@ namespace UsefulTORStuff {
         internal static void StopPreview() {
             previewWanted = null;
             if (previewClip != null) {
-                try { SoundManager.Instance?.StopSound(previewClip); } catch { }
+                try { SoundManager.instance?.StopSound(previewClip); } catch { }
                 previewClip = null;
             }
             if (PreviewKey != null) { PreviewKey = null; Changed(); }
@@ -590,7 +590,7 @@ namespace UsefulTORStuff {
             if (previewWanted != null) TryStartPreview();
             if (previewClip != null && PreviewLevel != null) {
                 try {
-                    if (SoundManager.Instance.allSources.TryGetValue(previewClip, out var ps) && ps != null) ps.volume = PreviewLevel();
+                    if (SoundManager.instance.allSources.TryGetValue(previewClip, out var ps) && ps != null) ps.volume = PreviewLevel();
                 } catch { }
             }
             if ((PreviewKey != null || previewWanted != null) && !LobbyScreen.Exists && !DraftMusicUI.DiagActive

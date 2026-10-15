@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.0.2";
+    public const string PluginVersion = "1.5.0.3";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -105,6 +105,7 @@ public class UsefulTORStuffPlugin : BasePlugin
     {
         Logger = Log;
         Logger.LogInfo($"{PluginName} v{PluginVersion} loading...");
+        MusicVolumeDiag.AtLoad(new HarmonyLib.Harmony(PluginGuid + ".soundtrace"));
 
         // Check if this mod is enabled. Early return wenn deaktiviert - ABER der Mod Manager läuft
         // trotzdem (siehe LoadModManagerOnly): dieser Mod BESITZT den Manager, und der Schalter zum

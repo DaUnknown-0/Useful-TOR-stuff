@@ -63,9 +63,9 @@ namespace UsefulTORStuff {
             try {
                 if (!EnableSoundEffects() || !Constants.ShouldPlaySfx()) return false;
                 AudioClip clip = SoundEffectsManager.get(path);
-                if (clip == null || SoundManager.Instance == null || HudManager.Instance == null) return false;
+                if (clip == null || SoundManager.instance == null || HudManager.Instance == null) return false;
 
-                AudioSource source = SoundManager.Instance.PlaySound(clip, false, 1f);
+                AudioSource source = SoundManager.instance.PlaySound(clip, false, 1f);
                 if (source == null) return false;
                 source.loop = loop;
 
@@ -82,7 +82,7 @@ namespace UsefulTORStuff {
                         if (p == 1f) {
                             // Vanilla-managed teardown (keeps SoundManager's bookkeeping intact) -
                             // the original destroyed the shared source here and corrupted it.
-                            if (source.isPlaying) SoundManager.Instance?.StopSound(clip);
+                            if (source.isPlaying) SoundManager.instance?.StopSound(clip);
                             return;
                         }
                         var local = PlayerControl.LocalPlayer;

@@ -81,8 +81,8 @@ namespace UsefulTORStuff {
         private static void Play(string name, float volume) {
             try {
                 var clip = GetClip(name);
-                if (clip == null || SoundManager.Instance == null) return;
-                SoundManager.Instance.PlaySound(clip, false, volume);
+                if (clip == null || SoundManager.instance == null) return;
+                SoundManager.instance.PlaySound(clip, false, volume);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[UTSAssets] Play {name} failed: {e.Message}");
             }

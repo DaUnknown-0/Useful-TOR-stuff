@@ -92,7 +92,7 @@ namespace UsefulTORStuff {
                 var c = DraftMusic.Get(playing);
                 if (c == null) return;                                 // still decoding
                 try {
-                    var sm = SoundManager.Instance;
+                    var sm = SoundManager.instance;
                     if (sm == null) return;
                     source = sm.PlaySound(c, true, 0f, sm.MusicChannel);
                     clip = c;
@@ -111,7 +111,7 @@ namespace UsefulTORStuff {
             fade = Mathf.Max(0f, fade - Time.deltaTime / 1.0f);
             Apply();
             if (fade > 0f && source != null) return;
-            try { if (clip != null) SoundManager.Instance?.StopSound(clip); } catch { }
+            try { if (clip != null) SoundManager.instance?.StopSound(clip); } catch { }
             source = null; clip = null; playing = null; ending = false;
         }
     }

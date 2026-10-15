@@ -553,7 +553,7 @@ namespace UsefulTORStuff {
         private static AudioSource TorSource() {
             try {
                 var tor = DraftMusic.TorClip();
-                var sm = SoundManager.Instance;
+                var sm = SoundManager.instance;
                 if (tor != null && sm != null && sm.allSources.TryGetValue(tor, out var src)) return src;
             } catch { }
             return null;
@@ -677,7 +677,7 @@ namespace UsefulTORStuff {
             AudioSource ms = null;
             try {
                 var lofi = DraftMusic.Get(DraftMusic.Find(MeetingMusic.CurrentKey));
-                if (lofi != null && SoundManager.Instance.allSources.TryGetValue(lofi, out var s)) ms = s;
+                if (lofi != null && SoundManager.instance.allSources.TryGetValue(lofi, out var s)) ms = s;
             } catch { }
             DiagLog($"meeting: hud {MeetingHud.Instance != null}, music {(ms == null ? "NONE" : $"playing {ms.isPlaying}, volume {ms.volume:F2}, clip '{ms.clip?.name}'")}");
             yield return DiagShot("meeting");

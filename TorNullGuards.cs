@@ -283,8 +283,8 @@ namespace UsefulTORStuff {
                     // Reproduce the original faithfully, minus the name it cannot resolve. Doing
                     // nothing instead would leave the start state stuck for everyone.
                     if (!CustomOptionHolder.anyPlayerCanStopStart.getBool()) return false;
-                    if (SoundManager.Instance != null && GameStartManager.Instance != null)
-                        SoundManager.Instance.StopSound(GameStartManager.Instance.gameStartSound);
+                    if (SoundManager.instance != null && GameStartManager.Instance != null)
+                        SoundManager.instance.StopSound(GameStartManager.Instance.gameStartSound);
                     if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) {
                         GameStartManager.Instance?.ResetStartState();
                         PlayerControl.LocalPlayer?.RpcSendChat("A player stopped the game start!");

@@ -57,9 +57,12 @@ namespace UsefulTORStuff {
         }
 
         /// The usual theme: playing, looping, on the game's music channel, longer than 15 s, not ours.
+        /// SoundManager.instance (the field), never .Instance: the property CREATES a SoundManager when none exists yet.
+        /// MenuMusic ticks from the splash on, and that empty one (no mixer) stayed the game's SoundManager for the whole
+        /// session: the game's Music slider reached nothing any more (found 15.10.). Same rule in all music code here.
         internal static AudioSource LongMusicSource(AudioClip ours) {
             UnityEngine.Audio.AudioMixerGroup music = null;
-            try { music = SoundManager.Instance != null ? SoundManager.Instance.MusicChannel : null; } catch { }
+            try { music = SoundManager.instance != null ? SoundManager.instance.MusicChannel : null; } catch { }
             foreach (var a in UnityEngine.Object.FindObjectsOfType<AudioSource>()) {
                 try {
                     if (a == null || !a.isPlaying || !a.loop || a.clip == null || a.clip == ours) continue;
