@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <TargetFramework>net6.0</TargetFramework>
-        <Version>1.5.0</Version>
+        <Version>1.5.0.1</Version>
         <Description>TOR - Forgotten Fixes - Bloody-modifier lag throttle and gated client-side Snitch reveal/map/HUD reimplementation</Description>
         <Authors>DaUnknown-0</Authors>
         <LangVersion>latest</LangVersion>
@@ -31,13 +31,19 @@
         <!-- Localization tables (UTSLocalization): one flat JSON map per language, plus
              vanilla.<code>.json overrides for the non-vanilla (tier B) languages. -->
         <EmbeddedResource Include="Resources\Localization\*.json" LogicalName="UsefulTORStuff.Resources.Localization.%(Filename)%(Extension)" />
+        <!-- Music: not embedded any more; MusicLibrary downloads it on request (catalog in MusicCatalog.cs). -->
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="AmongUs.GameLibs.Steam" Version="2024.10.29" />
         <PackageReference Include="BepInEx.IL2CPP.MSBuild" Version="2.1.0-rc.1" />
         <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.697" />
+        <PackageReference Include="NLayer" Version="1.16.0" />
         <PackageReference Include="Reactor" Version="2.3.1" />
+        <!-- Ogg-Vorbis decoder for the draft music (pure C#, MIT). Merged into UsefulTORStuff.dll by
+             ILRepack.targets so the mod stays a single deliverable file (same setup as UC). -->
+        <PackageReference Include="NVorbis" Version="0.10.5" />
+        <PackageReference Include="ILRepack.Lib.MSBuild.Task" Version="2.0.34.2" PrivateAssets="all" />
     </ItemGroup>
 
     <!-- TOR DLL location: defaults to the local build, overridable in CI via -p:TheOtherRolesDll=... -->
@@ -53,7 +59,8 @@
         </Reference>
     </ItemGroup>
 
-    <Target Name="CopyCustomContent" AfterTargets="AfterBuild" Condition="Exists('$(AmongUsLatest)/BepInEx/plugins/')">
+    <!-- After ILRepacker (ILRepack.targets), so the plugins folder always gets the MERGED DLL. -->
+    <Target Name="CopyCustomContent" AfterTargets="ILRepacker" Condition="Exists('$(AmongUsLatest)/BepInEx/plugins/')">
         <Message Text="Copying UsefulTORStuff to BepInEx plugins" />
         <Copy SourceFiles="$(ProjectDir)\bin\$(Configuration)\net6.0\UsefulTORStuff.dll" DestinationFolder="$(AmongUsLatest)/BepInEx/plugins/" />
     </Target>

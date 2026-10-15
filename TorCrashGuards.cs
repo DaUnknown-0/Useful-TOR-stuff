@@ -324,7 +324,7 @@ namespace UsefulTORStuff {
             // Trap is internal to TOR; trapPlayerIdMap is keyed on the internal Trap type itself, so
             // (unlike M-47b's PropHunt dictionaries) it cannot be cast to a named generic Dictionary
             // from outside - read through the non-generic IDictionary interface instead.
-            private static readonly Type trapType = AccessTools.TypeByName("TheOtherRoles.Objects.Trap");
+            private static readonly Type trapType = TorType.Get("TheOtherRoles.Objects.Trap");
             private static readonly FieldInfo trapPlayerIdMapField = AccessTools.Field(trapType, "trapPlayerIdMap");
 
             // A Prefix on the vanilla MapBehaviour.FixedUpdate always runs before every Postfix on the
@@ -362,7 +362,7 @@ namespace UsefulTORStuff {
         // ── M-36, second half) resetNightVision's dead-body loop must survive a disconnected owner ─
         [HarmonyPatch]
         static class ResetNightVisionDeadBodyGuardPatch {
-            private static readonly Type surveillanceType = AccessTools.TypeByName("TheOtherRoles.Patches.SurveillanceMinigamePatch");
+            private static readonly Type surveillanceType = TorType.Get("TheOtherRoles.Patches.SurveillanceMinigamePatch");
             private static readonly FieldInfo overlaysField = AccessTools.Field(surveillanceType, "nightVisionOverlays");
             private static readonly FieldInfo isActiveField = AccessTools.Field(surveillanceType, "nightVisionIsActive");
 
@@ -480,7 +480,7 @@ namespace UsefulTORStuff {
         // ── M-47b) a duplicate PropHunt effect trigger must refresh the timer, not throw ─────────
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.propHuntSetRevealed))]
         static class PropHuntSetRevealedPatch {
-            private static readonly Type propHuntType = AccessTools.TypeByName("TheOtherRoles.CustomGameModes.PropHunt");
+            private static readonly Type propHuntType = TorType.Get("TheOtherRoles.CustomGameModes.PropHunt");
             private static readonly FieldInfo revealedField = AccessTools.Field(propHuntType, "isCurrentlyRevealed");
             private static readonly FieldInfo revealDurationField = AccessTools.Field(propHuntType, "revealDuration");
             private static readonly FieldInfo timerField = AccessTools.Field(propHuntType, "timer");
@@ -503,7 +503,7 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.propHuntSetInvis))]
         static class PropHuntSetInvisPatch {
-            private static readonly Type propHuntType = AccessTools.TypeByName("TheOtherRoles.CustomGameModes.PropHunt");
+            private static readonly Type propHuntType = TorType.Get("TheOtherRoles.CustomGameModes.PropHunt");
             private static readonly FieldInfo invisField = AccessTools.Field(propHuntType, "invisPlayers");
             private static readonly FieldInfo invisDurationField = AccessTools.Field(propHuntType, "invisDuration");
 
@@ -521,7 +521,7 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.propHuntSetSpeedboost))]
         static class PropHuntSetSpeedboostPatch {
-            private static readonly Type propHuntType = AccessTools.TypeByName("TheOtherRoles.CustomGameModes.PropHunt");
+            private static readonly Type propHuntType = TorType.Get("TheOtherRoles.CustomGameModes.PropHunt");
             private static readonly FieldInfo speedboostField = AccessTools.Field(propHuntType, "speedboostActive");
             private static readonly FieldInfo speedboostDurationField = AccessTools.Field(propHuntType, "speedboostDuration");
 

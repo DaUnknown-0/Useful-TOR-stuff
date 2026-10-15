@@ -4,13 +4,15 @@
 /*
  * ModManagerUI - the Mod Manager panel in the main menu, drawn with VanillaUI (lobby-pane look).
  *
- * Three tabs:
+ * Four tabs:
  *   Installed  every mod that registered itself (ModManagerRegistry): on/off for the next start,
  *              update check and download through the mod's own updater, release notes, GitHub link
  *   All mods   the whole catalog (UTSModCatalog): what is installed, switched off or missing, with a
  *              download of the newest release for anything missing (UTSModDownloader)
  *   Modpacks   named selections (UTSModpacks): save the current set-up, apply a pack, share it as a
  *              code through the clipboard, import a code, delete
+ *   Music      the built-in music of the music panel (MusicLibrary): download all of it after a confirmation,
+ *              or single songs; delete single songs or all
  * The header keeps the "Update all" button and the shared test-versions switch (which also switches
  * every mod's update channel after a confirmation).
  */
@@ -34,7 +36,7 @@ namespace UsefulTORStuff
         public ModManagerUI(IntPtr ptr) : base(ptr) { }
 
         private GameObject _popup;
-        private enum Tab { Installed, Catalog, Modpacks }
+        private enum Tab { Installed, Catalog, Modpacks, Music }
         private Tab _tab = Tab.Installed;
 
         // References per installed-mod card so the polling coroutine can update the download state
@@ -58,6 +60,17 @@ namespace UsefulTORStuff
             public GameObject DownloadButton;
         }
         private readonly List<CatalogRefs> _catalogRefs = new List<CatalogRefs>();
+
+        // References per song row of the Music tab, refreshed while downloads run.
+        private class MusicRefs
+        {
+            public DraftMusic.Track Track;
+            public TMPro.TextMeshProUGUI StatusText, ButtonText;
+            public GameObject Button;
+        }
+        private readonly List<MusicRefs> _musicRefs = new List<MusicRefs>();
+        private TMPro.TextMeshProUGUI _musicSummary, _musicLoadText;
+        private GameObject _musicLoadButton;
 
         private bool _updateAllRunning;
         private GameObject _updateAllButton;
@@ -206,13 +219,14 @@ namespace UsefulTORStuff
         /// <summary>Autotest (UIGallery): switch to a tab by index while the panel is open.</summary>
         public void DiagShowTab(int index)
         {
-            _tab = (Tab)Mathf.Clamp(index, 0, 2);
+            _tab = (Tab)Mathf.Clamp(index, 0, 3);
             if (_popup != null) Rebuild();
         }
 
         private void Rebuild()
         {
-            _entryRefs.Clear(); _catalogRefs.Clear();
+            _entryRefs.Clear(); _catalogRefs.Clear(); _musicRefs.Clear();
+            _musicSummary = null; _musicLoadText = null; _musicLoadButton = null;
             _renameLabel = null; _restartButton = null;
             EnableBackgroundUI();
             if (_popup != null) { Destroy(_popup); _popup = null; }
@@ -280,9 +294,10 @@ namespace UsefulTORStuff
         private void BuildHeader(GameObject panel, float y)
         {
             float x = VanillaUI.FrameW + Inset;
-            TabButton(panel, Tab.Installed, UTSLocalization.Tr("uts.modmanagerui.tab_installed"), x, y); x += 196;
-            TabButton(panel, Tab.Catalog, UTSLocalization.Tr("uts.modmanagerui.tab_catalog"), x, y); x += 196;
-            TabButton(panel, Tab.Modpacks, UTSLocalization.Tr("uts.modmanagerui.tab_modpacks"), x, y);
+            TabButton(panel, Tab.Installed, UTSLocalization.Tr("uts.modmanagerui.tab_installed"), x, y); x += TabStep;
+            TabButton(panel, Tab.Catalog, UTSLocalization.Tr("uts.modmanagerui.tab_catalog"), x, y); x += TabStep;
+            TabButton(panel, Tab.Modpacks, UTSLocalization.Tr("uts.modmanagerui.tab_modpacks"), x, y); x += TabStep;
+            TabButton(panel, Tab.Music, UTSLocalization.Tr("uts.modmanagerui.tab_music"), x, y);
 
             // test versions (right) and update all (left of it)
             _testVersionToggle = VanillaUI.Button(panel, "", new Vector2(-VanillaUI.FrameW - Inset, y), new Vector2(230, 40), VanillaUI.Grey,
@@ -306,10 +321,13 @@ namespace UsefulTORStuff
             _restartButton.SetActive(UTSRestart.Needed());
         }
 
+        // four tabs left of "Update all"
+        private const float TabStep = 158f;
+
         private void TabButton(GameObject panel, Tab tab, string label, float x, float y)
         {
             bool sel = _tab == tab;
-            VanillaUI.Button(panel, label, new Vector2(x, y), new Vector2(186, 40), sel ? VanillaUI.TealBright : VanillaUI.Teal,
+            VanillaUI.Button(panel, label, new Vector2(x, y), new Vector2(TabStep - 8, 40), sel ? VanillaUI.TealBright : VanillaUI.Teal,
                 () => { if (_tab != tab) { _tab = tab; Rebuild(); } }, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1));
         }
 
@@ -558,6 +576,10 @@ namespace UsefulTORStuff
                     break;
                 case Tab.Modpacks:
                     yPos = CreateModpackRows(content, yPos);
+                    break;
+                case Tab.Music:
+                    _musicRefs.Clear();
+                    yPos = CreateMusicRows(content, yPos);
                     break;
             }
             contentRect.sizeDelta = new Vector2(0, Mathf.Abs(yPos) + 12);
@@ -992,6 +1014,101 @@ namespace UsefulTORStuff
         }
 
         // ====================================================================
+        // Tab 4: music (nothing is downloaded before the player confirms)
+        // ====================================================================
+        private float CreateMusicRows(GameObject parent, float yPos)
+        {
+            var hint = VanillaUI.Text(parent, UTSLocalization.Tr("uts.modmanagerui.music_hint"), 14, VanillaUI.Muted, new Vector2(4, yPos), new Vector2(1100, 40));
+            hint.enableWordWrapping = true;
+            yPos -= 46;
+            _musicLoadButton = VanillaUI.Button(parent, "", new Vector2(4, yPos), new Vector2(300, 44), VanillaUI.Pink, () => {
+                if (MusicLibrary.Busy) return;
+                var missing = MusicLibrary.Missing();
+                if (missing.Count == 0) return;
+                ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.music_load_title"),
+                    UTSLocalization.Tr("uts.modmanagerui.music_load_msg", missing.Count, MusicLibrary.Mb(MusicLibrary.Bytes(missing))),
+                    MusicLibrary.DownloadAll);
+            }, out _musicLoadText, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1));
+            VanillaUI.Button(parent, UTSLocalization.Tr("uts.modmanagerui.music_delete_all"), new Vector2(316, yPos), new Vector2(260, 44), VanillaUI.Red, () => {
+                var here = MusicLibrary.AllVersions.Where(MusicLibrary.Ready).ToList();
+                if (here.Count == 0) return;
+                ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.music_delete_all"),
+                    UTSLocalization.Tr("uts.modmanagerui.music_delete_msg", here.Count, MusicLibrary.Mb(MusicLibrary.Bytes(here))),
+                    MusicLibrary.DeleteAll);
+            }, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1));
+            _musicSummary = VanillaUI.Text(parent, "", 15, VanillaUI.Muted, new Vector2(592, yPos - 10), new Vector2(560, 30));
+            yPos -= 58;
+
+            foreach (var kind in MusicLibrary.Kinds)
+            {
+                foreach (var v in kind.Versions)
+                {
+                    var row = VanillaUI.Row(parent, yPos, 46, 2);
+                    VanillaUI.Label(row, kind.Style, 15, VanillaUI.Muted, new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
+                        new Vector2(16, 0), new Vector2(220, 0), TMPro.TextAlignmentOptions.Left);
+                    VanillaUI.Label(row, v.Title, 17, Color.white, new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
+                        new Vector2(244, 0), new Vector2(360, 0), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.Bold);
+                    var refs = new MusicRefs { Track = v };
+                    refs.StatusText = VanillaUI.Label(row, "", 14, VanillaUI.Muted, new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
+                        new Vector2(620, 0), new Vector2(300, 0), TMPro.TextAlignmentOptions.Left);
+                    var track = v;
+                    // the click decides by the state at that moment: delete what is here, download what is not
+                    refs.Button = VanillaUI.Button(row, "", new Vector2(-12, 0), new Vector2(170, 36), VanillaUI.Grey, () => {
+                        if (MusicLibrary.Ready(track)) MusicLibrary.Delete(track);
+                        else MusicLibrary.Download(track);
+                        RefreshMusic();
+                    }, out refs.ButtonText, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+                    _musicRefs.Add(refs);
+                    yPos -= 52;
+                }
+            }
+            _musicShownVersion = -1;
+            RefreshMusic();
+            return yPos;
+        }
+
+        private int _musicShownVersion = -1;
+
+        private void RefreshMusic()
+        {
+            if (_tab != Tab.Music || _musicSummary == null || _musicShownVersion == DraftMusic.Version) return;
+            _musicShownVersion = DraftMusic.Version;
+            var all = MusicLibrary.AllVersions.ToList();
+            var here = all.Where(MusicLibrary.Ready).ToList();
+            int deleted = all.Count(MusicLibrary.IsDeleted);
+            VanillaUI.SetText(_musicSummary, UTSLocalization.Tr("uts.modmanagerui.music_summary", here.Count, all.Count,
+                MusicLibrary.Mb(MusicLibrary.Bytes(here)), deleted));
+            var missing = MusicLibrary.Missing();
+            if (_musicLoadButton != null)
+            {
+                bool can = !MusicLibrary.Busy && missing.Count > 0;
+                VanillaUI.SetText(_musicLoadText, MusicLibrary.Busy ? UTSLocalization.Tr("uts.music.loading_left", MusicLibrary.Pending)
+                    : missing.Count > 0 ? UTSLocalization.Tr("uts.music.load", MusicLibrary.Mb(MusicLibrary.Bytes(missing)))
+                    : UTSLocalization.Tr("uts.music.loaded"));
+                VanillaUI.Recolor(_musicLoadButton, can ? VanillaUI.Pink : VanillaUI.Grey);
+            }
+            foreach (var r in _musicRefs)
+            {
+                var t = r.Track;
+                var dl = MusicLibrary.StateOf(t);
+                bool ready = MusicLibrary.Ready(t);
+                string status; Color col = VanillaUI.Muted;
+                if (dl == MusicLibrary.Dl.Running) { status = UTSLocalization.Tr("uts.music.downloading", Mathf.RoundToInt(MusicLibrary.Progress(t) * 100f)); col = VanillaUI.Blue; }
+                else if (dl == MusicLibrary.Dl.Queued) { status = UTSLocalization.Tr("uts.music.queued"); col = VanillaUI.Blue; }
+                else if (dl == MusicLibrary.Dl.Failed) { status = UTSLocalization.Tr("uts.music.download_failed"); col = VanillaUI.Bad; }
+                else if (ready) { status = UTSLocalization.Tr("uts.music.ready", MusicLibrary.Mb(t.Size)); col = VanillaUI.Good; }
+                else if (MusicLibrary.IsDeleted(t)) { status = UTSLocalization.Tr("uts.music.deleted"); col = VanillaUI.Warn; }
+                else status = UTSLocalization.Tr("uts.music.not_loaded_size", MusicLibrary.Mb(t.Size));
+                r.StatusText.color = col;
+                VanillaUI.SetText(r.StatusText, status);
+                bool busy = dl == MusicLibrary.Dl.Running || dl == MusicLibrary.Dl.Queued;
+                if (r.Button.activeSelf == busy) r.Button.SetActive(!busy);
+                VanillaUI.SetText(r.ButtonText, UTSLocalization.Tr(ready ? "uts.music.delete" : "uts.music.download"));
+                VanillaUI.Recolor(r.Button, ready ? VanillaUI.Red : VanillaUI.Pink);
+            }
+        }
+
+        // ====================================================================
         // Polling while the panel is open
         // ====================================================================
         // Each Build starts a new poller; a Rebuild or a quick Hide/Show must end the old one,
@@ -1010,6 +1127,7 @@ namespace UsefulTORStuff
                     if (!r.NotesShown && NotesWaiting(r.Mod)) rebuildForNotes = true;
                 }
                 foreach (var c in _catalogRefs) RefreshCatalogRow(c);
+                RefreshMusic();
                 // an update found by the re-check AFTER the panel was built: its release notes only
                 // exist in a fresh build (audit 04.10.). Once.
                 if (rebuildForNotes && !_updateAllRunning && !_rebuiltForNotes)
@@ -1033,7 +1151,7 @@ namespace UsefulTORStuff
             try
             {
                 IsUIOpen = false;
-                _entryRefs.Clear(); _catalogRefs.Clear();
+                _entryRefs.Clear(); _catalogRefs.Clear(); _musicRefs.Clear();
                 EnableBackgroundUI();
                 if (_popup != null) { Destroy(_popup); _popup = null; }
                 _tab = Tab.Installed;

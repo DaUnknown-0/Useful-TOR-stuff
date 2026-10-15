@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.0";
+    public const string PluginVersion = "1.5.0.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -147,6 +147,11 @@ public class UsefulTORStuffPlugin : BasePlugin
             + "without an explicit click.");
         UTSRejoin.Bind(Config);
         VipDeathScream.Bind(Config);
+        DraftMusic.Bind(Config);
+        MenuMusic.Bind(Config);
+        LobbyMusic.Bind(Config);
+        MeetingMusic.Bind(Config);
+        ReactorTrack.Bind(Config);
 
         MinDropDistance = Config.Bind(
             "Bloody", "MinDropDistance", 0.35f,
@@ -196,6 +201,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // TOR's 1032-file hat pack decoded to ~600 MB of ARGB32 on every client; this shrinks it
         // to DXT5 without a CPU copy (see HatTextureDiet.cs). Attribute patch, applied by PatchAll.
         HatTextureDiet.Bind(Config);
+        _ = UTSRestart.IsRestart;
 
         var harmony = new Harmony(PluginGuid);
 
@@ -499,6 +505,10 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Lobby panel of the session statistics (host and guests); also drives the host's sending.
         AddComponent<SessionStatsUI>();
+
+        // Draft music: every player's own pick for TOR's Role Draft (driver + lobby panel).
+        AddComponent<DraftMusicDriver>();
+        AddComponent<DraftMusicUI>();
 
         // Memory heartbeat for the crash log (see CrashDiagnostics.cs).
         AddComponent<CrashDiagnosticsTicker>();

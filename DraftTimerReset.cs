@@ -38,7 +38,7 @@ namespace UsefulTORStuff {
             try {
                 if (!resolved) {
                     resolved = true;
-                    var t = AccessTools.TypeByName("TheOtherRoles.Modules.RoleDraft");
+                    var t = TorType.Get("TheOtherRoles.Modules.RoleDraft");
                     timerField = t != null ? AccessTools.Field(t, "timer") : null;
                     if (timerField == null) UsefulTORStuffPlugin.Logger?.LogWarning("[DraftTimerReset] RoleDraft.timer not found.");
                 }

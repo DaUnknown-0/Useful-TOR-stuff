@@ -64,7 +64,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch]
         private static class TorDestroyPrefixNullGuard {
             private static System.Reflection.MethodBase TargetMethod() =>
-                AccessTools.Method("TheOtherRoles.Patches.ExileControllerWrapUpPatch:Prefix", new[] { typeof(UnityEngine.GameObject) });
+                AccessTools.Method(TorType.Get("TheOtherRoles.Patches.ExileControllerWrapUpPatch"), "Prefix", new[] { typeof(UnityEngine.GameObject) });
 
             private static bool Prepare() => TargetMethod() != null;
 

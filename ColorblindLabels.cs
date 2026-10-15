@@ -83,7 +83,7 @@ namespace UsefulTORStuff {
         // TOR's class is internal; the field itself is public static
         private static System.Reflection.FieldInfo herePointsField;
         internal static Dictionary<byte, SpriteRenderer> HerePoints() {
-            herePointsField ??= AccessTools.Field(AccessTools.TypeByName("TheOtherRoles.Patches.MapBehaviourPatch"), "herePoints");
+            herePointsField ??= AccessTools.Field(TorType.Get("TheOtherRoles.Patches.MapBehaviourPatch"), "herePoints");
             return herePointsField?.GetValue(null) as Dictionary<byte, SpriteRenderer>;
         }
 

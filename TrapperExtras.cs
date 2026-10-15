@@ -118,7 +118,7 @@ namespace UsefulTORStuff {
             if (resolved) return !resolveFailed;
             resolved = true;
             try {
-                var t = AccessTools.TypeByName("TheOtherRoles.Objects.Trap");
+                var t = TorType.Get("TheOtherRoles.Objects.Trap");
                 if (t == null) throw new Exception("type TheOtherRoles.Objects.Trap not found");
                 fTraps = AccessTools.Field(t, "traps");
                 fInstanceId = AccessTools.Field(t, "instanceId");
@@ -390,12 +390,12 @@ namespace UsefulTORStuff {
         [HarmonyPatch]
         internal static class CaptureLogPatch {
             public static MethodBase TargetMethod() {
-                var t = AccessTools.TypeByName("TheOtherRoles.Objects.Trap");
+                var t = TorType.Get("TheOtherRoles.Objects.Trap");
                 return t == null ? null : AccessTools.Method(t, "clearRevealedTraps");
             }
 
             public static bool Prepare() =>
-                AccessTools.TypeByName("TheOtherRoles.Objects.Trap") != null;
+                TorType.Get("TheOtherRoles.Objects.Trap") != null;
 
             public static void Prefix() {
                 try {

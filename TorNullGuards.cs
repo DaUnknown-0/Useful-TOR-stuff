@@ -438,7 +438,7 @@ namespace UsefulTORStuff {
             // private nested Start-coroutine type.
             [HarmonyTargetMethod]
             static MethodBase TargetMethod() {
-                Type type = AccessTools.TypeByName("TheOtherRoles.GameHistory");
+                Type type = TorType.Get("TheOtherRoles.GameHistory");
                 return type == null ? null : AccessTools.Method(type, "overrideDeathReasonAndKiller");
             }
 
@@ -526,7 +526,7 @@ namespace UsefulTORStuff {
             // MeetingHudPatch is internal to TOR's assembly - resolved by name like (8).
             [HarmonyTargetMethod]
             static MethodBase TargetMethod() {
-                Type type = AccessTools.TypeByName("TheOtherRoles.Patches.MeetingHudPatch");
+                Type type = TorType.Get("TheOtherRoles.Patches.MeetingHudPatch");
                 return type == null ? null : AccessTools.Method(type, "guesserOnClick");
             }
 

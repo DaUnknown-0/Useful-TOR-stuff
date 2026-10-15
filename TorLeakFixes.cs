@@ -297,7 +297,7 @@ namespace UsefulTORStuff {
             private static int cachedTaskStep = -1;
             private static string cachedTaskKey;
             private static readonly FieldInfo mapIconsField =
-                AccessTools.Field(AccessTools.TypeByName("TheOtherRoles.Patches.MapBehaviourPatch"), "mapIcons");
+                AccessTools.Field(TorType.Get("TheOtherRoles.Patches.MapBehaviourPatch"), "mapIcons");
 
             private static void RestoreShrunk() {
                 try { if (shrunkIcon != null) shrunkIcon.transform.localScale = baseScale; } catch { }

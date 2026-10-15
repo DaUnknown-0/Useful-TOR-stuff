@@ -155,7 +155,7 @@ namespace UsefulTORStuff {
             // TORMapOptions is internal to TOR - its icon dictionary comes via reflection, resolved
             // once. A failed resolve only costs the icon hiding, never the crash fix.
             private static readonly FieldInfo playerIconsField =
-                AccessTools.Field(AccessTools.TypeByName("TheOtherRoles.TORMapOptions"), "playerIcons");
+                AccessTools.Field(TorType.Get("TheOtherRoles.TORMapOptions"), "playerIcons");
 
             public static bool Prefix() {
                 try {
@@ -224,7 +224,7 @@ namespace UsefulTORStuff {
             // PropHunt is internal to TOR - resolved by name, like TorNullGuards items 8/12.
             [HarmonyTargetMethod]
             static MethodBase TargetMethod() {
-                Type type = AccessTools.TypeByName("TheOtherRoles.CustomGameModes.PropHunt");
+                Type type = TorType.Get("TheOtherRoles.CustomGameModes.PropHunt");
                 return type == null ? null : AccessTools.Method(type, "MakePropImpostorPatch");
             }
 
@@ -244,7 +244,7 @@ namespace UsefulTORStuff {
         static class CustomButtonUpdateGuardPatch {
             // HudManagerStartPatch is internal to TOR; its button fields are public static. The
             // fields are re-read per use because HudManager.Start recreates every button object.
-            private static readonly Type hudButtonsType = AccessTools.TypeByName("TheOtherRoles.HudManagerStartPatch");
+            private static readonly Type hudButtonsType = TorType.Get("TheOtherRoles.HudManagerStartPatch");
             private static readonly FieldInfo witchButtonField = AccessTools.Field(hudButtonsType, "witchSpellButton");
             private static readonly FieldInfo arsonistButtonField = AccessTools.Field(hudButtonsType, "arsonistButton");
 
@@ -312,7 +312,7 @@ namespace UsefulTORStuff {
             private static readonly byte? shareGamemodeRpcId = ResolveShareGamemodeId();
             private static byte? ResolveShareGamemodeId() {
                 try {
-                    Type rpcEnum = AccessTools.TypeByName("TheOtherRoles.CustomRPC");
+                    Type rpcEnum = TorType.Get("TheOtherRoles.CustomRPC");
                     if (rpcEnum == null) return null;
                     return Convert.ToByte(Enum.Parse(rpcEnum, "ShareGamemode"));
                 } catch { return null; }
@@ -446,7 +446,7 @@ namespace UsefulTORStuff {
         static class DraftWatchdogPatch {
             // RoleDraft is internal to TOR - same reflection targets MultiJester and HostFixPlugin
             // already use. Resolved once; a miss disables only this watchdog.
-            private static readonly Type draftType = AccessTools.TypeByName("TheOtherRoles.Modules.RoleDraft");
+            private static readonly Type draftType = TorType.Get("TheOtherRoles.Modules.RoleDraft");
             private static readonly FieldInfo isRunningField = AccessTools.Field(draftType, "isRunning");
             private static readonly FieldInfo pickOrderField = AccessTools.Field(draftType, "pickOrder");
 
@@ -499,7 +499,7 @@ namespace UsefulTORStuff {
         // ── A10) swapperCheckAndReturnSwap must survive missing/stale meeting arrays ───────────
         [HarmonyPatch]
         static class SwapperArraysGuardPatch {
-            private static readonly Type meetingHudPatchType = AccessTools.TypeByName("TheOtherRoles.Patches.MeetingHudPatch");
+            private static readonly Type meetingHudPatchType = TorType.Get("TheOtherRoles.Patches.MeetingHudPatch");
             private static readonly FieldInfo selectionsField = AccessTools.Field(meetingHudPatchType, "selections");
             private static readonly FieldInfo renderersField = AccessTools.Field(meetingHudPatchType, "renderers");
             private static readonly FieldInfo buttonListField = AccessTools.Field(meetingHudPatchType, "swapperButtonList");
@@ -543,7 +543,7 @@ namespace UsefulTORStuff {
         static class NameTagsRebuildPatch {
             [HarmonyTargetMethod]
             static MethodBase TargetMethod() {
-                Type type = AccessTools.TypeByName("TheOtherRoles.Patches.HudManagerUpdatePatch");
+                Type type = TorType.Get("TheOtherRoles.Patches.HudManagerUpdatePatch");
                 return type == null ? null : AccessTools.Method(type, "resetNameTagsAndColors");
             }
 
@@ -648,11 +648,11 @@ namespace UsefulTORStuff {
         [HarmonyPatch]
         static class IntroTeamIconsFixPatch {
             private static readonly PropertyInfo draftEnabledProperty =
-                AccessTools.Property(AccessTools.TypeByName("TheOtherRoles.Modules.RoleDraft"), "isEnabled");
+                AccessTools.Property(TorType.Get("TheOtherRoles.Modules.RoleDraft"), "isEnabled");
 
             [HarmonyTargetMethod]
             static MethodBase TargetMethod() {
-                Type type = AccessTools.TypeByName("TheOtherRoles.Patches.IntroPatch");
+                Type type = TorType.Get("TheOtherRoles.Patches.IntroPatch");
                 return type == null ? null : AccessTools.Method(type, "setupIntroTeamIcons");
             }
 
@@ -736,11 +736,11 @@ namespace UsefulTORStuff {
         // ── B11) the PropHunt disguise preview must keep its size ──────────────────────────────
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         static class PropPreviewScalePatch {
-            private static readonly Type hudButtonsType = AccessTools.TypeByName("TheOtherRoles.HudManagerStartPatch");
+            private static readonly Type hudButtonsType = TorType.Get("TheOtherRoles.HudManagerStartPatch");
             private static readonly FieldInfo propHolderField = AccessTools.Field(hudButtonsType, "propSpriteHolder");
             private static readonly FieldInfo propRendererField = AccessTools.Field(hudButtonsType, "propSpriteRenderer");
             private static readonly FieldInfo isPropHuntField =
-                AccessTools.Field(AccessTools.TypeByName("TheOtherRoles.CustomGameModes.PropHunt"), "isPropHuntGM");
+                AccessTools.Field(TorType.Get("TheOtherRoles.CustomGameModes.PropHunt"), "isPropHuntGM");
 
             // TOR's CouldUse multiplies localScale by 1/bounds.magnitude EVERY frame (Buttons.cs:
             // 2232) - bounds are world-space, so the factor compounds and the preview collapses

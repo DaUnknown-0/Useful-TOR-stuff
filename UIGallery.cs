@@ -6,7 +6,7 @@
  * second player. Config "Diagnostics / UI Gallery Test" (off by default, never ships on).
  *
  * Sequence: main menu -> Mod Manager, one shot per tab -> freeplay on The Skeld -> lobby menu,
- * newcomer shield, early-death shield (host panel and viewer), session statistics, mod sync panel,
+ * newcomer shield, early-death shield (host panel and viewer), session statistics, draft music, mod sync panel,
  * password gate, kill feed, then UC's help panel and Role Control's F7 panel through reflection.
  * Shots land in <game>/UTSShots/gallery_NN_<name>.png; "[UIGallery] done" in the log ends the run.
  *
@@ -153,6 +153,9 @@ namespace UsefulTORStuff {
                 st.Toggle(); yield return new WaitForSeconds(1.5f); yield return Shot("session_stats");
                 st.DiagShowTitles(); yield return new WaitForSeconds(1f); yield return Shot("session_titles"); st.Close();
             }
+
+            var dm = DraftMusicUI.Instance;
+            if (dm != null) { dm.Open(); yield return new WaitForSeconds(1f); yield return Shot("draft_music"); dm.Close(); }
 
             var ms = UTSModSyncUI.Instance;
             if (ms != null) { ms.Open(); yield return new WaitForSeconds(1f); yield return Shot("mod_sync"); ms.Close(); }

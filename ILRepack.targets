@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Convention file for ILRepack.Lib.MSBuild.Task: merges NVorbis and NLayer (draft music decoders for Ogg and MP3) into
+     UsefulTORStuff.dll after every build, so the mod stays a single deliverable file. Same setup as
+     UnknownsCollection. Internalize keeps the NVorbis types out of the public surface; the
+     LibraryPath entries let ILRepack re-resolve every compile-time reference (game interop, BepInEx,
+     TOR) plus 0Harmony, which BepInEx provides only at runtime. -->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <Target Name="ILRepacker" AfterTargets="Build">
+        <ItemGroup>
+            <InputAssemblies Include="$(TargetPath)" />
+            <InputAssemblies Include="$(TargetDir)NVorbis.dll" />
+            <InputAssemblies Include="$(TargetDir)NLayer.dll" />
+            <LibraryPath Include="$(TargetDir)" />
+            <LibraryPath Include="@(ReferencePathWithRefAssemblies->'%(RootDir)%(Directory)')" />
+            <LibraryPath Include="$(NuGetPackageRoot)harmonyx\2.10.2\lib\netstandard2.0" />
+        </ItemGroup>
+        <ILRepack Parallel="true"
+                  Internalize="true"
+                  InputAssemblies="@(InputAssemblies)"
+                  LibraryPath="@(LibraryPath)"
+                  OutputFile="$(TargetPath)" />
+    </Target>
+</Project>
