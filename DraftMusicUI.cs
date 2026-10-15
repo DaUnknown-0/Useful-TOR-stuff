@@ -65,7 +65,7 @@ namespace UsefulTORStuff {
         }
 
         public void Update() {
-            if (panelRoot == null) return;
+            if (panelRoot == null) { if (blocked.Count > 0) UnblockBackground(); return; }
             if (Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
             VanillaSlider.Tick();
             // redraw when a clip got ready, failed, or the preview changed (never under a held slider)
@@ -85,6 +85,7 @@ namespace UsefulTORStuff {
         public void Close() {
             DraftMusic.StopPreview();
             Teardown();
+            UnblockBackground();
             OpenOutsideLobby = false;
             var after = onClosed;
             onClosed = null;
@@ -116,6 +117,28 @@ namespace UsefulTORStuff {
             EarlyDeathShieldUI.Instance?.Close();
             DraftMusic.Refresh();
             Build();
+            BlockBackground();
+        }
+
+        // The backdrop swallows UGUI clicks only; the game's own buttons (main menu, options, lobby, HUD) are
+        // collider-based PassiveButtons and kept reacting under the panel (user, 15.10., opened through the
+        // settings). Same remedy as the Mod Manager: switch them off while the panel is open, and switch back
+        // on only those we switched off.
+        private static readonly List<PassiveButton> blocked = new List<PassiveButton>();
+
+        [HideFromIl2Cpp]
+        private void BlockBackground() {
+            if (blocked.Count > 0 || panelRoot == null) return;
+            try {
+                foreach (var b in FindObjectsOfType<PassiveButton>())
+                    if (b != null && b.enabled && !b.transform.IsChildOf(panelRoot.transform)) { b.enabled = false; blocked.Add(b); }
+            } catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[DraftMusicUI] background block: {e.Message}"); }
+        }
+
+        [HideFromIl2Cpp]
+        private static void UnblockBackground() {
+            foreach (var b in blocked) try { if (b != null) b.enabled = true; } catch { }
+            blocked.Clear();
         }
 
         [HideFromIl2Cpp]
