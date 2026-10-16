@@ -1453,5 +1453,7 @@
  "uts.music.off": "Aus",
  "uts.music.off_style": "keine Musik, wie im Spiel",
  "uts.music.reactor_default": "Standard",
- "uts.music.reactor_default_style": "Reaktor-Musik von Unknown's Collection"
+ "uts.music.reactor_default_style": "Reaktor-Musik von Unknown's Collection",
+ "uts.options.vip_scream_toggle": "VIP-Schrei",
+ "uts.endscreen.wrong_guess": "Fehlguess: {0} als {1}"
 }

@@ -411,7 +411,7 @@ namespace UsefulTORStuff {
         private static bool DraftOnScreen() {
             if (DiagForceDraft) return true;
             if (!DraftRunning()) return false;
-            try { return IntroCutscene.Instance != null; } catch { return false; }
+            return IntroScreen.Exists;
         }
 
         // SoundManager keys the source by TOR's clip and later only calls Play() on it again, so the
@@ -512,7 +512,7 @@ namespace UsefulTORStuff {
                 if (intro == null) {
                     if (Time.realtimeSinceStartup < introSearchAt) return;
                     introSearchAt = Time.realtimeSinceStartup + 0.5f;
-                    intro = IntroCutscene.Instance;
+                    intro = IntroScreen.Instance;
                     if (intro == null) return;
                 }
                 var title = intro.TeamTitle;

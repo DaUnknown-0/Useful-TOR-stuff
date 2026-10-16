@@ -1453,5 +1453,7 @@
  "uts.music.off": "Spenta",
  "uts.music.off_style": "nessuna musica, come nel gioco",
  "uts.music.reactor_default": "Predefinita",
- "uts.music.reactor_default_style": "musica del reattore di Unknown's Collection"
+ "uts.music.reactor_default_style": "musica del reattore di Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Urlo del VIP",
+ "uts.endscreen.wrong_guess": "ipotesi sbagliata: {0} come {1}"
 }

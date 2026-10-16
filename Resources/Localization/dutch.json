@@ -1453,5 +1453,7 @@
  "uts.music.off": "Uit",
  "uts.music.off_style": "geen muziek, zoals in het spel",
  "uts.music.reactor_default": "Standaard",
- "uts.music.reactor_default_style": "reactormuziek van Unknown's Collection"
+ "uts.music.reactor_default_style": "reactormuziek van Unknown's Collection",
+ "uts.options.vip_scream_toggle": "VIP-schreeuw",
+ "uts.endscreen.wrong_guess": "foute gok: {0} als {1}"
 }

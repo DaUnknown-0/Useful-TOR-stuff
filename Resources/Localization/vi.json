@@ -1453,5 +1453,7 @@
  "uts.music.off": "Tắt",
  "uts.music.off_style": "không nhạc, giống trong game",
  "uts.music.reactor_default": "Mặc định",
- "uts.music.reactor_default_style": "nhạc lò phản ứng của Unknown's Collection"
+ "uts.music.reactor_default_style": "nhạc lò phản ứng của Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Tiếng hét VIP",
+ "uts.endscreen.wrong_guess": "đoán sai: {0} là {1}"
 }

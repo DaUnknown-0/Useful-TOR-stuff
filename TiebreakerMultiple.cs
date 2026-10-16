@@ -244,6 +244,9 @@ namespace UsefulTORStuff {
                 // With TrueModifierChances active the number of Tiebreakers IS the roll result -
                 // topping up would fill right past it.
                 if (TrueModifierChances.IsActive) return;
+                // DraftEndPacing skipped this call and runs assignModifiers a moment later; the top-up
+                // belongs to that real run, not to the skipped one (postfixes run either way).
+                if (DraftEndPacing.Skipping) return;
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
                 if (CustomOptionHolder.modifierTieBreaker == null
                     || CustomOptionHolder.modifierTieBreaker.getSelection() <= 0) return; // not in play

@@ -1453,5 +1453,7 @@
  "uts.music.off": "Av",
  "uts.music.off_style": "ingen musik, som i spelet",
  "uts.music.reactor_default": "Standard",
- "uts.music.reactor_default_style": "reaktormusiken från Unknown's Collection"
+ "uts.music.reactor_default_style": "reaktormusiken från Unknown's Collection",
+ "uts.options.vip_scream_toggle": "VIP-skrik",
+ "uts.endscreen.wrong_guess": "fel gissning: {0} som {1}"
 }

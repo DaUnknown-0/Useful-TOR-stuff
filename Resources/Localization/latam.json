@@ -1453,5 +1453,7 @@
  "uts.music.off": "Apagada",
  "uts.music.off_style": "sin música, como en el juego",
  "uts.music.reactor_default": "Predeterminada",
- "uts.music.reactor_default_style": "música del reactor de Unknown's Collection"
+ "uts.music.reactor_default_style": "música del reactor de Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Grito del VIP",
+ "uts.endscreen.wrong_guess": "adivinanza fallida: {0} como {1}"
 }

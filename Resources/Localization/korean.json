@@ -1453,5 +1453,7 @@
  "uts.music.off": "끔",
  "uts.music.off_style": "음악 없음 (게임과 동일)",
  "uts.music.reactor_default": "기본",
- "uts.music.reactor_default_style": "Unknown's Collection 원자로 음악"
+ "uts.music.reactor_default_style": "Unknown's Collection 원자로 음악",
+ "uts.options.vip_scream_toggle": "VIP 비명",
+ "uts.endscreen.wrong_guess": "추측 실패: {0}을(를) {1}(으)로"
 }

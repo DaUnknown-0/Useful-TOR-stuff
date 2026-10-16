@@ -1453,5 +1453,7 @@
  "uts.music.off": "Désactivée",
  "uts.music.off_style": "pas de musique, comme dans le jeu",
  "uts.music.reactor_default": "Par défaut",
- "uts.music.reactor_default_style": "musique du réacteur d'Unknown's Collection"
+ "uts.music.reactor_default_style": "musique du réacteur d'Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Cri du VIP",
+ "uts.endscreen.wrong_guess": "mauvaise supposition : {0} en {1}"
 }

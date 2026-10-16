@@ -742,7 +742,7 @@ namespace UsefulTORStuff {
                                 // may be in the middle of the Role Draft, which offers everything in
                                 // allRoleInfos: the Revenger showed up there as a pick (User
                                 // 2026-10-02). Our own IntroEndPatch lists him once the intro is over.
-                                if (IntroCutscene.Instance == null) SetGuessable(on);
+                                if (!IntroScreen.Exists) SetGuessable(on);
                             }
                             break;
                         }

@@ -1453,5 +1453,7 @@
  "uts.music.off": "关闭",
  "uts.music.off_style": "无音乐，与游戏相同",
  "uts.music.reactor_default": "默认",
- "uts.music.reactor_default_style": "Unknown's Collection 的反应堆音乐"
+ "uts.music.reactor_default_style": "Unknown's Collection 的反应堆音乐",
+ "uts.options.vip_scream_toggle": "VIP 尖叫",
+ "uts.endscreen.wrong_guess": "猜错：把 {0} 猜成 {1}"
 }

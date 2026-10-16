@@ -1453,5 +1453,7 @@
  "uts.music.off": "Vypnuto",
  "uts.music.off_style": "bez hudby, jako ve hře",
  "uts.music.reactor_default": "Výchozí",
- "uts.music.reactor_default_style": "hudba reaktoru z Unknown's Collection"
+ "uts.music.reactor_default_style": "hudba reaktoru z Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Výkřik VIP",
+ "uts.endscreen.wrong_guess": "špatný tip: {0} jako {1}"
 }

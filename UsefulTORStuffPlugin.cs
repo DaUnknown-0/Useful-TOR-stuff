@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.1";
+    public const string PluginVersion = "1.5.2";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -148,6 +148,8 @@ public class UsefulTORStuffPlugin : BasePlugin
             + "without an explicit click.");
         UTSRejoin.Bind(Config);
         VipDeathScream.Bind(Config);
+        PacedOptionSync.Bind(Config);
+        DraftEndPacing.Bind(Config);
         DraftMusic.Bind(Config);
         MenuMusic.Bind(Config);
         LobbyMusic.Bind(Config);
@@ -456,6 +458,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.
         harmony.PatchAll(typeof(UsefulTORStuffPlugin).Assembly);
+
+        // After PatchAll (TOR, a hard dependency, has patched long before): swap TOR's per-spawn option
+        // sync for the bundled one (PacedOptionSync.cs).
+        PacedOptionSync.Install();
+        DraftEndPacing.Install(harmony);
 
         // The game reads settings.amogus before this plugin loads; with the file-name patch now in
         // place, read them again from settings.amogus_TOR (see SeparateSaveFiles).

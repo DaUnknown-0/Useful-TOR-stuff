@@ -711,7 +711,7 @@ namespace UsefulTORStuff {
                     return EventUtility.isEnabled
                         && AmongUsClient.Instance != null
                         && AmongUsClient.Instance.GameState == InnerNet.InnerNetClient.GameStates.Started
-                        && !IntroCutscene.Instance;
+                        && !IntroScreen.Exists;
                 } catch (Exception e) {
                     ThrottledLog("B3", $"event guard failed: {e.GetType().Name}: {e.Message}");
                     return false; // on doubt, skip the scan - it is decoration even on event days

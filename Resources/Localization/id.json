@@ -1453,5 +1453,7 @@
  "uts.music.off": "Mati",
  "uts.music.off_style": "tanpa musik, seperti di game",
  "uts.music.reactor_default": "Bawaan",
- "uts.music.reactor_default_style": "musik reaktor Unknown's Collection"
+ "uts.music.reactor_default_style": "musik reaktor Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Teriakan VIP",
+ "uts.endscreen.wrong_guess": "tebakan salah: {0} sebagai {1}"
 }

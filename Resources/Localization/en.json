@@ -1452,5 +1452,7 @@
   "uts.music.off": "Off",
   "uts.music.off_style": "no music, like the game",
   "uts.music.reactor_default": "Default",
-  "uts.music.reactor_default_style": "reactor score of Unknown's Collection"
+  "uts.music.reactor_default_style": "reactor score of Unknown's Collection",
+  "uts.options.vip_scream_toggle": "VIP Scream",
+  "uts.endscreen.wrong_guess": "wrong guess: {0} as {1}"
 }

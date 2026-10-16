@@ -1453,5 +1453,7 @@
  "uts.music.off": "Wyłączona",
  "uts.music.off_style": "bez muzyki, jak w grze",
  "uts.music.reactor_default": "Domyślna",
- "uts.music.reactor_default_style": "muzyka reaktora z Unknown's Collection"
+ "uts.music.reactor_default_style": "muzyka reaktora z Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Krzyk VIP",
+ "uts.endscreen.wrong_guess": "zły strzał: {0} jako {1}"
 }

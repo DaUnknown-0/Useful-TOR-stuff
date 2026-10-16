@@ -1453,5 +1453,7 @@
  "uts.music.off": "Ki",
  "uts.music.off_style": "nincs zene, mint a játékban",
  "uts.music.reactor_default": "Alapértelmezett",
- "uts.music.reactor_default_style": "az Unknown's Collection reaktorzenéje"
+ "uts.music.reactor_default_style": "az Unknown's Collection reaktorzenéje",
+ "uts.options.vip_scream_toggle": "VIP-sikoly",
+ "uts.endscreen.wrong_guess": "rossz tipp: {0} mint {1}"
 }

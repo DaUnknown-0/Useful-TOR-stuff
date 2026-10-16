@@ -1453,5 +1453,7 @@
  "uts.music.off": "Вимк.",
  "uts.music.off_style": "без музики, як у грі",
  "uts.music.reactor_default": "Типово",
- "uts.music.reactor_default_style": "музика реактора з Unknown's Collection"
+ "uts.music.reactor_default_style": "музика реактора з Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Крик VIP",
+ "uts.endscreen.wrong_guess": "хибна здогадка: {0} як {1}"
 }

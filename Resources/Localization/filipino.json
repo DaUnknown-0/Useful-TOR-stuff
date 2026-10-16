@@ -1453,5 +1453,7 @@
  "uts.music.off": "Off",
  "uts.music.off_style": "walang musika, gaya ng laro",
  "uts.music.reactor_default": "Default",
- "uts.music.reactor_default_style": "reactor music ng Unknown's Collection"
+ "uts.music.reactor_default_style": "reactor music ng Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Sigaw ng VIP",
+ "uts.endscreen.wrong_guess": "maling hula: {0} bilang {1}"
 }

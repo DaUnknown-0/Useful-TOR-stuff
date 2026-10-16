@@ -12,7 +12,8 @@
  * gets neither.
  *
  * Purely local and cosmetic: nothing is sent, and every player can switch it off for themselves
- * ([Sounds] VipDeathScream in the config file).
+ * ([Sounds] VipDeathScream in the config file, or the "VIP Scream" switch on the Unknown's Collection
+ * page of TOR's Mod Options).
  */
 
 using System;
@@ -29,6 +30,10 @@ namespace UsefulTORStuff {
             Enabled = config.Bind("Sounds", "VipDeathScream", true,
                 "Play a scream when a player with the VIP modifier gets killed. Everybody already sees "
                 + "TOR's VIP flash at that moment, so the sound gives nothing away. Only affects your own game.");
+            // Switch in the "Unknown's Collection" page of TOR's Mod Options (User 2026-10-16). UC reads the
+            // list when the page opens; nothing happens without UC.
+            ExternalToggles.Register(() => UTSLocalization.Tr("uts.options.vip_scream_toggle"),
+                () => Enabled.Value, v => Enabled.Value = v);
         }
 
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.MurderPlayer))]

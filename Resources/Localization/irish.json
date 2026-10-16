@@ -1453,5 +1453,7 @@
  "uts.music.off": "As",
  "uts.music.off_style": "gan cheol, mar sa chluiche",
  "uts.music.reactor_default": "Réamhshocrú",
- "uts.music.reactor_default_style": "ceol imoibreora Unknown's Collection"
+ "uts.music.reactor_default_style": "ceol imoibreora Unknown's Collection",
+ "uts.options.vip_scream_toggle": "Scread VIP",
+ "uts.endscreen.wrong_guess": "buille faoi thuairim mícheart: {0} mar {1}"
 }

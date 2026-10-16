@@ -114,7 +114,7 @@ namespace UsefulTORStuff {
             // Freeplay reports IsGameStarted == false; there is no lobby afterwards anyway, so only the
             // autotest records there.
             bool started = client != null && (client.IsGameStarted || (DiagViewer != null && DiagViewer.Value));
-            bool inRound = started && ship != null && IntroCutscene.Instance == null;
+            bool inRound = started && ship != null && !IntroScreen.Exists;
             if (!inRound) return;
             if (ship != recShip) {
                 // Option 1397 off: record nothing at all (no samples, no raycasts, no ship copy at the

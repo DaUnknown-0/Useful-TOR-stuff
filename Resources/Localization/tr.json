@@ -1453,5 +1453,7 @@
  "uts.music.off": "Kapalı",
  "uts.music.off_style": "müzik yok, oyundaki gibi",
  "uts.music.reactor_default": "Varsayılan",
- "uts.music.reactor_default_style": "Unknown's Collection reaktör müziği"
+ "uts.music.reactor_default_style": "Unknown's Collection reaktör müziği",
+ "uts.options.vip_scream_toggle": "VIP Çığlığı",
+ "uts.endscreen.wrong_guess": "yanlış tahmin: {0}, {1} olarak"
 }

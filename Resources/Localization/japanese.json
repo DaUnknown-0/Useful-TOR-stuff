@@ -1453,5 +1453,7 @@
  "uts.music.off": "オフ",
  "uts.music.off_style": "音楽なし（ゲームと同じ）",
  "uts.music.reactor_default": "デフォルト",
- "uts.music.reactor_default_style": "Unknown's Collection の原子炉音楽"
+ "uts.music.reactor_default_style": "Unknown's Collection の原子炉音楽",
+ "uts.options.vip_scream_toggle": "VIPの悲鳴",
+ "uts.endscreen.wrong_guess": "推理ミス: {0} を {1} と推理"
 }
