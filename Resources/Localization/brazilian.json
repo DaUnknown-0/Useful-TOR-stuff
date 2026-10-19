@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Mortes nesta rodada",
  "uts.settingsfeed.title": "Configurações alteradas",
  "uts.settingsfeed.more": "+{0} outras",
+ "uts.returnwatch.title": "Ainda na tela final",
  "uts.killfeed.kill": "{1} matou {0}",
  "uts.killfeed.guess": "{1} palpitou {0}",
  "uts.killfeed.bomb": "{1} bombardeou {0}",

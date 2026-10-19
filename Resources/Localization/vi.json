@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Những cái chết vòng này",
  "uts.settingsfeed.title": "Đã thay đổi cài đặt",
  "uts.settingsfeed.more": "+{0} nữa",
+ "uts.returnwatch.title": "Vẫn ở màn hình kết thúc",
  "uts.killfeed.kill": "{1} đã giết {0}",
  "uts.killfeed.guess": "{1} đã đoán trúng {0}",
  "uts.killfeed.bomb": "{1} đã làm nổ {0}",

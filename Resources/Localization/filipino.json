@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Mga pagkamatay ngayong round",
  "uts.settingsfeed.title": "Binagong mga setting",
  "uts.settingsfeed.more": "+{0} pa",
+ "uts.returnwatch.title": "Nasa end screen pa",
  "uts.killfeed.kill": "Pinatay ni {1} si {0}",
  "uts.killfeed.guess": "Nahulaan ni {1} si {0}",
  "uts.killfeed.bomb": "Binomba ni {1} si {0}",

@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Morți în această rundă",
  "uts.settingsfeed.title": "Setări modificate",
  "uts.settingsfeed.more": "+{0} în plus",
+ "uts.returnwatch.title": "Încă pe ecranul final",
  "uts.killfeed.kill": "{1} l-a ucis pe {0}",
  "uts.killfeed.guess": "{1} l-a ghicit pe {0}",
  "uts.killfeed.bomb": "{1} l-a aruncat în aer pe {0}",

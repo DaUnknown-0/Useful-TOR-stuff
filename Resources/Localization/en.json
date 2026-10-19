@@ -1347,6 +1347,7 @@
   "uts.killfeed.title": "Deaths this round",
   "uts.settingsfeed.title": "Settings changed",
   "uts.settingsfeed.more": "+{0} more",
+  "uts.returnwatch.title": "Still on the end screen",
   "uts.killfeed.kill": "{1} killed {0}",
   "uts.killfeed.guess": "{1} guessed {0}",
   "uts.killfeed.bomb": "{1} bombed {0}",

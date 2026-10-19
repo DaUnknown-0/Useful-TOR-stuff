@@ -1339,6 +1339,7 @@
  "uts.killfeed.title": "Tode in dieser Runde",
  "uts.settingsfeed.title": "Einstellungen geändert",
  "uts.settingsfeed.more": "+{0} weitere",
+ "uts.returnwatch.title": "Noch auf dem Endbildschirm",
  "uts.killfeed.kill": "{1} hat {0} getötet",
  "uts.killfeed.guess": "{1} hat {0} erraten",
  "uts.killfeed.bomb": "{1} hat {0} weggesprengt",

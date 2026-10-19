@@ -54,6 +54,7 @@ namespace UsefulTORStuff {
         private static readonly List<Entry> entries = new List<Entry>();     // newest first
         private static GameObject root;
         private static TMPro.TextMeshProUGUI text;
+        private static RectTransform cardRect;
         private static string shown = "";
         private static float nextTick;
 
@@ -156,6 +157,8 @@ namespace UsefulTORStuff {
             if (root == null) Build();
             if (root == null) return;
             if (!root.activeSelf) root.SetActive(true);
+            // below the "still on the end screen" card when the host sees both
+            if (cardRect != null) cardRect.anchoredPosition = new Vector2(24, -250 - LobbyReturnWatch.VisibleHeight());
 
             string arrow = Sym('→', "->");
             var lines = new List<string>();
@@ -186,6 +189,7 @@ namespace UsefulTORStuff {
                 VanillaUI.Stretch(ring);
                 ring.AddComponent<LayoutElement>().ignoreLayout = true;
                 var rt = bg.GetComponent<RectTransform>();
+                cardRect = rt;
                 // top left under the mod-check banner: the game's own notifications (joins, vanilla
                 // settings) stack up from the bottom left corner
                 rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0, 1);
@@ -299,9 +303,12 @@ namespace UsefulTORStuff {
                 }
                 if (chosen.Count > 1) { var o = chosen[1]; o.updateSelection(o.selection - 1); }   // and back: the line goes
             } catch (Exception e) { DiagLog("change failed: " + e.Message); }
+            LobbyReturnWatch.DiagSample();
             yield return new WaitForSeconds(1.0f);
+            DiagLog($"return watch card height: {LobbyReturnWatch.VisibleHeight():F0}");
             DiagLog($"card lines: {entries.Count}, text: {Plain(DiagText()).Replace("\n", " | ")}");
             yield return Shot("settings_feed");
+            LobbyReturnWatch.DiagRelease();
 
             // put everything back without a popup
             foreach (var kv in before) { try { kv.Key.updateSelection(kv.Value, false); } catch { } }

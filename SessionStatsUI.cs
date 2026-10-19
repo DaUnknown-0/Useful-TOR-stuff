@@ -79,6 +79,7 @@ namespace UsefulTORStuff {
             SessionStats.Tick();
             GhostKillFeed.Tick();
             SettingsChangeFeed.Tick();
+            LobbyReturnWatch.Tick();
             RoundReplay.Tick();
             if (panelRoot != null && Input.GetKeyDown(KeyCode.Escape)) { Close(); return; }
 

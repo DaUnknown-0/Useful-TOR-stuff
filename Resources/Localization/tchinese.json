@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "本回合的死亡",
  "uts.settingsfeed.title": "設定已變更",
  "uts.settingsfeed.more": "另有 {0} 項",
+ "uts.returnwatch.title": "仍在結算畫面",
  "uts.killfeed.kill": "{1} 擊殺了 {0}",
  "uts.killfeed.guess": "{1} 猜中了 {0}",
  "uts.killfeed.bomb": "{1} 炸死了 {0}",

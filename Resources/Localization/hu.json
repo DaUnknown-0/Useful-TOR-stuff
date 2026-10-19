@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Halálok ebben a körben",
  "uts.settingsfeed.title": "Módosított beállítások",
  "uts.settingsfeed.more": "+{0} további",
+ "uts.returnwatch.title": "Még a záróképernyőn",
  "uts.killfeed.kill": "{1} megölte: {0}",
  "uts.killfeed.guess": "{1} kitippelte: {0}",
  "uts.killfeed.bomb": "{1} felrobbantotta: {0}",

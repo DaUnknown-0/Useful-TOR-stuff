@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Zgony w tej rundzie",
  "uts.settingsfeed.title": "Zmienione ustawienia",
  "uts.settingsfeed.more": "+{0} więcej",
+ "uts.returnwatch.title": "Wciąż na ekranie końcowym",
  "uts.killfeed.kill": "{1} zabił(a) gracza {0}",
  "uts.killfeed.guess": "{1} odgadł(a) gracza {0}",
  "uts.killfeed.bomb": "{1} wysadził(a) gracza {0}",

@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Morti di questo round",
  "uts.settingsfeed.title": "Impostazioni modificate",
  "uts.settingsfeed.more": "+{0} altre",
+ "uts.returnwatch.title": "Ancora nella schermata finale",
  "uts.killfeed.kill": "{1} ha ucciso {0}",
  "uts.killfeed.guess": "{1} ha indovinato {0}",
  "uts.killfeed.bomb": "{1} ha bombardato {0}",

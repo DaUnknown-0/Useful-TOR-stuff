@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "이번 라운드의 사망",
  "uts.settingsfeed.title": "설정 변경",
  "uts.settingsfeed.more": "+{0}개 더",
+ "uts.returnwatch.title": "아직 종료 화면",
  "uts.killfeed.kill": "{1}님이 {0}님을 죽임",
  "uts.killfeed.guess": "{1}님이 {0}님을 추측함",
  "uts.killfeed.bomb": "{1}님이 {0}님을 폭파함",

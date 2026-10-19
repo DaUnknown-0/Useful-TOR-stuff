@@ -1348,6 +1348,7 @@
  "uts.killfeed.title": "Dödsfall den här rundan",
  "uts.settingsfeed.title": "Ändrade inställningar",
  "uts.settingsfeed.more": "+{0} till",
+ "uts.returnwatch.title": "Kvar på slutskärmen",
  "uts.killfeed.kill": "{1} dödade {0}",
  "uts.killfeed.guess": "{1} gissade {0}",
  "uts.killfeed.bomb": "{1} bombade {0}",
