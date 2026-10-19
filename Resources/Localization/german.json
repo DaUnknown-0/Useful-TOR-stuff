@@ -1337,6 +1337,8 @@
  "uts.replay.mr.nobody": "Ergebnis: niemand wurde rausgeworfen.",
  "uts.killfeed.option_name": "Kill-Feed für Tote",
  "uts.killfeed.title": "Tode in dieser Runde",
+ "uts.settingsfeed.title": "Einstellungen geändert",
+ "uts.settingsfeed.more": "+{0} weitere",
  "uts.killfeed.kill": "{1} hat {0} getötet",
  "uts.killfeed.guess": "{1} hat {0} erraten",
  "uts.killfeed.bomb": "{1} hat {0} weggesprengt",

@@ -93,6 +93,18 @@ namespace UsefulTORStuff {
 
         public static void RegisterRpc() => UTSRpc.Register(RpcId, HandleModuleRpc);
 
+        // PlayerIdentity: a player's older key (friend code, "name:") becomes his PUID key, as killer and as victim.
+        internal static bool RenameKey(string oldKey, string newKey) {
+            EnsureLoaded();
+            bool changed = false;
+            foreach (var e in rounds.SelectMany(r => r.Entries).Concat(pending ?? new List<RoundEntry>())) {
+                if (e.Code == oldKey) { e.Code = newKey; changed = true; }
+                if (e.KillerCode == oldKey) { e.KillerCode = newKey; changed = true; }
+            }
+            if (changed) { dataVersion++; Save(); }
+            return changed;
+        }
+
         private static bool AmHost() => AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost;
 
         // ====================================================================

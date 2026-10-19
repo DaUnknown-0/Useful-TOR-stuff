@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Uitslag: niemand is verbannen.",
  "uts.killfeed.option_name": "Killfeed voor geesten",
  "uts.killfeed.title": "Doden deze ronde",
+ "uts.settingsfeed.title": "Instellingen gewijzigd",
+ "uts.settingsfeed.more": "+{0} meer",
  "uts.killfeed.kill": "{1} doodde {0}",
  "uts.killfeed.guess": "{1} raadde {0}",
  "uts.killfeed.bomb": "{1} bombardeerde {0}",

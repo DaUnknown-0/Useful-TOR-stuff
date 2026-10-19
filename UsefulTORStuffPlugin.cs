@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.2";
+    public const string PluginVersion = "1.5.2.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -179,6 +179,9 @@ public class UsefulTORStuffPlugin : BasePlugin
             "Autotest only: opens the session statistics panel in freeplay with sample numbers and saves a screenshot.");
         RoundReplay.DiagViewer = Config.Bind("Diagnostics", "Replay Viewer Test", false,
             "Autotest only: finishes the freeplay recording after 12 s, opens the round replay and saves a screenshot.");
+        SettingsChangeFeed.DiagTest = Config.Bind("Diagnostics", "Settings Feed Test", false,
+            "Autotest only: hosts a local lobby, changes a few modded options, saves a screenshot of the settings card, "
+            + "puts the options back and quits.");
         UIGallery.Bind(Config);
         SeparateSaveFiles.Bind(Config);
 

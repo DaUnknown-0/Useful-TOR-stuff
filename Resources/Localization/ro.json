@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Rezultat: nimeni nu a fost exclus.",
  "uts.killfeed.option_name": "Jurnal de morți pentru fantome",
  "uts.killfeed.title": "Morți în această rundă",
+ "uts.settingsfeed.title": "Setări modificate",
+ "uts.settingsfeed.more": "+{0} în plus",
  "uts.killfeed.kill": "{1} l-a ucis pe {0}",
  "uts.killfeed.guess": "{1} l-a ghicit pe {0}",
  "uts.killfeed.bomb": "{1} l-a aruncat în aer pe {0}",

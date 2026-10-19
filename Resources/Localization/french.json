@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Résultat : personne n'a été éjecté.",
  "uts.killfeed.option_name": "Kill Feed pour les fantômes",
  "uts.killfeed.title": "Morts de cette manche",
+ "uts.settingsfeed.title": "Paramètres modifiés",
+ "uts.settingsfeed.more": "+{0} de plus",
  "uts.killfeed.kill": "{1} a tué {0}",
  "uts.killfeed.guess": "{1} a deviné {0}",
  "uts.killfeed.bomb": "{1} a bombardé {0}",

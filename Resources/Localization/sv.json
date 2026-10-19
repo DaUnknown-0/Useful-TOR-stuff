@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Resultat: ingen röstades ut.",
  "uts.killfeed.option_name": "Dödslogg för spöken",
  "uts.killfeed.title": "Dödsfall den här rundan",
+ "uts.settingsfeed.title": "Ändrade inställningar",
+ "uts.settingsfeed.more": "+{0} till",
  "uts.killfeed.kill": "{1} dödade {0}",
  "uts.killfeed.guess": "{1} gissade {0}",
  "uts.killfeed.bomb": "{1} bombade {0}",

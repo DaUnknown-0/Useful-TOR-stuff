@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Sonuç: kimse atılmadı.",
  "uts.killfeed.option_name": "Hayaletler için ölüm akışı",
  "uts.killfeed.title": "Bu turdaki ölümler",
+ "uts.settingsfeed.title": "Ayarlar değişti",
+ "uts.settingsfeed.more": "+{0} daha",
  "uts.killfeed.kill": "{1}, {0} oyuncusunu öldürdü",
  "uts.killfeed.guess": "{1}, {0} oyuncusunu tahmin etti",
  "uts.killfeed.bomb": "{1}, {0} oyuncusunu bombaladı",

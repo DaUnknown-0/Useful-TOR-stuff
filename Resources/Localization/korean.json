@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "결과: 아무도 추방되지 않았습니다.",
  "uts.killfeed.option_name": "유령용 킬 피드",
  "uts.killfeed.title": "이번 라운드의 사망",
+ "uts.settingsfeed.title": "설정 변경",
+ "uts.settingsfeed.more": "+{0}개 더",
  "uts.killfeed.kill": "{1}님이 {0}님을 죽임",
  "uts.killfeed.guess": "{1}님이 {0}님을 추측함",
  "uts.killfeed.bomb": "{1}님이 {0}님을 폭파함",

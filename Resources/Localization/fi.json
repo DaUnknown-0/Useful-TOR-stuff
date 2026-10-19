@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Tulos: ketään ei karkotettu.",
  "uts.killfeed.option_name": "Tappolista haamuille",
  "uts.killfeed.title": "Tämän kierroksen kuolemat",
+ "uts.settingsfeed.title": "Asetuksia muutettu",
+ "uts.settingsfeed.more": "+{0} lisää",
  "uts.killfeed.kill": "{1} tappoi pelaajan {0}",
  "uts.killfeed.guess": "{1} arvasi pelaajan {0}",
  "uts.killfeed.bomb": "{1} pommitti pelaajaa {0}",

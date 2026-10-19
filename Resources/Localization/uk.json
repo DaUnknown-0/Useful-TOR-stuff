@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Результат: нікого не вигнано.",
  "uts.killfeed.option_name": "Журнал смертей для привидів",
  "uts.killfeed.title": "Смерті в цьому раунді",
+ "uts.settingsfeed.title": "Змінені налаштування",
+ "uts.settingsfeed.more": "ще {0}",
  "uts.killfeed.kill": "{1} вбив(ла) гравця {0}",
  "uts.killfeed.guess": "{1} вгадав(ла) гравця {0}",
  "uts.killfeed.bomb": "{1} підірвав(ла) гравця {0}",

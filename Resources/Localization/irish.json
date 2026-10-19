@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Toradh: níor díbríodh aon duine.",
  "uts.killfeed.option_name": "Kill Feed do Thaibhsí",
  "uts.killfeed.title": "Básanna sa bhabhta seo",
+ "uts.settingsfeed.title": "Socruithe athraithe",
+ "uts.settingsfeed.more": "+{0} eile",
  "uts.killfeed.kill": "Mharaigh {1} {0}",
  "uts.killfeed.guess": "Thug {1} buille faoi thuairim ar {0}",
  "uts.killfeed.bomb": "Bhuamáil {1} {0}",

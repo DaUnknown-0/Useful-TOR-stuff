@@ -41,7 +41,8 @@
  * meeting, so the numbers agree, and whoever hosts next already has a history. Nothing is sent
  * over the network; the file stays on the machine that wrote it.
  *
- * Identity is NewcomerShield.CodeOf: friend code, or "name:<PlayerName>" on auth-less servers.
+ * Identity is PlayerIdentity.KeyOf (via NewcomerShield.CodeOf): the PUID first, then the friend code, then
+ * "name:<PlayerName>". Older entries move to the PUID key when the player is seen (PlayerIdentity).
  *
  * The file also carries the host's per-player override for the shield, so a "never shield this
  * one" survives a restart like the numbers it overrides.
@@ -158,6 +159,24 @@ namespace UsefulTORStuff {
             if (e.ForcedMeetings == meetings) return;
             e.ForcedMeetings = meetings;
             Save();
+        }
+
+        // PlayerIdentity: a player's older key (friend code, "name:") becomes his PUID key. Recorded under both
+        // (possible when he played on two machines): rounds merged, the host's override kept where one exists.
+        internal static bool RenameKey(string oldKey, string newKey) {
+            EnsureLoaded();
+            if (string.IsNullOrEmpty(oldKey) || !entries.TryGetValue(oldKey, out var old)) return false;
+            entries.Remove(oldKey);
+            if (!entries.TryGetValue(newKey, out var cur)) entries[newKey] = old;
+            else {
+                cur.Shares.AddRange(old.Shares);
+                cur.Shares.Sort((x, y) => x.EndUtc.CompareTo(y.EndUtc));
+                while (cur.Shares.Count > Window) cur.Shares.RemoveAt(0);
+                if (cur.Override == OverrideAuto) { cur.Override = old.Override; cur.ForcedMeetings = old.ForcedMeetings; }
+                if (string.IsNullOrEmpty(cur.Name)) cur.Name = old.Name;
+            }
+            Save();
+            return true;
         }
 
         private static Entry GetOrAdd(string code, string name) {

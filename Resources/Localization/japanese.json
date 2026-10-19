@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "結果：誰も追放されませんでした。",
  "uts.killfeed.option_name": "幽霊向けキルフィード",
  "uts.killfeed.title": "このラウンドの死亡",
+ "uts.settingsfeed.title": "設定の変更",
+ "uts.settingsfeed.more": "ほか{0}件",
  "uts.killfeed.kill": "{1}が{0}をキル",
  "uts.killfeed.guess": "{1}が{0}を推測",
  "uts.killfeed.bomb": "{1}が{0}を爆破",

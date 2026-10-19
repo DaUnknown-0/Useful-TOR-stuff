@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Resultado: ninguém foi expulso.",
  "uts.killfeed.option_name": "Registo de mortes para fantasmas",
  "uts.killfeed.title": "Mortes desta ronda",
+ "uts.settingsfeed.title": "Definições alteradas",
+ "uts.settingsfeed.more": "+{0} mais",
  "uts.killfeed.kill": "{1} matou {0}",
  "uts.killfeed.guess": "{1} adivinhou {0}",
  "uts.killfeed.bomb": "{1} fez explodir {0}",

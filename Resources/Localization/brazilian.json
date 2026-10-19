@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "Resultado: ninguém foi expulso.",
  "uts.killfeed.option_name": "Kill Feed Para Fantasmas",
  "uts.killfeed.title": "Mortes nesta rodada",
+ "uts.settingsfeed.title": "Configurações alteradas",
+ "uts.settingsfeed.more": "+{0} outras",
  "uts.killfeed.kill": "{1} matou {0}",
  "uts.killfeed.guess": "{1} palpitou {0}",
  "uts.killfeed.bomb": "{1} bombardeou {0}",

@@ -1346,6 +1346,8 @@
  "uts.replay.mr.nobody": "結果：無人被投出。",
  "uts.killfeed.option_name": "幽靈可見的擊殺動態",
  "uts.killfeed.title": "本回合的死亡",
+ "uts.settingsfeed.title": "設定已變更",
+ "uts.settingsfeed.more": "另有 {0} 項",
  "uts.killfeed.kill": "{1} 擊殺了 {0}",
  "uts.killfeed.guess": "{1} 猜中了 {0}",
  "uts.killfeed.bomb": "{1} 炸死了 {0}",

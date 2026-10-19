@@ -12,9 +12,9 @@
  * the end of the round - so it never decides a game.
  *
  * WHO IS "NEW"
- * The host keeps a set of FRIEND CODES that have already played a round with him. Friend codes are
- * the only identifier that survives a round and a lobby change; PlayerId and ClientId are both tied
- * to the connection and get reshuffled. The set lives in memory only: restarting the game forgets
+ * The host keeps a set of PLAYER KEYS (PlayerIdentity: PUID, else friend code, else name) that have
+ * already played a round with him. Only those survive a round and a lobby change; PlayerId and
+ * ClientId are both tied to the connection and get reshuffled. The set lives in memory only: restarting the game forgets
  * everyone, which is exactly the intent ("new to this session"). The host can also mark people by
  * hand in the lobby, for the case the automatic rule does not catch (a friend who reinstalled, a
  * player everybody agrees should get a free round).
@@ -54,13 +54,12 @@
  * which by definition runs before anything else on that method can throw, and a 10 second
  * fallback covers even that being lost.
  *
- * IDENTITY ON CUSTOM SERVERS
- * This lobby plays on a custom server (useDtls false in the log), and servers without account
- * auth hand out EMPTY friend codes. An empty code used to mean "never shielded", silently. Now
- * an empty code falls back to a name-based key ("name:" + PlayerName). A name can be copied, a
- * friend code cannot - but the shield is a courtesy worth one round, not a security boundary,
- * and the fallback is what makes the feature exist at all on such servers. The assignment logs
- * how many players sat on each identity kind, so the next playtest answers which case we are in.
+ * IDENTITY
+ * PlayerIdentity.KeyOf: the account's PUID first (User 2026-10-18: more reliable than the friend code), then the
+ * friend code, then "name:" + PlayerName for servers that deliver neither. A name can be copied, but the shield
+ * is a courtesy worth one round, not a security boundary. Sets recorded before the switch move to the PUID key
+ * when the player is seen (PlayerIdentity.MigratePresent). The round-start log counts how many players sat on
+ * each identity kind.
  *
  * WHAT THE SHIELD DELIBERATELY DOES NOT COVER
  * A shielded newcomer who is a LOVER still dies when their partner dies. TOR's lover cascade calls
@@ -176,6 +175,10 @@ namespace UsefulTORStuff {
         public static void RegisterRpc() {
             UTSRpc.Register(RpcId, HandleModuleRpc);
             RestoreState();
+            // Every store keyed by player identity takes part in the PUID migration (PlayerIdentity).
+            PlayerIdentity.RegisterStore("NewcomerShield", RenameKey);
+            PlayerIdentity.RegisterStore("DeathTimeHistory", DeathTimeHistory.RenameKey);
+            PlayerIdentity.RegisterStore("SessionStats", SessionStats.RenameKey);
         }
 
         // ---- persistence: the ten minute window ----
@@ -236,27 +239,18 @@ namespace UsefulTORStuff {
         // ---- helpers ----
         private static bool AmHost() => AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost;
 
-        // The identifier. Friend code when the server hands one out; on auth-less custom servers
-        // (this lobby's feinis.deb.at, and every plain Impostor server) the code is EMPTY for
-        // everybody, and treating that as "not identifiable, never shielded" made the feature
-        // silently dead there. So an empty code falls back to a name-based key. A name can be
-        // copied and a friend code cannot, but the shield is one free round, not a security
-        // boundary, and without the fallback it does not exist at all on the server this group
-        // actually plays on. The "name:" prefix keeps the two identity kinds from ever colliding.
-        public static string CodeOf(PlayerControl p) {
-            try {
-                string code = p?.Data?.FriendCode;
-                if (!string.IsNullOrEmpty(code)) return code;
-                string name = p?.Data?.PlayerName;
-                return string.IsNullOrEmpty(name) ? "" : "name:" + name;
-            } catch { return ""; }
-        }
+        // The identifier: PlayerIdentity.KeyOf, the PUID first, then the friend code, then "name:<name>" (User
+        // 2026-10-18: the PUID is more reliable). Kept under this name because every per-player store calls it.
+        public static string CodeOf(PlayerControl p) => PlayerIdentity.KeyOf(p);
 
-        // True when the player has a REAL friend code (not the name fallback). Only used for the
-        // diagnostic count in the round-start log, so the next playtest can tell which identity
-        // kind this server actually delivers.
-        private static bool HasRealCode(PlayerControl p) {
-            try { return !string.IsNullOrEmpty(p?.Data?.FriendCode); } catch { return false; }
+        // PlayerIdentity: a player's older key becomes his PUID key in all three sets, so nobody who played
+        // before the switch counts as new again, and the host's marks survive it.
+        private static bool RenameKey(string oldKey, string newKey) {
+            bool changed = false;
+            foreach (var set in new[] { seenFriendCodes, manualNewcomers, manualExcluded })
+                if (set.Remove(oldKey)) { set.Add(newKey); changed = true; }
+            if (changed) SaveState();
+            return changed;
         }
 
         private static bool IsAlive(PlayerControl p) =>
@@ -391,6 +385,8 @@ namespace UsefulTORStuff {
                 var client = AmongUsClient.Instance;
                 if (client == null) return;
 
+                PlayerIdentity.MigratePresent();   // older keys of everyone present -> PUID (every 2 s, each pair once)
+
                 // Heartbeat for the ten minute persistence window: while there is state worth
                 // keeping, its timestamp stays within 30 seconds of "now" - so even a hard crash
                 // reads as "the game was here a moment ago" and a relaunch restores the session.
@@ -505,7 +501,8 @@ namespace UsefulTORStuff {
             try {
                 // No shields in Hide'n'Seek or Prop Hunt (audit 04.10.): no meeting ever ends them there.
                 if (AntiStartKill.ShieldFreeMode()) return;
-                int realCodes = 0, nameFallbacks = 0;
+                PlayerIdentity.MigratePresent(true);   // before deciding who is new
+                int puids = 0, realCodes = 0, nameFallbacks = 0;
                 // The session's first round: the automatic rule stands down (see sessionHadRound),
                 // only an explicit host mark shields. Everyone present is registered as known.
                 bool grace = !sessionHadRound;
@@ -514,7 +511,11 @@ namespace UsefulTORStuff {
                     if (!IsAlive(p)) continue;
                     string code = CodeOf(p);
                     if (string.IsNullOrEmpty(code)) continue;
-                    if (HasRealCode(p)) realCodes++; else nameFallbacks++;
+                    switch (PlayerIdentity.KindOf(p)) {
+                        case PlayerIdentity.Kind.Puid: puids++; break;
+                        case PlayerIdentity.Kind.FriendCode: realCodes++; break;
+                        default: nameFallbacks++; break;
+                    }
 
                     // Mirrors WouldShield, and the exclusion set is the half that used to be
                     // missing here: taking a shield away by hand only ever changed the lobby
@@ -542,7 +543,7 @@ namespace UsefulTORStuff {
                 // all, and the identity counts answer whether this server hands out friend codes.
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[NewcomerShield] round start{(grace ? " (first round, grace - automatic rule off)" : "")}: "
-                    + $"{realCodes} player(s) with a friend code, "
+                    + $"{puids} player(s) with a PUID, {realCodes} on the friend code only, "
                     + $"{nameFallbacks} on the name fallback, {ids.Count} to shield.");
 
                 if (ids.Count > 0) SendSetShields(ids);
