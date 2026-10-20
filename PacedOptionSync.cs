@@ -20,6 +20,9 @@
  * so a change made in between is never overwritten by an older one.
  *
  * Host only, nothing changes for anyone else; switch: [Network] PacedOptionSync in the config.
+ *
+ * SendPaced (2026-10-20, settings presets): sends only the given options through the same paced chunks, with or
+ * without the per-spawn replacement above; a full sync that starts meanwhile simply takes them along.
  */
 
 using System;
@@ -103,10 +106,28 @@ namespace UsefulTORStuff {
             }
         }
 
+        /// <summary>Host: sends just these options (a loaded preset's changes), 200 per packet, 0.15 s apart.</summary>
+        internal static int SendPaced(IEnumerable<CustomOption> options) {
+            var list = options?.Where(o => o != null && o.id != 0).Distinct().ToList() ?? new List<CustomOption>();
+            if (list.Count == 0 || !CanSend()) return 0;
+            if (shareOptionsId == 0 && !ResolveRpcId()) {
+                try { CustomOption.ShareOptionSelections(); } catch { }   // TOR's own path as the fallback
+                return 1;
+            }
+            if (queue == null) { queue = new List<CustomOption>(); chunksSent = optionsSent = 0; nextChunk = 0f; }
+            foreach (var o in list) if (!queue.Contains(o)) queue.Add(o);
+            int packets = (queue.Count + ChunkSize - 1) / ChunkSize;
+            Log($"{list.Count} changed option(s) queued, {packets} packet(s).");
+            return packets;
+        }
+
+        /// <summary>True while option packets are still waiting to go out.</summary>
+        internal static bool Sending => queue != null;
+
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         static class TickPatch {
             public static void Postfix() {
-                if (!installed) return;
+                if (!installed && queue == null) return;
                 try {
                     float now = Time.realtimeSinceStartup;
                     if (pending && (now - lastAt >= Quiet || now - firstAt >= MaxWait)) StartSync();
@@ -123,7 +144,7 @@ namespace UsefulTORStuff {
         static class StartFlushPatch {
             [HarmonyPriority(Priority.First)]
             public static void Prefix() {
-                if (!installed) return;
+                if (!installed && queue == null) return;
                 try {
                     if (pending) StartSync();
                     while (queue != null) SendChunk();

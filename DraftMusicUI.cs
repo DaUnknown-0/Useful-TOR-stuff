@@ -187,6 +187,11 @@ namespace UsefulTORStuff {
                                                 : UTSLocalization.Tr("uts.draftmusic.playlist_empty") });
             foreach (var k in MusicLibrary.Kinds) list.Add(KindChoice(k));
             foreach (var tr in DraftMusic.Files()) list.Add(new Choice { Key = tr.Key, Name = tr.Title, Style = UTSLocalization.Tr("uts.draftmusic.own_file"), CanListen = true, CanList = true });
+            // tracks other plugins added for this tab (UTS.Music.AddTrack)
+            foreach (var tr in DraftMusic.ExternalFor(slot.Name))
+                list.Add(new Choice { Key = tr.Key, Name = tr.Title,
+                                      Style = string.IsNullOrEmpty(tr.Style) ? UTSLocalization.Tr("uts.music.ext_style") : tr.Style,
+                                      CanListen = true, CanList = true });
             return list;
         }
 

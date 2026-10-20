@@ -27,7 +27,7 @@ namespace UsefulTORStuff {
         public const string Off = "off";
 
         /// Choice and playlist of the meetings ("off" never sits on the playlist).
-        internal static readonly MusicSlot Slot = new MusicSlot(Off, false);
+        internal static readonly MusicSlot Slot = new MusicSlot(Off, false, "meeting");
 
         public static void Bind(ConfigFile config) {
             Slot.Choice = config.Bind("MeetingMusic", "Track", Off,

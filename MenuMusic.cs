@@ -24,7 +24,7 @@ namespace UsefulTORStuff {
     public static class MenuMusic {
         public const string Original = "original";
 
-        internal static readonly MusicSlot Slot = new MusicSlot(Original, true);
+        internal static readonly MusicSlot Slot = new MusicSlot(Original, true, "menu");
         internal static readonly ThemeSwap Swap = new ThemeSwap("MenuMusic", Slot, InMenus, ThemeSwap.LongMusicSource, true);
         public static ConfigEntry<bool> DiagTest;
 

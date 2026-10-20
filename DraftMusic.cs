@@ -24,6 +24,15 @@
  * swap happens in the draft's first frame; until a clip is ready TOR's own track keeps playing.
  *
  * Nobody else hears or needs anything: no option, no RPC, no host involvement.
+ *
+ * TRACKS OF OTHER PLUGINS (2026-10-20): AppDomain contract, BCL types only (like UTS.LobbyMenu.Add):
+ *   "UTS.Music.AddTrack"     Action<string id, string title, string group, string path, string flags>
+ *   "UTS.Music.RemoveTrack"  Action<string id>
+ * path is an .ogg, .mp3 or .wav file on disk (decoded like an own file). The track gets the key "ext:<id>" and shows
+ * in the music panel as an own choice (and for the playlist) with group as its style line. flags (comma list, may be
+ * empty): slot names "draft", "menu", "lobby", "meeting", "reactor" limit the tabs it shows in (none = all tabs);
+ * "random" also puts it into the random pool of those tabs; "tempo" lets the reactor tab play it faster the less
+ * time the critical sabotage has left (AudioSource.pitch, see ReactorTrack).
  */
 
 using System;
@@ -40,7 +49,7 @@ using UnityEngine;
 namespace UsefulTORStuff {
 
     public static class DraftMusic {
-        public const string Tor = "tor", Random = "random", Playlist = "playlist", FilePrefix = "file:";
+        public const string Tor = "tor", Random = "random", Playlist = "playlist", FilePrefix = "file:", ExtPrefix = "ext:";
 
         internal sealed class Track {
             public string Key;       // "synthwave-a" (a version of a built-in kind), "file:My Song.ogg"
@@ -50,12 +59,63 @@ namespace UsefulTORStuff {
             public long Size;        // built-ins: bytes of the download
             public string Sha256;    // built-ins: lower-case hex of the download
             public bool Best;        // built-ins: one of the kind's best rated versions (switched on by default)
-            public string FilePath;  // absolute path (own files)
+            public string FilePath;  // absolute path (own files, tracks of other plugins)
             public bool IsFile => FilePath != null;
+            // tracks of other plugins (UTS.Music.AddTrack)
+            public bool External;
+            public string[] Slots;   // tabs it shows in, null = all
+            public bool InRandom;    // also drawn by "random"
+            public bool Tempo;       // the reactor tab speeds it up with the sabotage's countdown
         }
 
+        // ====================================================================
+        // Tracks of other plugins (see the header)
+        // ====================================================================
+        public const string AddTrackKey = "UTS.Music.AddTrack", RemoveTrackKey = "UTS.Music.RemoveTrack";
+        private static readonly List<Track> external = new List<Track>();
+        internal static readonly string[] SlotNames = { "draft", "menu", "lobby", "meeting", "reactor" };
+
+        internal static void PublishContract() {
+            try {
+                AppDomain.CurrentDomain.SetData(AddTrackKey, new Action<string, string, string, string, string>(AddTrack));
+                AppDomain.CurrentDomain.SetData(RemoveTrackKey, new Action<string>(RemoveTrack));
+            } catch { }
+        }
+
+        /// <summary>Adds or replaces (same id) a track of another plugin. See the header for the flags.</summary>
+        public static void AddTrack(string id, string title, string group, string path, string flags) {
+            try {
+                id = (id ?? "").Trim().Replace("|", "");
+                if (id.Length == 0 || string.IsNullOrEmpty(path)) return;
+                string ext = Path.GetExtension(path).ToLowerInvariant();
+                if (!Formats.Contains(ext)) { Warn($"track '{id}' refused: {ext} is not .ogg, .mp3 or .wav"); return; }
+                var tokens = (flags ?? "").Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)
+                                          .Select(f => f.Trim().ToLowerInvariant()).ToList();
+                var slots = tokens.Where(t => SlotNames.Contains(t)).Distinct().ToArray();
+                string key = ExtPrefix + id;
+                external.RemoveAll(t => t.Key == key);
+                failed.Remove(key);
+                external.Add(new Track {
+                    Key = key, Title = string.IsNullOrWhiteSpace(title) ? id : title.Trim(), Style = group ?? "", FilePath = path,
+                    External = true, Slots = slots.Length > 0 ? slots : null, InRandom = tokens.Contains("random"), Tempo = tokens.Contains("tempo")
+                });
+                Changed();
+                Log($"track '{key}' added by another plugin ({(slots.Length > 0 ? string.Join("/", slots) : "all tabs")}"
+                    + $"{(tokens.Contains("tempo") ? ", tempo" : "")}): {Path.GetFileName(path)}");
+            } catch (Exception e) { Warn($"AddTrack '{id}': {e.Message}"); }
+        }
+
+        public static void RemoveTrack(string id) {
+            string key = ExtPrefix + (id ?? "").Trim();
+            if (external.RemoveAll(t => t.Key == key) > 0) { Forget(key); Changed(); }
+        }
+
+        /// The tracks of other plugins for one tab ("draft", "menu", ...), in the order they were added.
+        internal static List<Track> ExternalFor(string slot) =>
+            external.Where(t => t.Slots == null || slot == null || t.Slots.Contains(slot)).ToList();
+
         /// Choice and playlist of the draft (TOR's own track may sit on the playlist).
-        internal static readonly MusicSlot Slot = new MusicSlot(Tor, true);
+        internal static readonly MusicSlot Slot = new MusicSlot(Tor, true, "draft");
         public static ConfigEntry<bool> DiagTest;
 
         public static void Bind(ConfigFile config) {
@@ -70,6 +130,7 @@ namespace UsefulTORStuff {
                 + "the Draft music panel.");
             Slot.Changed = Undecide;                     // the lobby preloads the new choice
             Slot.BindVolume(config, "DraftMusic", 100, 1f, "the draft music");
+            PublishContract();
             DiagTest = config.Bind("Diagnostics", "DraftMusic Test", false,
                 "Autotest only: in freeplay, opens the draft music panel, then plays a simulated draft and logs whether the chosen clip took over.");
         }
@@ -119,6 +180,7 @@ namespace UsefulTORStuff {
             var v = MusicLibrary.Version(key);
             if (v != null) return v;
             if (key.StartsWith(FilePrefix)) foreach (var t in Files()) if (t.Key == key) return t;
+            if (key.StartsWith(ExtPrefix)) foreach (var t in external) if (t.Key == key) return File.Exists(t.FilePath) ? t : null;
             return null;
         }
 
@@ -521,7 +583,8 @@ namespace UsefulTORStuff {
                 int i = s.IndexOf(TorCreditStart, StringComparison.Ordinal);
                 if (i < 0) return;
                 int end = s.IndexOf('♫', i);
-                string credit = current.IsFile ? current.Title : $"{current.Title} ({current.Style})";
+                string credit = current.IsFile && (!current.External || string.IsNullOrEmpty(current.Style))
+                    ? current.Title : $"{current.Title} ({current.Style})";
                 title.text = s.Substring(0, i) + credit + (end >= 0 ? " " + s.Substring(end) : "");
             } catch { intro = null; }
         }

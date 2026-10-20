@@ -16,7 +16,7 @@ namespace UsefulTORStuff {
     public static class LobbyMusic {
         public const string Original = "original";
 
-        internal static readonly MusicSlot Slot = new MusicSlot(Original, true);
+        internal static readonly MusicSlot Slot = new MusicSlot(Original, true, "lobby");
         internal static readonly ThemeSwap Swap = new ThemeSwap("LobbyMusic", Slot, InLobby, FindTheme, true);
 
         public static void Bind(ConfigFile config) {

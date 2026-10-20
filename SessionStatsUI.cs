@@ -87,7 +87,7 @@ namespace UsefulTORStuff {
             nextPoll = Time.realtimeSinceStartup + 0.5f;
             DiagTick();
 
-            bool diag = DiagViewer != null && DiagViewer.Value;
+            bool diag = (DiagViewer != null && DiagViewer.Value) || PresetsSelfTest.Running;
             if (panelRoot != null && !LobbyScreen.Exists && !diag) Close();
             if (panelRoot != null) {
                 var t = SessionStats.LastTable;
@@ -223,7 +223,7 @@ namespace UsefulTORStuff {
                     if (titlesView) {
                         BuildTitles(panel, t, me);
                         // the host can turn the tab into the end-of-evening panel for everybody
-                        if (!ceremony && AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost && t.Titles.Count > 0)
+                        if (!ceremony && AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost && t.Titles.Count + t.ExtTitles.Count > 0)
                             VanillaUI.Button(panel, UTSLocalization.Tr("uts.sessionstats.ceremony_button"),
                                              new Vector2(-VanillaUI.FrameW - 24, VanillaUI.FrameW + 16), new Vector2(320, 48), VanillaUI.Amber,
                                              SessionStats.SendCeremony, new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0));
@@ -358,38 +358,63 @@ namespace UsefulTORStuff {
 
         // ---- titles of the evening ----
         private const float CardW = 470, CardH = 200, CardGap = 20;
+        // the room the cards may fill: from the top row down to the ceremony button
+        private const float TitlesAreaH = PanelH + TopY - 96f;
 
         [HideFromIl2Cpp]
         private void BuildTitles(GameObject panel, SessionStats.Table t, byte me) {
-            if (t.Titles.Count == 0) {
+            // the built-in titles, then those of other plugins (SessionStats.AddTitle)
+            var all = t.Titles.Concat(t.ExtTitles).ToList();
+            if (all.Count == 0) {
                 VanillaUI.Text(panel, UTSLocalization.Tr("uts.sessionstats.titles_none"), 16, VanillaUI.Muted,
                      new Vector2(TableX, TopY), new Vector2(PanelW - 60, 30), TMPro.FontStyles.Italic);
                 return;
             }
+            // up to nine titles keep the three wide columns; more get up to five columns, then lower cards
+            int cols = all.Count <= 9 ? 3 : Mathf.Clamp((all.Count + 2) / 3, 4, 5);
+            int rowsN = (all.Count + cols - 1) / cols;
+            float cw = cols == 3 ? CardW : (PanelW - 2 * TableX - (cols - 1) * CardGap) / cols;
+            float ch = Mathf.Min(CardH, (TitlesAreaH - (rowsN - 1) * CardGap) / rowsN);
+            float step = ch < 180f ? 26f : 32f;
             int i = 0;
-            foreach (var ti in t.Titles) {
-                int col = i % 3, row = i / 3;
-                var card = VanillaUI.Box(panel, new Vector2(TableX + col * (CardW + CardGap), TopY - row * (CardH + CardGap)),
-                               new Vector2(CardW, CardH), ti.Holders.Contains(me) ? VanillaUI.FieldLight : VanillaUI.Field);
-                string key = $"uts.sessionstats.title_{ti.Id}";
-                VanillaUI.Text(card, UTSLocalization.Tr(key + "_name"), 22, ColGold, new Vector2(18, -14), new Vector2(CardW - 36, 32),
+            foreach (var ti in all) {
+                int col = i % cols, row = i / cols;
+                var card = VanillaUI.Box(panel, new Vector2(TableX + col * (cw + CardGap), TopY - row * (ch + CardGap)),
+                               new Vector2(cw, ch), ti.Holders.Contains(me) ? VanillaUI.FieldLight : VanillaUI.Field);
+                var head = VanillaUI.Text(card, TitleName(ti), 22, ColGold, new Vector2(18, -14), new Vector2(cw - 36, 32),
                                TMPro.FontStyles.Bold | TMPro.FontStyles.UpperCase);
-                VanillaUI.Text(card, TitleValue(ti), 14, VanillaUI.Muted, new Vector2(18, -50), new Vector2(CardW - 36, 40));
-                float y = -98;
-                if (ti.Id == SessionStats.TitleNemesis && ti.Holders.Count == 2) {
-                    HolderLine(card, WhoOf(ti.Holders[0], t), y);
+                head.enableAutoSizing = true; head.fontSizeMin = 14; head.fontSizeMax = 22; head.enableWordWrapping = false;
+                VanillaUI.Text(card, TitleValue(ti), 14, VanillaUI.Muted, new Vector2(18, -50), new Vector2(cw - 36, 40));
+                float y = ch < 180f ? -84 : -98;
+                if (ti.Key == null && ti.Id == SessionStats.TitleNemesis && ti.Holders.Count == 2) {
+                    HolderLine(card, WhoOf(ti.Holders[0], t), y, cw);
                     VanillaUI.Text(card, UTSLocalization.Tr("uts.sessionstats.nemesis_of"), 14, VanillaUI.Muted,
-                         new Vector2(52, y - 30), new Vector2(CardW - 70, 22), TMPro.FontStyles.Italic);
-                    HolderLine(card, WhoOf(ti.Holders[1], t), y - 56);
+                         new Vector2(52, y - step + 2), new Vector2(cw - 70, 22), TMPro.FontStyles.Italic);
+                    HolderLine(card, WhoOf(ti.Holders[1], t), y - 2 * step + 8, cw);
                 } else {
-                    foreach (byte h in ti.Holders) { HolderLine(card, WhoOf(h, t), y); y -= 32; }
+                    foreach (byte h in ti.Holders) { HolderLine(card, WhoOf(h, t), y, cw); y -= step; }
                 }
                 i++;
             }
         }
 
+        // A title of another plugin: its own words when that plugin is here too (this client's language), else
+        // the host's text.
+        [HideFromIl2Cpp]
+        private static string TitleName(SessionStats.Title ti) {
+            if (ti.Key == null) return UTSLocalization.Tr($"uts.sessionstats.title_{ti.Id}_name");
+            var local = SessionStats.FindExtTitle(ti.Key);
+            if (local != null) { try { var s = local.Name(); if (!string.IsNullOrEmpty(s)) return s; } catch { } }
+            return ti.Name ?? ti.Key;
+        }
+
         [HideFromIl2Cpp]
         private static string TitleValue(SessionStats.Title ti) {
+            if (ti.Key != null) {
+                var local = SessionStats.FindExtTitle(ti.Key);
+                if (local?.Value != null) { try { var s = local.Value(ti.Value); if (s != null) return s; } catch { } }
+                return ti.ValueText ?? ti.Value.ToString();
+            }
             string key = $"uts.sessionstats.title_{ti.Id}_value";
             return ti.Id == SessionStats.TitleTalker
                 ? UTSLocalization.Tr(key, (ti.Value / 100f).ToString("0.0"))
@@ -397,13 +422,13 @@ namespace UsefulTORStuff {
         }
 
         [HideFromIl2Cpp]
-        private static void HolderLine(GameObject card, Who w, float y) {
+        private static void HolderLine(GameObject card, Who w, float y, float cardW = CardW) {
             var dot = VanillaUI.Box(card, new Vector2(18, y - 2), new Vector2(22, 22), w.Col);
             dot.GetComponent<Image>().sprite = VanillaUI.Circle();
             string name = w.Name == "?" ? UTSLocalization.Tr("uts.sessionstats.others")
                         : w.Here ? w.Name : $"{w.Name} {UTSLocalization.Tr("uts.sessionstats.left_tag")}";
             VanillaUI.Text(card, name, 18, w.Here ? Color.white : ColLeft,
-                 new Vector2(52, y), new Vector2(CardW - 70, 28), TMPro.FontStyles.Bold);
+                 new Vector2(52, y), new Vector2(cardW - 70, 28), TMPro.FontStyles.Bold);
         }
 
         [HideFromIl2Cpp]

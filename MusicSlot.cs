@@ -61,9 +61,13 @@ namespace UsefulTORStuff {
         private readonly System.Random rng = new System.Random();
         private string lastPick;
 
-        public MusicSlot(string baseKey, bool baseOnPlaylist) {
+        /// "draft", "menu", "lobby", "meeting" or "reactor": which tracks of other plugins belong to this slot.
+        public readonly string Name;
+
+        public MusicSlot(string baseKey, bool baseOnPlaylist, string name = null) {
             BaseKey = baseKey;
             BaseOnPlaylist = baseOnPlaylist;
+            Name = name;
         }
 
         public string Selected {
@@ -125,7 +129,9 @@ namespace UsefulTORStuff {
             if (sel == DraftMusic.Random) {
                 // every kind that has a version on this computer, plus the own files
                 var pool = MusicLibrary.Kinds.Where(MusicLibrary.Playable).Select(k => k.Key)
-                                       .Concat(DraftMusic.Files().Where(t => !DraftMusic.Failed(t.Key)).Select(t => t.Key)).ToList();
+                                       .Concat(DraftMusic.Files().Where(t => !DraftMusic.Failed(t.Key)).Select(t => t.Key))
+                                       .Concat(DraftMusic.ExternalFor(Name).Where(t => t.InRandom && !DraftMusic.Failed(t.Key)
+                                                                               && DraftMusic.Find(t.Key) != null).Select(t => t.Key)).ToList();
                 if (pool.Count == 0) return null;
                 if (pool.Count > 1) pool.Remove(lastPick);
                 string p = pool[rng.Next(pool.Count)];

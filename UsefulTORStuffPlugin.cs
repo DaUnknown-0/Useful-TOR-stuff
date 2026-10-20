@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.2.3";
+    public const string PluginVersion = "1.5.2.4";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -155,6 +155,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         LobbyMusic.Bind(Config);
         MeetingMusic.Bind(Config);
         ReactorTrack.Bind(Config);
+        PresetsSelfTest.Bind(Config);
 
         MinDropDistance = Config.Bind(
             "Bloody", "MinDropDistance", 0.35f,
@@ -516,6 +517,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Lobby panel of the session statistics (host and guests); also drives the host's sending.
         AddComponent<SessionStatsUI>();
+
+        // Host-only lobby panel for named settings presets (all mod options + the game's settings).
+        AddComponent<SettingsPresetsUI>();
 
         // Draft music: every player's own pick for TOR's Role Draft (driver + lobby panel).
         AddComponent<DraftMusicDriver>();

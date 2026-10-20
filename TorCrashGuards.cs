@@ -130,6 +130,28 @@
  *      since Tracker.DangerMeterParent never gets set and the creation guard keeps retrying. Skipped
  *      for that tick when the template is missing; retried automatically next tick.
  *
+ *  - Hat-Asset (Modules/CustomHats/Patches/HatParentPatches.cs, SetHatPrefix(HatParent, int) and
+ *      SetIdleAnimPrefix): a HARD crash (no managed exception) on the scene change to the end screen.
+ *      For a TOR hat (one in CustomHatManager.ViewDataCache) both prefixes do `__instance.viewAsset = null`
+ *      and skip the original. If the HatParent still held the loaded AddressableAsset<HatViewData> of
+ *      a VANILLA hat at that moment, nobody ever releases it: the object becomes garbage, the GC that
+ *      AmongUsClient.OnActiveSceneChange runs on every scene change finalizes it, and its finalizer
+ *      (Destroy -> Unload -> Addressables.Release -> AssetBundle.Unload) runs on the finalizer thread.
+ *      Unity logs "Graphics device is null." and the process dies. The game itself always calls
+ *      HatParent.UnloadAsset (main thread) before it lets go of an asset, OnDestroy included.
+ *      Reached whenever a player goes from a vanilla hat to a TOR hat during a round: TOR's own
+ *      setDefaultLook in Camouflager.resetCamouflage (clearAndReload at the end of TOR's OnGameEnd
+ *      postfix) does it for every player whose own hat is a TOR hat and who wears a vanilla look at
+ *      that moment, likewise a Morphling morph or a camouflage ending mid-round (the crash then waits
+ *      for the next scene change), RpcSetHat, or another mod's setLook. Measured 21.10. in freeplay:
+ *      local player with an own TOR hat set to hat_NewYear2025 via setLook;
+ *      in OnGameEnd the reset to the own hat found viewAsset "Success, handle valid" and TOR nulled it;
+ *      crash on the change to EndGame, every time. A dummy whose own hat is vanilla never crashes
+ *      (the original path unloads properly). Fixed by a prefix that runs BEFORE TOR's and calls the
+ *      game's own UnloadAsset in exactly TOR's condition (TOR hat + viewAsset still set), so the
+ *      asset is released on the main thread and TOR's null assignment drops an empty shell.
+ *      TOR's own patches already detour both methods, so this adds no new detour.
+ *
  * Deliberately NOT fixed here, with reasons:
  *
  *  M-46) EnumerationHelpers.GetFastEnumerator<T> (Utilities/EnumerationHelpers.cs:13-84) snapshots the
@@ -579,6 +601,52 @@ namespace UsefulTORStuff {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[TorCrashGuards] sidekickPromotes race guard failed: {e.GetType().Name}: {e.Message}");
                     return true;
                 }
+            }
+        }
+
+        // ── Hat-Asset: release a vanilla HatViewData before TOR's hat patches drop it ────────────
+        static class HatViewAssetReleaseGuard {
+            private static Dictionary<string, HatViewData> torViewCache;
+            private static bool cacheLooked, loggedOnce;
+
+            // CustomHatManager is internal; ViewDataCache is the very dictionary TOR's IsCached() reads.
+            private static bool IsTorHat(HatData hat) {
+                if (hat == null) return false;
+                if (!cacheLooked) {
+                    cacheLooked = true;
+                    try {
+                        torViewCache = AccessTools.Field(TorType.Get("TheOtherRoles.Modules.CustomHats.CustomHatManager"), "ViewDataCache")
+                            ?.GetValue(null) as Dictionary<string, HatViewData>;
+                    } catch { torViewCache = null; }
+                    if (torViewCache == null)
+                        UsefulTORStuffPlugin.Logger?.LogWarning("[TorCrashGuards] hat asset guard: TOR's ViewDataCache not found, guard inactive");
+                }
+                return torViewCache != null && torViewCache.ContainsKey(hat.name);
+            }
+
+            internal static void Release(HatParent hp) {
+                try {
+                    if (hp == null || hp.viewAsset == null || !IsTorHat(hp.Hat)) return;
+                    hp.UnloadAsset();
+                    if (!loggedOnce) {
+                        loggedOnce = true;
+                        UsefulTORStuffPlugin.Logger?.LogInfo($"[TorCrashGuards] hat asset guard: released the hat asset TOR would drop (now wearing {hp.Hat.name})");
+                    }
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[TorCrashGuards] hat asset guard failed: {e.GetType().Name}: {e.Message}");
+                }
+            }
+
+            [HarmonyPatch(typeof(HatParent), nameof(HatParent.SetHat), typeof(int))]
+            static class SetHatColorPatch {
+                [HarmonyPriority(Priority.First)]  // before TOR's prefixes (Normal/High); HarmonyX runs all prefixes anyway
+                public static void Prefix(HatParent __instance) => Release(__instance);
+            }
+
+            [HarmonyPatch(typeof(HatParent), nameof(HatParent.SetIdleAnim))]
+            static class SetIdleAnimPatch {
+                [HarmonyPriority(Priority.First)]
+                public static void Prefix(HatParent __instance) => Release(__instance);
             }
         }
 

@@ -27,6 +27,18 @@
  * evening: a round that starts more than 120 minutes after the newest recorded one starts a new
  * session, and only rounds of the last 24 hours are kept.
  *
+ * TITLES FROM OTHER PLUGINS (2026-10-20)
+ * Other plugins can add titles of their own, with counters, through two AppDomain contracts (BCL types only, no
+ * compile dependency either way; the same pattern as UTS.LobbyMenu.Add):
+ *   "UTS.SessionStats.AddTitle"  Action<string id, int order, Func<string> name, Func<int, string> value>
+ *       registers (or replaces) a title. name() is its heading, value(n) the line under it ("first 12 times").
+ *   "UTS.SessionStats.Count"     Action<string id, byte playerId, int amount>
+ *       counts for a player. Every client counts what it sees, like the rest of the statistics; the host's numbers
+ *       are shown. Counts go with the player's next finished round (so they follow the same session and 24 h rules,
+ *       file column 12 "id=n;id=n"); counts not yet in a round are included as well.
+ * The host gives the title to the player(s) with the highest count (ties: more rounds first, at most three) and
+ * sends heading and value line as text (Sub 5, one message per title), so guests without that plugin see it too.
+ *
  * Option 1395 (General tab), module byte 238. See ID-Registry.md.
  */
 
@@ -60,6 +72,7 @@ namespace UsefulTORStuff {
         private const byte SubRow     = 2;   // host -> all: one player's numbers
         private const byte SubTitles  = 3;   // host -> all: titles of the evening (between Begin and the rows)
         private const byte SubCeremony = 4;  // host -> all: open the "end of the evening" titles panel now
+        private const byte SubExtTitle = 5;  // host -> all: one title of another plugin (between Titles and the rows)
 
         private const int MaxRoles = 3, MaxSlices = 7;
 
@@ -75,6 +88,7 @@ namespace UsefulTORStuff {
             public int Kills;
             public float Share;            // survived share of the gameplay time, -1 unknown (disconnect)
             public bool Won;
+            public Dictionary<string, int> Extra;   // counters of other plugins' titles (id -> count), null if none
         }
 
         public static bool IsKillReason(DeadPlayer.CustomDeathReason r) =>
@@ -91,7 +105,10 @@ namespace UsefulTORStuff {
             }
         }
 
-        public static void RegisterRpc() => UTSRpc.Register(RpcId, HandleModuleRpc);
+        public static void RegisterRpc() {
+            UTSRpc.Register(RpcId, HandleModuleRpc);
+            PublishContracts();
+        }
 
         // PlayerIdentity: a player's older key (friend code, "name:") becomes his PUID key, as killer and as victim.
         internal static bool RenameKey(string oldKey, string newKey) {
@@ -164,7 +181,8 @@ namespace UsefulTORStuff {
                         Reason = int.TryParse(f[6], NumberStyles.Integer, CultureInfo.InvariantCulture, out var rs) ? rs : ReasonSurvived,
                         Meetings = int.TryParse(f[8], NumberStyles.Integer, CultureInfo.InvariantCulture, out var m) ? m : 0,
                         Kills = int.TryParse(f[9], NumberStyles.Integer, CultureInfo.InvariantCulture, out var k) ? k : 0,
-                        Share = float.TryParse(f[10], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : -1f
+                        Share = float.TryParse(f[10], NumberStyles.Float, CultureInfo.InvariantCulture, out var s) ? s : -1f,
+                        Extra = f.Length > 11 ? ParseExtra(f[11]) : null
                     };
                     if (!byEnd.TryGetValue(unix, out var r)) byEnd[unix] = r = new Round { End = end, Entries = new List<RoundEntry>() };
                     r.Entries.Add(e);
@@ -186,6 +204,22 @@ namespace UsefulTORStuff {
 
         private static string Clean(string s) => (s ?? "").Replace('\t', ' ').Replace('\n', ' ').Replace('\r', ' ');
 
+        // "id=n;id=n" (ids are cleaned of the separators when they are counted)
+        private static Dictionary<string, int> ParseExtra(string s) {
+            if (string.IsNullOrEmpty(s)) return null;
+            Dictionary<string, int> d = null;
+            foreach (var part in s.Split(';')) {
+                int eq = part.LastIndexOf('=');
+                if (eq <= 0 || !int.TryParse(part.Substring(eq + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) || n <= 0) continue;
+                (d ??= new Dictionary<string, int>())[part.Substring(0, eq)] = n;
+            }
+            return d;
+        }
+
+        private static string FormatExtra(Dictionary<string, int> d) =>
+            d == null || d.Count == 0 ? "" : string.Join(";", d.Where(kv => kv.Value > 0)
+                .Select(kv => kv.Key + "=" + kv.Value.ToString(CultureInfo.InvariantCulture)));
+
         private static void Save() {
             if (loadFailed) return;
             try {
@@ -196,7 +230,7 @@ namespace UsefulTORStuff {
                         lines.Add(string.Join("\t", unix, Clean(e.Code), Clean(e.Name), e.Team.ToString(CultureInfo.InvariantCulture),
                             Clean(e.Role), e.Won ? "1" : "0", e.Reason.ToString(CultureInfo.InvariantCulture), Clean(e.KillerCode),
                             e.Meetings.ToString(CultureInfo.InvariantCulture), e.Kills.ToString(CultureInfo.InvariantCulture),
-                            e.Share.ToString("0.###", CultureInfo.InvariantCulture)));
+                            e.Share.ToString("0.###", CultureInfo.InvariantCulture), FormatExtra(e.Extra)));
                 }
                 string tmp = FilePath + ".tmp";
                 File.WriteAllLines(tmp, lines);
@@ -244,6 +278,7 @@ namespace UsefulTORStuff {
                 return;
             }
             foreach (var e in entries) e.Won = winners.Contains(e.Name);
+            MergeExtCounts(entries);
 
             EnsureLoaded();
             var newest = Newest();
@@ -278,6 +313,8 @@ namespace UsefulTORStuff {
             // A player who left the lobby (User 2026-10-02: keep them, at the bottom): his last known
             // name; PlayerId is then a stand-in id from LeftIdBase up. Null for players who are here.
             public string LeftName;
+            // counters of other plugins' titles over the session (host side, not sent per row)
+            public readonly Dictionary<string, int> Extra = new Dictionary<string, int>();
         }
 
         // Stand-in ids for players who left: above every real PlayerId, below OthersId.
@@ -293,6 +330,8 @@ namespace UsefulTORStuff {
             public byte Id;
             public int Value;                                   // kills, %, count ... (meetings x100)
             public readonly List<byte> Holders = new List<byte>();   // Nemesis: [killer, victim]
+            // titles of other plugins: their id, heading and value line as the host sent them (null for the built-ins)
+            public string Key, Name, ValueText;
         }
 
         public sealed class Table {
@@ -301,6 +340,7 @@ namespace UsefulTORStuff {
             public int Expected;
             public readonly Dictionary<byte, Row> Rows = new Dictionary<byte, Row>();
             public readonly List<Title> Titles = new List<Title>();
+            public readonly List<Title> ExtTitles = new List<Title>();
             public float ReceivedAt;
             public bool Complete => Rows.Count >= Expected;
         }
@@ -363,7 +403,11 @@ namespace UsefulTORStuff {
                     if (e.Won) { row.Wins++; row.TeamWins[team]++; }
                     row.Kills += e.Kills;
                     row.DeathCats[CategoryOf(e)]++;
+                    if (e.Extra != null)
+                        foreach (var x in e.Extra) row.Extra[x.Key] = (row.Extra.TryGetValue(x.Key, out var have) ? have : 0) + x.Value;
                 }
+                if (extCounts.TryGetValue(kv.Key, out var waiting))
+                    foreach (var x in waiting) row.Extra[x.Key] = (row.Extra.TryGetValue(x.Key, out var have) ? have : 0) + x.Value;
                 if (mine.Count > 0) {
                     row.MeetingsAvg = (float)mine.Average(e => e.Meetings);
                     var shares = mine.Where(e => e.Share >= 0f).ToList();
@@ -371,13 +415,14 @@ namespace UsefulTORStuff {
                 }
                 foreach (var g in mine.GroupBy(e => e.Role).OrderByDescending(g => g.Count()).ThenBy(g => g.Key).Take(MaxRoles))
                     row.Roles.Add((g.Key, g.Count()));
-                if (row.LeftName != null && row.Rounds == 0) continue;
+                if (row.LeftName != null && row.Rounds == 0 && row.Extra.Count == 0) continue;
                 row.KilledBy.AddRange(Slices(mine.Where(IsKilledBySomeone).Select(e => e.KillerCode), ids));
                 row.Victims.AddRange(Slices(all.Where(e => e.KillerCode == kv.Key && IsKilledBySomeone(e)).Select(e => e.Code), ids));
                 t.Rows[row.PlayerId] = row;
             }
             t.Expected = t.Rows.Count;
             BuildTitles(t, all, ids);
+            BuildExtTitles(t);
             return t;
         }
 
@@ -436,6 +481,96 @@ namespace UsefulTORStuff {
         }
 
         // ====================================================================
+        // Titles of other plugins (AppDomain contracts, see the header)
+        // ====================================================================
+        public const string AddTitleKey = "UTS.SessionStats.AddTitle";
+        public const string CountKey = "UTS.SessionStats.Count";
+
+        internal sealed class ExtTitle {
+            public string Id;
+            public int Order;
+            public Func<string> Name;
+            public Func<int, string> Value;
+        }
+
+        private static readonly List<ExtTitle> extTitles = new List<ExtTitle>();
+        // counts not yet in a finished round: player key -> title id -> count
+        private static readonly Dictionary<string, Dictionary<string, int>> extCounts = new Dictionary<string, Dictionary<string, int>>();
+
+        /// <summary>Publishes the two contracts (plugin load, before any other plugin's game hooks run).</summary>
+        public static void PublishContracts() {
+            try {
+                AppDomain.CurrentDomain.SetData(AddTitleKey, new Action<string, int, Func<string>, Func<int, string>>(AddTitle));
+                AppDomain.CurrentDomain.SetData(CountKey, new Action<string, byte, int>(Count));
+            } catch { }
+        }
+
+        private static string CleanId(string id) =>
+            new string((id ?? "").Where(c => c != '\t' && c != '\n' && c != '\r' && c != ';' && c != '=').ToArray()).Trim();
+
+        /// <summary>Adds or replaces (same id) a title of another plugin. Lower order comes first.</summary>
+        public static void AddTitle(string id, int order, Func<string> name, Func<int, string> value) {
+            id = CleanId(id);
+            if (id.Length == 0 || name == null) return;
+            extTitles.RemoveAll(x => x.Id == id);
+            extTitles.Add(new ExtTitle { Id = id, Order = order, Name = name, Value = value });
+            UsefulTORStuffPlugin.Logger?.LogInfo($"[SessionStats] title '{id}' added by another plugin ({extTitles.Count} in all).");
+        }
+
+        internal static List<ExtTitle> ExtTitlesOrdered() =>
+            extTitles.OrderBy(x => x.Order).ThenBy(x => x.Id, StringComparer.Ordinal).ToList();
+
+        internal static ExtTitle FindExtTitle(string id) => id == null ? null : extTitles.Find(x => x.Id == id);
+
+        /// <summary>Counts amount for a player under a title id (every client; the host's numbers are shown).</summary>
+        public static void Count(string id, byte playerId, int amount) {
+            try {
+                id = CleanId(id);
+                if (id.Length == 0 || amount == 0) return;
+                PlayerControl p = null;
+                foreach (var pc in PlayerControl.AllPlayerControls.ToArray())
+                    if (pc != null && pc.PlayerId == playerId) { p = pc; break; }
+                string code = p != null ? NewcomerShield.CodeOf(p) : null;
+                if (string.IsNullOrEmpty(code)) return;
+                if (!extCounts.TryGetValue(code, out var d)) extCounts[code] = d = new Dictionary<string, int>();
+                d[id] = Math.Max(0, (d.TryGetValue(id, out var n) ? n : 0) + amount);
+                dataVersion++;   // the host sends a fresh table at the next tick in the lobby
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] count '{id}' failed: {e.Message}");
+            }
+        }
+
+        internal static int PendingCount(string id) => extCounts.Values.Sum(d => d.TryGetValue(id, out var n) ? n : 0);
+
+        // a finished round takes over the counts of its players; counts of players not in it wait for their next round
+        private static void MergeExtCounts(List<RoundEntry> entries) {
+            if (extCounts.Count == 0) return;
+            foreach (var e in entries) {
+                if (string.IsNullOrEmpty(e.Code) || !extCounts.TryGetValue(e.Code, out var d)) continue;
+                e.Extra ??= new Dictionary<string, int>();
+                foreach (var x in d) e.Extra[x.Key] = (e.Extra.TryGetValue(x.Key, out var n) ? n : 0) + x.Value;
+                extCounts.Remove(e.Code);
+            }
+        }
+
+        private static void BuildExtTitles(Table t) {
+            t.ExtTitles.Clear();
+            foreach (var ext in ExtTitlesOrdered()) {
+                var cand = t.Rows.Values.Select(r => (r.PlayerId, V: r.Extra.TryGetValue(ext.Id, out var n) ? n : 0, r.Rounds))
+                                        .Where(x => x.V > 0).ToList();
+                if (cand.Count == 0) continue;
+                int max = cand.Max(x => x.V);
+                string name, value;
+                try { name = ext.Name() ?? ext.Id; } catch { name = ext.Id; }
+                try { value = ext.Value != null ? ext.Value(max) ?? "" : max.ToString(CultureInfo.InvariantCulture); } catch { value = max.ToString(CultureInfo.InvariantCulture); }
+                var title = new Title { Id = byte.MaxValue, Key = ext.Id, Name = name, ValueText = value, Value = max };
+                foreach (var x in cand.Where(x => x.V == max).OrderByDescending(x => x.Rounds).ThenBy(x => x.PlayerId).Take(3))
+                    title.Holders.Add(x.PlayerId);
+                t.ExtTitles.Add(title);
+            }
+        }
+
+        // ====================================================================
         // Network
         // ====================================================================
         private static byte seq;
@@ -463,6 +598,21 @@ namespace UsefulTORStuff {
                     foreach (byte h in ti.Holders) tw.Write(h);
                 }
                 AmongUsClient.Instance.FinishRpcImmediately(tw);
+                // other plugins' titles, one message each (their texts are free length)
+                for (int i = 0; i < t.ExtTitles.Count && i < 255; i++) {
+                    var ti = t.ExtTitles[i];
+                    MessageWriter ew = UTSRpc.Begin(RpcId);
+                    ew.Write(SubExtTitle);
+                    ew.Write(t.Seq);
+                    ew.Write((byte)i);
+                    ew.Write(Cut(ti.Key, 40));
+                    ew.Write(Cut(ti.Name, 48));
+                    ew.Write(Cut(ti.ValueText, 80));
+                    ew.Write((ushort)Mathf.Clamp(ti.Value, 0, ushort.MaxValue));
+                    ew.Write(B(ti.Holders.Count));
+                    foreach (byte h in ti.Holders) ew.Write(h);
+                    AmongUsClient.Instance.FinishRpcImmediately(ew);
+                }
                 // one message per player keeps every packet far below the MTU
                 foreach (var row in t.Rows.Values) {
                     MessageWriter r = UTSRpc.Begin(RpcId);
@@ -478,6 +628,7 @@ namespace UsefulTORStuff {
         }
 
         private static byte B(int v) => (byte)Mathf.Clamp(v, 0, 255);
+        private static string Cut(string s, int n) { s ??= ""; return s.Length > n ? s.Substring(0, n) : s; }
 
         private static void WriteRow(MessageWriter w, Row row) {
             w.Write(row.PlayerId);
@@ -588,6 +739,19 @@ namespace UsefulTORStuff {
                         incoming.Titles.AddRange(list);
                         break;
                     }
+                    case SubExtTitle: {
+                        byte s = reader.ReadByte();
+                        int index = reader.ReadByte();
+                        var ti = new Title { Id = byte.MaxValue, Key = reader.ReadString(), Name = reader.ReadString(),
+                                             ValueText = reader.ReadString(), Value = reader.ReadUInt16() };
+                        int k = reader.ReadByte();
+                        for (int j = 0; j < k; j++) ti.Holders.Add(reader.ReadByte());
+                        if (!UTSRpc.RequireHost("SessionStats.ExtTitle")) break;
+                        if (incoming == null || incoming.Seq != s) break;
+                        if (index == 0) incoming.ExtTitles.Clear();
+                        incoming.ExtTitles.Add(ti);
+                        break;
+                    }
                     case SubRow: {
                         byte s = reader.ReadByte();
                         var row = ReadRow(reader);
@@ -663,6 +827,20 @@ namespace UsefulTORStuff {
                 t.Rows[row.PlayerId] = row;
             }
             t.Expected = t.Rows.Count;
+            // other plugins' titles: their real counters where some were counted (the autotests of those plugins),
+            // sample numbers for the rest
+            foreach (var p in PlayerControl.AllPlayerControls.ToArray()) {
+                if (p == null || !t.Rows.TryGetValue(p.PlayerId, out var row)) continue;
+                if (extCounts.TryGetValue(NewcomerShield.CodeOf(p) ?? "", out var counted))
+                    foreach (var x in counted) row.Extra[x.Key] = x.Value;
+            }
+            int sampleN = 0;
+            foreach (var ext in ExtTitlesOrdered())
+                if (ids.Count > 0 && !t.Rows.Values.Any(r => r.Extra.ContainsKey(ext.Id))) {
+                    t.Rows[ids[sampleN % ids.Count]].Extra[ext.Id] = 3 + sampleN;
+                    sampleN++;
+                }
+            BuildExtTitles(t);
             int[] values = { 7, 68, 67, 5, 210, 3, 3, 5, 4 };
             for (byte id = 0; id < TitleCount; id++) {
                 if (ids.Count == 0) break;
