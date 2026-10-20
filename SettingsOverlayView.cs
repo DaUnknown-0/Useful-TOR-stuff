@@ -62,6 +62,13 @@
  *   - Blocks stay separated by a blank line because TOR's HudManagerUpdate.Prefix2 splits the text
  *     on "\n\n" to fill up to four columns (CustomOptions.cs:1360). This layout produces FEWER
  *     lines than TOR's own, so it can only move away from that method's 4-column limit, never into it.
+ *   - SUB-PAGES (F1 overlay only): Prefix2 has exactly four TextMeshPros and indexes them blindly,
+ *     so a page that needs a fifth column loses its tail, and a sixth throws IndexOutOfRange. A
+ *     page whose simulated split needs more than SplitColumns (default 4) columns is therefore cut
+ *     into sub-pages 6a, 6b, ... at block boundaries (a role never loses its sub-options to the
+ *     next part). TAB walks the sub-pages first and only then lets TOR move on; a number key always
+ *     lands on the first part. Pages that fit, and the narrow lobby list, are emitted exactly as
+ *     before. See SubPageKeys for how TAB is held back without touching TOR's key handler.
  *   - No option is gated through UTSGate: this changes nothing but the local text on the local
  *     screen, exactly like TorPerfFixes, so there is nothing a host could have to agree to.
  *   - Nothing here reads a Unity object from a per-frame path. "Is the overlay open" is answered by
@@ -96,6 +103,8 @@ namespace UsefulTORStuff {
         internal static ConfigEntry<bool> ImpostorShades;
         internal static ConfigEntry<bool> AlignValues;
         internal static ConfigEntry<string> ZeroChanceRoles; // collapse | list | hide
+        internal static ConfigEntry<bool> SplitPages;
+        internal static ConfigEntry<int> SplitColumns;
 
         // ---- palette -------------------------------------------------------------------------
         private static readonly Color ValueNumber = new Color(0.86f, 0.89f, 0.92f);
@@ -133,6 +142,14 @@ namespace UsefulTORStuff {
             ZeroChanceRoles = config.Bind("SettingsOverlay", "ZeroChanceRoles", "collapse",
                 "What to do with roles at 0%: 'collapse' lists them in one dimmed line, 'list' keeps "
                 + "one line each (dimmed), 'hide' drops them entirely.");
+            SplitPages = config.Bind("SettingsOverlay", "SplitPages", true,
+                "Split an F1 overlay page that no longer fits into its four columns into parts "
+                + "(6a, 6b, ...). TAB shows the next part first, a page number jumps to the first part. "
+                + "A role is never split from its own options. The lobby list is never split.");
+            SplitColumns = config.Bind("SettingsOverlay", "SplitColumns", 4,
+                new ConfigDescription("How many overlay columns one part may use before the page is "
+                    + "split. 4 is the full overlay (TOR has exactly four); lower values split earlier, "
+                    + "for small screens or for testing.", new AcceptableValueRange<int>(1, 4)));
         }
 
         // ---- patch ----------------------------------------------------------------------------
@@ -185,7 +202,13 @@ namespace UsefulTORStuff {
                 // Heartbeat first, and outside the Enabled gate: only TOR's overlay prefix passes
                 // hideExtras, so this is the one reliable "the overlay is on screen" signal, and the
                 // HUD elements that read it must keep working even with the renderer switched off.
-                if (hideExtras) lastOverlayBuild = Time.realtimeSinceStartup;
+                if (hideExtras) {
+                    lastOverlayBuild = Time.realtimeSinceStartup;
+                    // Until BuildPage says otherwise, the page on screen has a single part, so TAB
+                    // behaves exactly like TOR's (also with the renderer off or on page 1).
+                    lastSplitPage = TheOtherRolesPlugin.optionsPage;
+                    lastSplitCount = 1;
+                }
 
                 if (Enabled == null || !Enabled.Value) return;
 
@@ -278,16 +301,40 @@ namespace UsefulTORStuff {
                 default: return null;
             }
 
+            // Sub-pages: only the full-screen overlay, only when the page would need more columns
+            // than allowed. The part on screen is clamped here, because the role list can shrink
+            // while the overlay is open (a host setting a role to 0%).
+            int partCount = 1, part = 0;
+            if (wideLayout && (SplitPages == null || SplitPages.Value)) {
+                int maxColumns = Math.Max(1, Math.Min(4, SplitColumns?.Value ?? 4));
+                var parts = SplitIntoParts(blocks, maxColumns);
+                partCount = parts.Count;
+                if (partCount > 1) {
+                    if (SubPage >= partCount) SubPage = partCount - 1;
+                    part = Math.Max(0, SubPage);
+                    blocks = parts[part];
+                }
+            }
+            if (wideLayout) {
+                lastSplitPage = page;
+                lastSplitCount = partCount;
+            }
+
+            string pageTag = partCount > 1 ? $"{page + 1}{(char)('a' + Math.Min(part, 25))}" : $"{page + 1}";
+            string headline = partCount > 1 ? $"{title} ({part + 1}/{partCount})" : title;
+            string tagText = $"  {pageTag}/7";
+
             // Headline and footer are blocks like any other, so the column simulation in EmitBlocks
             // sees exactly the text TOR's Prefix2 will later split.
             blocks.Insert(0, new List<Line> {
-                MakeLine(0, title, titleColor, Cs(Dim, $"  {page + 1}/7"), null, Dim, page > 9 ? 6 : 5)
+                MakeLine(0, headline, titleColor, Cs(Dim, tagText), null, Dim, tagText.Length)
             });
             // TOR's own footer is the only hint that TAB/number keys page through this, so it stays -
             // just dimmed, because it is not information about the lobby.
-            blocks.Add(new List<Line> {
-                MakeLine(0, $"TAB or page number for more... ({page + 1}/7)", Dim, "", null, Dim)
-            });
+            string footer = partCount > 1 && part + 1 < partCount
+                ? $"TAB for part {part + 2}/{partCount}, page number for more... ({pageTag}/7)"
+                : $"TAB or page number for more... ({pageTag}/7)";
+            blocks.Add(new List<Line> { MakeLine(0, footer, Dim, "", null, Dim) });
 
             var sb = new StringBuilder();
             EmitBlocks(sb, blocks, wideLayout);
@@ -520,6 +567,119 @@ namespace UsefulTORStuff {
                     sb.Append('\n');
                 }
                 sb.Append('\n'); // blank line: block separator AND the split point Prefix2 needs
+            }
+        }
+
+        // ---- sub-pages ---------------------------------------------------------------------------
+        // Which part of a split page is on screen. Reset to 0 whenever TOR's page changes; only
+        // SubPageKeys moves it forward. lastSplitPage/lastSplitCount describe the page the overlay
+        // last built, which is exactly the page a TAB press would leave.
+        internal static int SubPage;
+        private static int lastSplitPage = -1;
+        private static int lastSplitCount = 1;
+
+        // Does a part (its blocks plus the one-line headline and footer every part gets) fit into
+        // maxColumns of Prefix2's columns?
+        private static readonly List<Line> OneLine = new List<Line> { default };
+        private static bool FitsColumns(List<List<Line>> content, int maxColumns) {
+            var probe = new List<List<Line>>(content.Count + 2) { OneLine };
+            probe.AddRange(content);
+            probe.Add(OneLine);
+            SimulateColumnSplit(probe, out int columns);
+            return columns <= maxColumns;
+        }
+
+        // Cuts a page's content blocks into as few parts as fit, never inside a block. The greedy
+        // pass gives the minimum number of parts; a second pass then evens them out by line count
+        // (two half-full pages read better than a full one and a stub) and is used only if every
+        // one of its parts still fits. A single block too tall for one part stays alone, exactly
+        // where TOR itself would have put it.
+        private static List<List<List<Line>>> SplitIntoParts(List<List<Line>> blocks, int maxColumns) {
+            var result = new List<List<List<Line>>>();
+            if (blocks.Count == 0 || FitsColumns(blocks, maxColumns)) {
+                result.Add(blocks);
+                return result;
+            }
+
+            var greedy = new List<List<List<Line>>>();
+            var current = new List<List<Line>>();
+            foreach (var block in blocks) {
+                current.Add(block);
+                if (current.Count > 1 && !FitsColumns(current, maxColumns)) {
+                    current.RemoveAt(current.Count - 1);
+                    greedy.Add(current);
+                    current = new List<List<Line>> { block };
+                }
+            }
+            if (current.Count > 0) greedy.Add(current);
+            int k = greedy.Count;
+            if (k <= 1) return greedy;
+
+            int total = 0;
+            foreach (var block in blocks) total += block.Count + 1;
+            var balanced = new List<List<List<Line>>>();
+            current = new List<List<Line>>();
+            int done = 0;
+            for (int i = 0; i < blocks.Count; i++) {
+                int size = blocks[i].Count + 1;
+                int target = total * (balanced.Count + 1) / k;
+                // Close the part when this block would carry it past its share, unless the
+                // overshoot is smaller than the gap left by closing early.
+                if (current.Count > 0 && balanced.Count < k - 1 && done + size > target
+                    && (done + size - target) > (target - done)) {
+                    balanced.Add(current);
+                    current = new List<List<Line>>();
+                }
+                current.Add(blocks[i]);
+                done += size;
+            }
+            if (current.Count > 0) balanced.Add(current);
+
+            if (balanced.Count == k && balanced.All(p => FitsColumns(p, maxColumns))) return balanced;
+            return greedy;
+        }
+
+        // TAB without touching TOR's key handler (GameOptionsNextPagePatch.Postfix on
+        // KeyboardJoystick.Update): the prefix remembers the page before TOR's postfix runs, this
+        // postfix runs after it and, if the page just left still has parts to show, puts TOR's page
+        // back and advances the part instead. KeyboardJoystick.Update is a game (Il2Cpp) method, so
+        // these detours are native ones and not exposed to the tiered-compilation loss that can hit
+        // patches on TOR's managed methods. Priorities sit on the methods, where HarmonyX reads them.
+        [HarmonyPatch(typeof(KeyboardJoystick), nameof(KeyboardJoystick.Update))]
+        private static class SubPageKeys {
+            private static int pageBefore;
+            private static bool overlayBefore;
+
+            [HarmonyPriority(Priority.First)]
+            public static void Prefix() {
+                pageBefore = TheOtherRolesPlugin.optionsPage;
+                overlayBefore = OverlayOpen();
+            }
+
+            [HarmonyPriority(Priority.Last)]
+            public static void Postfix() {
+                try {
+                    if (SubPage == 0 && !overlayBefore) return; // nothing split on screen, cheap exit
+                    int now = TheOtherRolesPlugin.optionsPage;
+                    if (now != pageBefore) {
+                        bool moreParts = overlayBefore && lastSplitPage == pageBefore
+                                         && SubPage + 1 < lastSplitCount;
+                        if (moreParts && Input.GetKeyDown(KeyCode.Tab)) {
+                            TheOtherRolesPlugin.optionsPage = pageBefore;
+                            SubPage++;
+                        } else {
+                            SubPage = 0;
+                        }
+                        return;
+                    }
+                    // Same page, but its own number key pressed: back to the first part.
+                    if (SubPage != 0 && pageBefore >= 0 && pageBefore < 9
+                        && (Input.GetKeyDown(KeyCode.Alpha1 + pageBefore) || Input.GetKeyDown(KeyCode.Keypad1 + pageBefore)))
+                        SubPage = 0;
+                } catch (Exception e) {
+                    SubPage = 0;
+                    UsefulTORStuffPlugin.Logger?.LogError($"[SettingsOverlayView] sub-page keys failed: {e}");
+                }
             }
         }
 

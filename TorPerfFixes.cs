@@ -122,7 +122,9 @@ namespace UsefulTORStuff {
                         return true;
                     }
 
-                    int page = TheOtherRolesPlugin.optionsPage;
+                    // A sub-page switch (SettingsOverlayView, 6a -> 6b) counts as a page change, so TAB
+                    // redraws at once instead of after the next throttle tick.
+                    int page = TheOtherRolesPlugin.optionsPage * 64 + SettingsOverlayView.SubPage;
                     float now = Time.time;
                     bool justOpened = !wasOpen;
                     bool pageChanged = page != lastPage;
