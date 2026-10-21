@@ -20,6 +20,7 @@
  */
 
 using System;
+using System.Linq;
 using HarmonyLib;
 using UnityEngine;
 
@@ -55,14 +56,20 @@ namespace UsefulTORStuff {
                 int n = ps.Length;
                 if (n <= VanillaCapacity) return;
 
+                // The game's order right now (it just laid the cards out in its 3 columns): top to bottom, left to
+                // right. SortButtons moves the cards, not the playerStates array, so laying them out in array order
+                // undid the sorting (the dead at the end) - Opus audit 2026-10-21. The grid pitch comes from the
+                // game's own layout values instead of from cards 0/1/3, which after a sort need not be neighbours.
+                var order = Enumerable.Range(0, n)
+                    .OrderByDescending(k => Mathf.Round(ps[k].transform.localPosition.y * 100f))
+                    .ThenBy(k => ps[k].transform.localPosition.x).ToArray();
+
                 int id = hud.GetInstanceID();
                 if (id != measuredHudId || baseScale == null || baseScale.Length != n) {
-                    // First layout of this meeting: take the game's own positions as the vanilla reference.
-                    Vector3 p0 = ps[0].transform.localPosition;
-                    Vector3 p1 = ps[1].transform.localPosition;
-                    Vector3 p3 = ps[3].transform.localPosition;
-                    float px = p1.x - p0.x;
-                    float py = p3.y - p0.y;
+                    // First layout of this meeting: the game's own grid values as the vanilla reference.
+                    Vector3 p0 = ps[order[0]].transform.localPosition;
+                    float px = hud.VoteButtonOffsets.x, py = hud.VoteButtonOffsets.y;
+                    try { p0 = new Vector3(hud.VoteOrigin.x, hud.VoteOrigin.y, p0.z); } catch { }
                     if (px <= 0.01f || py >= -0.01f) {
                         UsefulTORStuffPlugin.Logger?.LogWarning(
                             $"[MeetingGridFit] unexpected vanilla layout (pitch {px:0.###}/{py:0.###}), left alone.");
@@ -90,10 +97,11 @@ namespace UsefulTORStuff {
                 float dy = rows <= Rows ? pitchY : pitchY * (Rows - 1f) / (rows - 1f);
 
                 for (int i = 0; i < n; i++) {
-                    var t = ps[i].transform;
+                    int k = order[i];
+                    var t = ps[k].transform;
                     Vector3 cur = t.localPosition;
                     t.localPosition = new Vector3(x0 + (i % cols) * dx, origin.y + (i / cols) * dy, cur.z);
-                    t.localScale = new Vector3(baseScale[i].x * s, baseScale[i].y * s, baseScale[i].z);
+                    t.localScale = new Vector3(baseScale[k].x * s, baseScale[k].y * s, baseScale[k].z);
                 }
 
                 if (!loggedThisMeeting) {

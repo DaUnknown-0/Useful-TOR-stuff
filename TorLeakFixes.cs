@@ -674,6 +674,11 @@ namespace UsefulTORStuff {
             public static void Postfix(RegionMenu __instance) {
                 try {
                     if (__instance == null) return;
+                    // RegionMenu.Open shares its native body with ten other methods (GameModeMenu.Open,
+                    // MapPickerMenu.Open, LanguageSetter.Open, AccountsMenu.Open, ...; Il2Cpp deduplication,
+                    // checked in MethodAddressToToken.db 2026-10-21), so this postfix also runs for those menus.
+                    // Without this check it moved TOR's server warning under whatever menu had just opened.
+                    if (__instance.TryCast<RegionMenu>() == null) return;
                     if (!resolved) {
                         resolved = true;
                         var t = typeof(CustomOption).Assembly.GetType("TheOtherRoles.Patches.RegionMenuOpenPatch");
