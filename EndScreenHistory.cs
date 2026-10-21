@@ -45,8 +45,20 @@ namespace UsefulTORStuff {
             public readonly List<string> Before = new();  // earlier roles, oldest first
         }
 
+        // Keyed by PlayerIdentity.KeyOf (PUID > friend code > name), the name only for TOR's summary, which knows nothing
+        // else: two players with the same name no longer share one history, a renamed player keeps his (Opus audit
+        // 2026-10-21, N5).
         private static readonly Dictionary<string, Track> tracks = new(StringComparer.Ordinal);
         private static readonly Dictionary<string, List<string>> wrongGuesses = new(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> nameOf = new(StringComparer.Ordinal);   // key -> last name
+
+        private static string Key(PlayerControl p) {
+            string k = null;
+            try { k = PlayerIdentity.KeyOf(p); } catch { }
+            if (string.IsNullOrEmpty(k)) k = "name:" + p.Data.PlayerName;
+            nameOf[k] = p.Data.PlayerName;
+            return k;
+        }
         private static float nextTick = float.NegativeInfinity;
 
         // ---- recording ---------------------------------------------------------------------------
@@ -75,8 +87,9 @@ namespace UsefulTORStuff {
                     string key = string.Join("|", roles.Select(r => r.name));
                     string colored = string.Join(" ", roles.Select(r => Helpers.cs(r.color, r.name)));
                     string name = p.Data.PlayerName;
-                    if (!tracks.TryGetValue(name, out var t)) {
-                        tracks[name] = new Track { Current = colored, CurrentKey = key };
+                    string id = Key(p);
+                    if (!tracks.TryGetValue(id, out var t)) {
+                        tracks[id] = new Track { Current = colored, CurrentKey = key };
                         continue;
                     }
                     if (t.CurrentKey == key) continue;
@@ -99,8 +112,9 @@ namespace UsefulTORStuff {
                     var role = RoleInfo.allRoleInfos.FirstOrDefault(x => (byte)x.roleId == guessedRoleId);
                     string roleText = role != null ? Helpers.cs(role.color, role.name) : "?";
                     string line = UTSLocalization.Tr("uts.endscreen.wrong_guess", target.Data.PlayerName, roleText);
-                    if (!wrongGuesses.TryGetValue(guesser.Data.PlayerName, out var list))
-                        wrongGuesses[guesser.Data.PlayerName] = list = new List<string>();
+                    string gid = Key(guesser);
+                    if (!wrongGuesses.TryGetValue(gid, out var list))
+                        wrongGuesses[gid] = list = new List<string>();
                     list.Add(line);
                     UsefulTORStuffPlugin.Logger?.LogInfo($"[EndScreenHistory] wrong guess by {guesser.Data.PlayerName}: {target.Data.PlayerName} as {role?.name}");
                 } catch (Exception e) {
@@ -144,19 +158,22 @@ namespace UsefulTORStuff {
         private static void Apply() {
             if (!Resolve()) return;
             if (playerRolesField.GetValue(null) is not IList list) return;
+            // the summary line's name -> the one key that last had it (none if two players shared the name)
+            var byName = nameOf.GroupBy(kv => kv.Value, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count() == 1 ? g.First().Key : null, StringComparer.Ordinal);
             int changed = 0;
             foreach (var entry in list) {
                 string name = nameProp.GetValue(entry) as string;
                 if (string.IsNullOrEmpty(name)) continue;
                 if (name.EndsWith(LeftMarker, StringComparison.Ordinal)) name = name.Substring(0, name.Length - LeftMarker.Length);
                 string roles = rolesProp.GetValue(entry) as string ?? "";
+                if (!byName.TryGetValue(name, out string id) || id == null) continue;
                 string extra = "";
-                if (tracks.TryGetValue(name, out var t) && t.Before.Count > 0) {
+                if (tracks.TryGetValue(id, out var t) && t.Before.Count > 0) {
                     var sep = $" <color=#BFBFBF>{Arrow}</color> ";
                     extra = string.Join(sep, t.Before) + sep;
                 }
                 string guesses = "";
-                if (wrongGuesses.TryGetValue(name, out var g) && g.Count > 0)
+                if (wrongGuesses.TryGetValue(id, out var g) && g.Count > 0)
                     guesses = " <color=#FF7A7A><size=85%>(" + string.Join(", ", g) + ")</size></color>";
                 if (extra.Length == 0 && guesses.Length == 0) continue;
                 rolesProp.SetValue(entry, extra + roles + guesses);
@@ -193,7 +210,7 @@ namespace UsefulTORStuff {
         }
 
         // ---- resets --------------------------------------------------------------------------------
-        private static void Clear() { tracks.Clear(); wrongGuesses.Clear(); nextTick = float.NegativeInfinity; }
+        private static void Clear() { tracks.Clear(); wrongGuesses.Clear(); nameOf.Clear(); nextTick = float.NegativeInfinity; }
 
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
         private static class RoundStartResetPatch { public static void Postfix() => Clear(); }

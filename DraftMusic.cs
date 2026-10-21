@@ -447,6 +447,20 @@ namespace UsefulTORStuff {
             } catch { return false; }
         }
 
+        /// <summary>TOR clears isRunning only at the end of its draft coroutine; a draft cut short leaves it set and the
+        /// next game without a draft held the draft-end assignments back (Opus audit 2026-10-21, N2). Joining a lobby
+        /// never happens during a draft, so the flag is cleared there.</summary>
+        internal static void ClearStaleDraftFlag() {
+            try {
+                if (!DraftRunning()) return;
+                runningField.SetValue(null, false);
+                UsefulTORStuffPlugin.Logger?.LogInfo("[DraftMusic] RoleDraft.isRunning was still set from a draft cut short - cleared.");
+            } catch { }
+        }
+
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class StaleDraftPatch { public static void Postfix() => ClearStaleDraftFlag(); }
+
         internal static AudioClip TorClip() {
             try { return TheOtherRoles.SoundEffectsManager.get("draft"); } catch { return null; }
         }

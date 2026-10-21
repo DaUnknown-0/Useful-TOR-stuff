@@ -1,6 +1,7 @@
 // Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
+using HarmonyLib;
 using UnityEngine;
 
 namespace UsefulTORStuff {
@@ -53,5 +54,16 @@ namespace UsefulTORStuff {
                 return found;
             } catch { found = null; return null; }
         }
+
+        // A new round (or a new lobby): look for the intro again. The getter's own reset above only fired when it was
+        // asked outside a started game, and every caller already stops there itself, so from round 2 on the fallback
+        // never searched again (Opus audit 2026-10-21, M1).
+        private static void NewRound() { found = null; seenThisRound = false; overThisRound = false; searchAt = 0f; }
+
+        [HarmonyPatch(typeof(ShipStatus), nameof(ShipStatus.Start))]
+        static class ShipStartPatch { public static void Postfix() => NewRound(); }
+
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class GameJoinedPatch { public static void Postfix() => NewRound(); }
     }
 }

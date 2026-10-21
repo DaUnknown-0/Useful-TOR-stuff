@@ -62,6 +62,12 @@ namespace UsefulTORStuff {
                     if (VoteBlockKey(playerId1) == null && VoteBlockKey(playerId2) == null) return true;
                     if (!UsefulVersionHandshake.EveryoneHasMod()) return true;
                     UsefulTORStuffPlugin.Logger?.LogInfo($"[NewcomerMeetingProtection] a swap with a protected newcomer ({playerId1}/{playerId2}) was refused.");
+                    // TOR takes the charge right after this local call (MeetingPatch, Swapper.charges--): give it back first,
+                    // so a refused swap costs nothing (Opus audit 2026-10-21, N1). Only the Swapper's own client calls it locally.
+                    try {
+                        if (TheOtherRoles.Swapper.swapper != null && TheOtherRoles.Swapper.swapper == PlayerControl.LocalPlayer)
+                            TheOtherRoles.Swapper.charges++;
+                    } catch { }
                     return false;
                 } catch { return true; }
             }

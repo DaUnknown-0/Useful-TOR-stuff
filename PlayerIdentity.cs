@@ -64,11 +64,13 @@ namespace UsefulTORStuff {
             return string.IsNullOrEmpty(NameOf(p)) ? Kind.None : Kind.Name;
         }
 
-        /// <summary>Older keys of the same player, which data from before the switch is stored under.</summary>
+        /// <summary>Older keys of the same player, which data from before the switch is stored under. Only the friend
+        /// code: it belongs to exactly one account. name: keys are NOT moved any more (Opus audit 2026-10-21, M2): a
+        /// stranger with the same name (another server, a common name) would have inherited the data for good, shields
+        /// and host overrides included. The name: entries stay where they are.</summary>
         private static IEnumerable<string> LegacyKeysOf(PlayerControl p, Kind kind) {
-            string code = FriendCodeOf(p), name = NameOf(p);
+            string code = FriendCodeOf(p);
             if (kind == Kind.Puid && !string.IsNullOrEmpty(code)) yield return code;
-            if ((kind == Kind.Puid || kind == Kind.FriendCode) && !string.IsNullOrEmpty(name)) yield return NamePrefix + name;
         }
 
         // ---- stores ----

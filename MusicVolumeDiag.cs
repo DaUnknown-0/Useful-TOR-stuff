@@ -17,13 +17,16 @@ namespace UsefulTORStuff {
 
     internal static class MusicVolumeDiag {
         private static string Flag => System.IO.Path.Combine(Paths.BepInExRootPath, "musicvol_test.flag");
+        // The flag is taken at plugin load: a test that never reached the main menu must not leave the SoundManager
+        // patches below on for the next normal start (Opus audit 2026-10-21, N4).
+        private static bool armed;
         private static void Log(string s) => UsefulTORStuffPlugin.Logger?.LogInfo("[MusicVolTest] " + s);
 
         [HarmonyPatch(typeof(MainMenuManager), nameof(MainMenuManager.Start))]
         private static class Patch {
             private static void Postfix() {
-                if (!System.IO.File.Exists(Flag) || DraftMusicDriver.Instance == null) return;
-                try { System.IO.File.Delete(Flag); } catch { return; }
+                if (!armed || DraftMusicDriver.Instance == null) return;
+                armed = false;
                 BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(DraftMusicDriver.Instance, Run());
             }
         }
@@ -32,6 +35,8 @@ namespace UsefulTORStuff {
         // call afterwards (only with the flag file).
         internal static void AtLoad(Harmony h) {
             if (!System.IO.File.Exists(Flag)) return;
+            try { System.IO.File.Delete(Flag); } catch { return; }
+            armed = true;
             Log($"at load: SoundManager exists {SoundManager.instance != null}");
             try {
                 foreach (var c in AccessTools.GetDeclaredConstructors(typeof(SoundManager)))

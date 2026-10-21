@@ -212,8 +212,9 @@ namespace UsefulTORStuff {
         }
 
         [HarmonyLib.HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
-        [HarmonyLib.HarmonyPriority(HarmonyLib.Priority.First)]
         static class GameEndPatch {
+            // the priority belongs on the method: HarmonyX ignores it on the class (Opus audit 2026-10-21, N3)
+            [HarmonyLib.HarmonyPriority(HarmonyLib.Priority.First)]
             public static void Prefix() {
                 try { Finish(); }
                 catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogError($"[RoundReplay] round end failed: {e}"); }
