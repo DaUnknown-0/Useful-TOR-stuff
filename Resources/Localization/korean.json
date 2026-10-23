@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "기록된 투표가 없습니다.",
  "uts.replay.mr.anonymous": "(익명 투표: 득표 수만 표시)",
  "uts.replay.mr.mayor_x2": "{0}님의 표가 두 번 집계되었습니다 (Mayor).",
+ "uts.mayorsplit.option": "Mayor가 표를 나눌 수 있음",
+ "uts.replay.mr.mayor_split": "{0}이(가) 두 번째 표를 {1}에게 줬습니다 (Mayor).",
  "uts.replay.mr.swapped": "Swapper가 {0}님과 {1}님의 표를 바꿨습니다.",
  "uts.replay.mr.tiebreak": "Tiebreaker가 동률을 결정했습니다.",
  "uts.replay.mr.ejected": "결과: {0}님이 추방되었습니다.",

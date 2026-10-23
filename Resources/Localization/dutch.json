@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Geen stemmen geregistreerd.",
  "uts.replay.mr.anonymous": "(Anonieme stemmen: alleen aantallen.)",
  "uts.replay.mr.mayor_x2": "De stem van {0} telde dubbel (Mayor).",
+ "uts.mayorsplit.option": "Mayor kan stemmen verdelen",
+ "uts.replay.mr.mayor_split": "{0} gaf de tweede stem aan {1} (Mayor).",
  "uts.replay.mr.swapped": "De Swapper wisselde de stemmen van {0} en {1}.",
  "uts.replay.mr.tiebreak": "De Tiebreaker besliste de gelijkstand.",
  "uts.replay.mr.ejected": "Uitslag: {0} is verbannen.",

@@ -17,6 +17,10 @@
  * the target is cleared rather than the original skipped. TOR's custom role buttons (Sheriff, Jackal
  * ...) never pass here and keep relying on the managed hooks.
  *
+ * Since 23.10. the same for the extra Minis (MultiModifiers, Mini Quantity > 1): TOR protects only
+ * its own Mini.mini inside checkMuderAttempt; the extra ones hung on a postfix that tiering had
+ * dropped when an impostor killed a young extra Mini (the Spy) in a vent.
+ *
  * Vetoing later, at MurderPlayer, is not an option: TOR's MurderPlayer postfix books the death and
  * triggers the Lover suicide without checking that anyone died.
  */
@@ -37,12 +41,14 @@ namespace UsefulTORStuff {
                     if (__instance == null) return;
                     var target = __instance.currentTarget;
                     if (target == null) return;
-                    if (!ShieldPeaceGate.IsKillProtected(target.PlayerId)) return;
+                    bool shield = ShieldPeaceGate.IsKillProtected(target.PlayerId);
+                    bool mini = !shield && MultiModifiers.IsYoungExtraMini(target);
+                    if (!shield && !mini) return;
                     __instance.currentTarget = null;
                     if (Time.realtimeSinceStartup - lastLogAt >= 2f) {
                         lastLogAt = Time.realtimeSinceStartup;
                         UsefulTORStuffPlugin.Logger?.LogInfo(
-                            $"[ShieldKillButtonGuard] kill on {target.Data?.PlayerName} refused at the kill button (UTS shield).");
+                            $"[ShieldKillButtonGuard] kill on {target.Data?.PlayerName} refused at the kill button ({(shield ? "UTS shield" : "young extra Mini")}).");
                     }
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[ShieldKillButtonGuard] {e.Message}");

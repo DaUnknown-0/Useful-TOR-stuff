@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Aucun vote enregistré.",
  "uts.replay.mr.anonymous": "(Votes anonymes : nombres seulement.)",
  "uts.replay.mr.mayor_x2": "Le vote de {0} a compté double (Mayor).",
+ "uts.mayorsplit.option": "Mayor peut partager ses votes",
+ "uts.replay.mr.mayor_split": "{0} a donné le second vote à {1} (Mayor).",
  "uts.replay.mr.swapped": "Le Swapper a échangé les votes de {0} et {1}.",
  "uts.replay.mr.tiebreak": "Le Tiebreaker a départagé l'égalité.",
  "uts.replay.mr.ejected": "Résultat : {0} a été éjecté.",

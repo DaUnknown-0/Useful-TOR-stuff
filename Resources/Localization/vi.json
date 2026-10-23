@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Không ghi nhận phiếu nào.",
  "uts.replay.mr.anonymous": "(Phiếu ẩn danh: chỉ có số lượng.)",
  "uts.replay.mr.mayor_x2": "Phiếu của {0} được tính hai lần (Mayor).",
+ "uts.mayorsplit.option": "Mayor có thể chia phiếu",
+ "uts.replay.mr.mayor_split": "{0} đã bầu phiếu thứ hai cho {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper đã hoán đổi phiếu của {0} và {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker đã quyết định kết quả hòa.",
  "uts.replay.mr.ejected": "Kết quả: {0} bị loại.",

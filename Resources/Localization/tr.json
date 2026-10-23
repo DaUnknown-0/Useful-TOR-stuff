@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Kaydedilmiş oy yok.",
  "uts.replay.mr.anonymous": "(Anonim oylar: yalnızca sayılar.)",
  "uts.replay.mr.mayor_x2": "{0} oyuncusunun oyu iki kez sayıldı (Mayor).",
+ "uts.mayorsplit.option": "Mayor oylarını bölebilir",
+ "uts.replay.mr.mayor_split": "{0} ikinci oyunu {1} adlı oyuncuya verdi (Mayor).",
  "uts.replay.mr.swapped": "Swapper, {0} ile {1} oyuncularının oylarını değiştirdi.",
  "uts.replay.mr.tiebreak": "Tiebreaker beraberliği belirledi.",
  "uts.replay.mr.ejected": "Sonuç: {0} atıldı.",

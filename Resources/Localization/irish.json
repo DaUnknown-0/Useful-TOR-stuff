@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Níor taifeadadh vóta ar bith.",
  "uts.replay.mr.anonymous": "(Vótaí gan ainm: líon amháin.)",
  "uts.replay.mr.mayor_x2": "Comhairtear vóta {0} faoi dhó (Mayor).",
+ "uts.mayorsplit.option": "Is féidir le Mayor na vótaí a roinnt",
+ "uts.replay.mr.mayor_split": "Thug {0} an dara vóta do {1} (Mayor).",
  "uts.replay.mr.swapped": "Mhalartaigh an Swapper vótaí {0} agus {1}.",
  "uts.replay.mr.tiebreak": "Réitigh an Tiebreaker an comhscór.",
  "uts.replay.mr.ejected": "Toradh: díbríodh {0}.",

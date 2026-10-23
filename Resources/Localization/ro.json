@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Niciun vot înregistrat.",
  "uts.replay.mr.anonymous": "(Voturi anonime: doar numărătoarea.)",
  "uts.replay.mr.mayor_x2": "Votul lui {0} a contat dublu (Mayor).",
+ "uts.mayorsplit.option": "Mayor își poate împărți voturile",
+ "uts.replay.mr.mayor_split": "{0} a dat al doilea vot lui {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper a schimbat voturile lui {0} și {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker a decis egalitatea.",
  "uts.replay.mr.ejected": "Rezultat: {0} a fost exclus.",

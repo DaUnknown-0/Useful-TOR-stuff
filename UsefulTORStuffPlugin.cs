@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.5";
+    public const string PluginVersion = "1.5.5.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -244,6 +244,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Draft pick-timer reset from HostFix (module byte 237), after a picker left the draft.
         DraftTimerReset.RegisterRpc();
         DraftLawyerConflict.RegisterRpc();
+        MayorSplitVote.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -340,6 +341,11 @@ public class UsefulTORStuffPlugin : BasePlugin
         // (not offered / random other role / Crewmate + Guesser); sendPick prefix + Update tick.
         DraftLawyerConflict.CreateOptions();
         DraftLawyerConflict.TryPatch(harmony);
+
+        // Mayor: option 1285 lets him give his second vote to another player (marks on the plates,
+        // module 234; CalculateVotes postfix on the host, PopulateResults pre/postfix for the icons).
+        MayorSplitVote.CreateOptions();
+        MayorSplitVote.TryPatch(harmony);
 
         // Lover "Delay Lover Death" + Revenger path. Most patches are attribute-based (PatchAll);
         // TryPatch adds the reflection patch on TOR's internal CheckAndEndGameForLoverWin (instant

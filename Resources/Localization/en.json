@@ -1342,6 +1342,8 @@
   "uts.replay.mr.no_votes": "No votes recorded.",
   "uts.replay.mr.anonymous": "(Anonymous votes: counts only.)",
   "uts.replay.mr.mayor_x2": "{0}'s vote counted twice (Mayor).",
+  "uts.mayorsplit.option": "Mayor Can Split Votes",
+  "uts.replay.mr.mayor_split": "{0} gave the second vote to {1} (Mayor).",
   "uts.replay.mr.swapped": "The Swapper swapped the votes of {0} and {1}.",
   "uts.replay.mr.tiebreak": "The Tiebreaker decided the tie.",
   "uts.replay.mr.ejected": "Result: {0} was ejected.",

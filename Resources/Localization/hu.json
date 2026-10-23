@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Nincs rögzített szavazat.",
  "uts.replay.mr.anonymous": "(Névtelen szavazatok: csak számok.)",
  "uts.replay.mr.mayor_x2": "{0} szavazata kétszer számított (Mayor).",
+ "uts.mayorsplit.option": "Mayor megoszthatja a szavazatait",
+ "uts.replay.mr.mayor_split": "{0} a második szavazatát {1} kapta (Mayor).",
  "uts.replay.mr.swapped": "A Swapper felcserélte {0} és {1} szavazatát.",
  "uts.replay.mr.tiebreak": "A Tiebreaker döntött az egyenlőségről.",
  "uts.replay.mr.ejected": "Eredmény: {0} ki lett szavazva.",

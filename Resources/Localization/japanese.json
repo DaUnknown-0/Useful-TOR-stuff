@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "投票は記録されていません。",
  "uts.replay.mr.anonymous": "（匿名投票：票数のみ）",
  "uts.replay.mr.mayor_x2": "{0}の票は2票として数えられました（Mayor）。",
+ "uts.mayorsplit.option": "Mayor が票を分けられる",
+ "uts.replay.mr.mayor_split": "{0} は2票目を {1} に投じた (Mayor)。",
  "uts.replay.mr.swapped": "Swapperが{0}と{1}の票を入れ替えました。",
  "uts.replay.mr.tiebreak": "Tiebreakerが同票を決着させました。",
  "uts.replay.mr.ejected": "結果：{0}が追放されました。",

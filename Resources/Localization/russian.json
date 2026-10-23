@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Голоса не записаны.",
  "uts.replay.mr.anonymous": "(Анонимные голоса: только счёт.)",
  "uts.replay.mr.mayor_x2": "Голос игрока {0} посчитан дважды (Mayor).",
+ "uts.mayorsplit.option": "Mayor может разделить голоса",
+ "uts.replay.mr.mayor_split": "{0} отдал второй голос за {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper поменял местами голоса игроков {0} и {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker решил ничью.",
  "uts.replay.mr.ejected": "Результат: {0} изгнан(а).",

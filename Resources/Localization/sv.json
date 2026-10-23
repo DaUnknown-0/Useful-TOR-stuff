@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Inga röster registrerade.",
  "uts.replay.mr.anonymous": "(Anonyma röster: bara antal.)",
  "uts.replay.mr.mayor_x2": "{0}s röst räknades dubbelt (Mayor).",
+ "uts.mayorsplit.option": "Mayor kan dela upp sina röster",
+ "uts.replay.mr.mayor_split": "{0} gav den andra rösten till {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper bytte rösterna från {0} och {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker avgjorde oavgjort.",
  "uts.replay.mr.ejected": "Resultat: {0} röstades ut.",

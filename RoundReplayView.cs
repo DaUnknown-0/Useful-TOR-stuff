@@ -513,7 +513,10 @@ namespace UsefulTORStuff {
             // line below can be followed: the Mayor's double vote, the Swapper's swap, the Tiebreaker.
             try {
                 var mayor = TheOtherRoles.TheOtherRoles.Mayor.mayor;
-                if (mayor != null && TheOtherRoles.TheOtherRoles.Mayor.voteTwice
+                byte split = MayorSplitVote.SplitFor(states);
+                if (mayor != null && split != byte.MaxValue)
+                    sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.mayor_split", WhoId(mayor.PlayerId), WhoId(split)));
+                else if (mayor != null && TheOtherRoles.TheOtherRoles.Mayor.voteTwice
                     && votes.Values.Any(l => l.Contains(mayor.PlayerId)))
                     sb.AppendLine(UTSLocalization.Tr("uts.replay.mr.mayor_x2", WhoId(mayor.PlayerId)));
                 var sw = TheOtherRoles.Swapper.swapper;

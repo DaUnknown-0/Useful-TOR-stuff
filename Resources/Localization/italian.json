@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Nessun voto registrato.",
  "uts.replay.mr.anonymous": "(Voti anonimi: solo i conteggi.)",
  "uts.replay.mr.mayor_x2": "Il voto di {0} è valso doppio (Mayor).",
+ "uts.mayorsplit.option": "Mayor può dividere i voti",
+ "uts.replay.mr.mayor_split": "{0} ha dato il secondo voto a {1} (Mayor).",
  "uts.replay.mr.swapped": "Lo Swapper ha scambiato i voti di {0} e {1}.",
  "uts.replay.mr.tiebreak": "Il Tiebreaker ha deciso il pareggio.",
  "uts.replay.mr.ejected": "Risultato: {0} è stato espulso.",

@@ -1334,6 +1334,8 @@
  "uts.replay.mr.no_votes": "Keine Stimmen aufgezeichnet.",
  "uts.replay.mr.anonymous": "(Anonyme Abstimmung: nur die Anzahl.)",
  "uts.replay.mr.mayor_x2": "Die Stimme von {0} zählte doppelt (Mayor).",
+ "uts.mayorsplit.option": "Mayor kann Stimmen aufteilen",
+ "uts.replay.mr.mayor_split": "{0} gab die zweite Stimme an {1} (Mayor).",
  "uts.replay.mr.swapped": "Der Swapper hat die Stimmen von {0} und {1} getauscht.",
  "uts.replay.mr.tiebreak": "Der Tiebreaker hat den Gleichstand entschieden.",
  "uts.replay.mr.ejected": "Ergebnis: {0} wurde rausgeworfen.",

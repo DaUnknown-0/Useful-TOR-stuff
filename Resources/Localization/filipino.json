@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Walang naitalang boto.",
  "uts.replay.mr.anonymous": "(Anonymous na boto: mga bilang lang.)",
  "uts.replay.mr.mayor_x2": "Dalawang beses binilang ang boto ni {0} (Mayor).",
+ "uts.mayorsplit.option": "Puwedeng hatiin ng Mayor ang boto",
+ "uts.replay.mr.mayor_split": "Ibinigay ni {0} ang ikalawang boto kay {1} (Mayor).",
  "uts.replay.mr.swapped": "Pinagpalit ng Swapper ang boto nina {0} at {1}.",
  "uts.replay.mr.tiebreak": "Ang Tiebreaker ang nagpasya sa tabla.",
  "uts.replay.mr.ejected": "Resulta: na-eject si {0}.",

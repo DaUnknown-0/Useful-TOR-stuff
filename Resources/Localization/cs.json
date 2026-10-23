@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Nezaznamenány žádné hlasy.",
  "uts.replay.mr.anonymous": "(Anonymní hlasy: jen počty.)",
  "uts.replay.mr.mayor_x2": "Hlas hráče {0} se počítal dvakrát (Mayor).",
+ "uts.mayorsplit.option": "Mayor může rozdělit hlasy",
+ "uts.replay.mr.mayor_split": "{0} dal druhý hlas hráči {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper prohodil hlasy hráčů {0} a {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker rozhodl remízu.",
  "uts.replay.mr.ejected": "Výsledek: {0} byl vyhozen.",

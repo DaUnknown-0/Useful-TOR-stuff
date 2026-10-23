@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "没有记录到投票。",
  "uts.replay.mr.anonymous": "（匿名投票：仅显示票数。）",
  "uts.replay.mr.mayor_x2": "{0} 的票算作两票（Mayor）。",
+ "uts.mayorsplit.option": "Mayor 可拆分选票",
+ "uts.replay.mr.mayor_split": "{0} 将第二票投给了 {1}（Mayor）。",
  "uts.replay.mr.swapped": "Swapper 交换了 {0} 和 {1} 的票。",
  "uts.replay.mr.tiebreak": "Tiebreaker 决定了平票。",
  "uts.replay.mr.ejected": "结果：{0} 被投出。",

@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Brak zapisanych głosów.",
  "uts.replay.mr.anonymous": "(Głosy anonimowe: tylko liczby.)",
  "uts.replay.mr.mayor_x2": "Głos gracza {0} liczył się podwójnie (Mayor).",
+ "uts.mayorsplit.option": "Mayor może rozdzielić głosy",
+ "uts.replay.mr.mayor_split": "{0} oddał drugi głos na {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper zamienił głosy graczy {0} i {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker rozstrzygnął remis.",
  "uts.replay.mr.ejected": "Wynik: {0} został wyrzucony.",

@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Ääniä ei ole kirjattu.",
  "uts.replay.mr.anonymous": "(Nimettömät äänet: vain määrät.)",
  "uts.replay.mr.mayor_x2": "Pelaajan {0} ääni laskettiin kahdesti (Mayor).",
+ "uts.mayorsplit.option": "Mayor voi jakaa äänensä",
+ "uts.replay.mr.mayor_split": "{0} antoi toisen äänen pelaajalle {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper vaihtoi pelaajien {0} ja {1} äänet.",
  "uts.replay.mr.tiebreak": "Tiebreaker ratkaisi tasapelin.",
  "uts.replay.mr.ejected": "Tulos: {0} karkotettiin.",

@@ -83,6 +83,13 @@ namespace UsefulTORStuff {
             p != null && minis.Contains(p.PlayerId)
             && (Mini.mini == null || Mini.mini.PlayerId != p.PlayerId);
 
+        // For ShieldKillButtonGuard: an extra Mini that may not be killed yet. TOR's own Mini is
+        // protected inside TOR's code; the extra ones only by the checkMuderAttempt postfix below,
+        // which tiering can drop (23.10.: a young extra Mini, the Spy, killed in a vent).
+        internal static bool IsYoungExtraMini(PlayerControl p) {
+            try { return IsExtraMini(p) && !Mini.isGrownUp(); } catch { return false; }
+        }
+
         private static bool IsExtraArmored(byte playerId) =>
             armoreds.Contains(playerId)
             && (Armored.armored == null || Armored.armored.PlayerId != playerId);

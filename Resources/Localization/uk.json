@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Голосів не записано.",
  "uts.replay.mr.anonymous": "(Анонімні голоси: лише підрахунок.)",
  "uts.replay.mr.mayor_x2": "Голос гравця {0} порахували двічі (Mayor).",
+ "uts.mayorsplit.option": "Mayor може розділити голоси",
+ "uts.replay.mr.mayor_split": "{0} віддав другий голос за {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper поміняв місцями голоси гравців {0} і {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker вирішив нічию.",
  "uts.replay.mr.ejected": "Результат: {0} вигнано.",

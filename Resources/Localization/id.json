@@ -1343,6 +1343,8 @@
  "uts.replay.mr.no_votes": "Tidak ada suara tercatat.",
  "uts.replay.mr.anonymous": "(Suara anonim: hanya jumlah.)",
  "uts.replay.mr.mayor_x2": "Suara {0} dihitung dua kali (Mayor).",
+ "uts.mayorsplit.option": "Mayor bisa membagi suara",
+ "uts.replay.mr.mayor_split": "{0} memberi suara kedua ke {1} (Mayor).",
  "uts.replay.mr.swapped": "Swapper menukar suara {0} dan {1}.",
  "uts.replay.mr.tiebreak": "Tiebreaker memutuskan hasil seri.",
  "uts.replay.mr.ejected": "Hasil: {0} dikeluarkan.",
