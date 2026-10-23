@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.4";
+    public const string PluginVersion = "1.5.5";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -179,6 +179,8 @@ public class UsefulTORStuffPlugin : BasePlugin
             "Autotest only: opens the early-death statistics viewer in freeplay with sample numbers.");
         SessionStatsUI.DiagViewer = Config.Bind("Diagnostics", "SessionStats Viewer Test", false,
             "Autotest only: opens the session statistics panel in freeplay with sample numbers and saves a screenshot.");
+        EasterEggCoding.DiagTest = Config.Bind("Diagnostics", "EasterEgg Test", false,
+            "Autotest only: in freeplay, ejects the local player after 10 s and saves screenshots of the exile line and the ghost.");
         RoundReplay.DiagViewer = Config.Bind("Diagnostics", "Replay Viewer Test", false,
             "Autotest only: finishes the freeplay recording after 12 s, opens the round replay and saves a screenshot.");
         SettingsChangeFeed.DiagTest = Config.Bind("Diagnostics", "Settings Feed Test", false,
@@ -241,6 +243,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Draft pick-timer reset from HostFix (module byte 237), after a picker left the draft.
         DraftTimerReset.RegisterRpc();
+        DraftLawyerConflict.RegisterRpc();
 
         // Manual reflection patches (TOR types are internal): Bloody throttle, the Bloody
         // killer-map color fix, plus SnitchLogic's reflection-gated room recorder and surface
@@ -331,6 +334,12 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Lawyer/Lover "knows target/partner position on map" options. MapBehaviour / HudManager
         // patches are attribute-based (PatchAll); only the options need explicit creation.
         LawyerLoverTracker.CreateOptions();
+
+        // Role draft: Lawyer and Prosecutor share TOR's single Lawyer.lawyer field, so the second of
+        // the two picks overwrote the first. Option 1284 under the Lawyer decides what happens instead
+        // (not offered / random other role / Crewmate + Guesser); sendPick prefix + Update tick.
+        DraftLawyerConflict.CreateOptions();
+        DraftLawyerConflict.TryPatch(harmony);
 
         // Lover "Delay Lover Death" + Revenger path. Most patches are attribute-based (PatchAll);
         // TryPatch adds the reflection patch on TOR's internal CheckAndEndGameForLoverWin (instant

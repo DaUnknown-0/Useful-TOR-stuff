@@ -294,6 +294,7 @@ namespace UsefulTORStuff {
             worldFigures = null; worldHolder = null; worldCam = null; worldRt = null; worldArea = null; viewLabel = null;
             nameLabels.Clear(); labelsShown.Clear(); nameLayer = null;
             walk.Clear();
+            pets.Clear();                 // the pets hung under worldFigures and went with it
             worldDoors.Clear();
             if (release && worldHandleSet) {
                 try { Addressables.Release(worldHandle); } catch { }
@@ -414,20 +415,25 @@ namespace UsefulTORStuff {
 
         // the outfit the others saw: the owner of that colour (own look, a Morphling's target), or the
         // bare look (Camouflage and the like)
-        private static (int Color, string Hat, string Skin, string Visor, string Name) SeenOutfit(Track t, int si) {
+        // (the pet goes with the outfit: a Morphling walks his target's pet, Camouflage has none, as TOR's setLook does it)
+        private static (int Color, string Hat, string Skin, string Visor, string Pet, string Name) SeenOutfit(Track t, int si) {
             var look = LookAt(t, si);
-            if (!look.HasValue || look.Value.Color < 0) return (t.OColor, t.OHat, t.OSkin, t.OVisor, t.Name);
+            if (!look.HasValue || look.Value.Color < 0) return (t.OColor, t.OHat, t.OSkin, t.OVisor, t.OPet, t.Name);
             var l = look.Value;
             if (!string.IsNullOrEmpty(l.Name) || l.Color == t.OColor) {
                 var owner = l.Color == t.OColor ? t : tracks.FirstOrDefault(o => o.OColor == l.Color);
-                if (owner != null) return (owner.OColor, owner.OHat, owner.OSkin, owner.OVisor, string.IsNullOrEmpty(l.Name) ? owner.Name : l.Name);
+                if (owner != null) return (owner.OColor, owner.OHat, owner.OSkin, owner.OVisor, owner.OPet, string.IsNullOrEmpty(l.Name) ? owner.Name : l.Name);
             }
-            return (l.Color, l.Hat, "", l.Visor, l.Name);
+            return (l.Color, l.Hat, "", l.Visor, "", l.Name);
         }
 
         private static void Figure(Track t, int si, Vector2 at, bool visible, bool self) {
             figures.TryGetValue(t.Id, out var f);
-            if (!visible) { if (f.P != null && f.P.gameObject.activeSelf) f.P.gameObject.SetActive(false); return; }
+            if (!visible) {
+                if (f.P != null && f.P.gameObject.activeSelf) f.P.gameObject.SetActive(false);
+                PetHide(t.Id);
+                return;
+            }
             if (f.P == null) {
                 var prefab = BeanPrefab();
                 if (prefab == null || worldFigures == null) return;
@@ -439,13 +445,14 @@ namespace UsefulTORStuff {
             var pl = f.P;
             if (!pl.gameObject.activeSelf) pl.gameObject.SetActive(true);
             var o = SeenOutfit(t, si);
-            string key = $"{o.Color}|{o.Hat}|{o.Skin}|{o.Visor}|{o.Name}";
+            string key = $"{o.Color}|{o.Hat}|{o.Skin}|{o.Visor}|{o.Pet}|{o.Name}";
             if (key != f.Key) {
                 try {
                     var outfit = new NetworkedPlayerInfo.PlayerOutfit();
                     outfit.ColorId = o.Color < 0 ? 0 : o.Color;
                     outfit.HatId = o.Hat ?? ""; outfit.SkinId = o.Skin ?? ""; outfit.VisorId = o.Visor ?? "";
-                    outfit.PetId = "pet_EmptyPet"; outfit.PlayerName = o.Name ?? "";
+                    outfit.PetId = string.IsNullOrEmpty(o.Pet) ? "pet_EmptyPet" : o.Pet; outfit.PlayerName = o.Name ?? "";
+                    PetForget(t.Id);          // the outfit loads a new pet (asynchronously): PetTick adopts it
                     pl.UpdateFromPlayerOutfit(outfit, PlayerMaterial.MaskType.None, false, true);
                     if (pl.cosmetics != null && pl.cosmetics.nameText != null) {
                         pl.cosmetics.nameText.text = o.Name ?? "";
@@ -467,6 +474,7 @@ namespace UsefulTORStuff {
                 var body = pl.cosmetics?.currentBodySprite?.BodySprite;
                 if (body != null) { var c = body.color; c.a = alpha; body.color = c; }
             } catch { }
+            PetTick(t.Id, pl, at, dx, alpha);
             f.Last = at;
             figures[t.Id] = f;
             NameLabel(t.Id, o.Name, o.Color, at, t.NameDy);
@@ -514,6 +522,61 @@ namespace UsefulTORStuff {
         }
 
         private static bool walkLogged;
+
+        // ---- pets: the game loads them with the outfit (asynchronously, on the bean). Once there, the pet is
+        // taken off the bean (its flip and scale would carry it along rigidly), put on the replay layer, its
+        // physics switched off (the copied ship has colliders) and walked behind the figure like in the game.
+        private sealed class PetState { public PetBehaviour Pet; public Vector2 Pos; public bool Running, FlipX, Placed; }
+        private static readonly Dictionary<byte, PetState> pets = new Dictionary<byte, PetState>();
+        private const float PetBehind = 0.42f, PetFollow = 9f, PetSnap = 2.5f;
+        private static bool petLogged;
+
+        private static void PetTick(byte id, PoolablePlayer pl, Vector2 at, float dx, float alpha) {
+            try {
+                if (!pets.TryGetValue(id, out var st) || st.Pet == null) {
+                    var pet = pl.cosmetics != null ? pl.cosmetics.currentPet : null;
+                    if (pet == null || worldFigures == null) return;
+                    pet.transform.SetParent(worldFigures.transform, true);     // keeps the size it had on the bean
+                    SetLayer(pet.gameObject, 8);
+                    if (pet.rigidbody != null) pet.rigidbody.simulated = false;
+                    if (pet.collider != null) pet.collider.enabled = false;
+                    st = new PetState { Pet = pet, Running = true };           // forces the first Play below
+                    pets[id] = st;
+                    if (!petLogged) { petLogged = true; UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] figure pet '{pet.name}' adopted."); }
+                }
+                var p = st.Pet;
+                if (!p.gameObject.activeSelf) { p.gameObject.SetActive(true); st.Placed = false; }
+                // behind the figure, on the side it walks away from
+                if (Mathf.Abs(dx) > 0.01f) st.FlipX = dx < 0f;
+                var target = new Vector2(at.x + (st.FlipX ? PetBehind : -PetBehind), at.y);
+                if (!st.Placed || (target - st.Pos).magnitude > PetSnap) { st.Pos = target; st.Placed = true; }   // first frame, jumps, scrubbing
+                else st.Pos = Vector2.Lerp(st.Pos, target, 1f - Mathf.Exp(-PetFollow * Time.deltaTime));
+                bool moving = (target - st.Pos).sqrMagnitude > 0.004f;
+                p.transform.position = new Vector3(st.Pos.x, st.Pos.y, WorldOffset.z + st.Pos.y / 1000f - 1f);
+                if (moving) p.FlipX = target.x < st.Pos.x;
+                if (moving != st.Running && p.animator != null) {
+                    var clip = moving ? p.walkClip : p.idleClip;
+                    if (clip != null) p.animator.Play(clip, 1f);
+                    st.Running = moving;
+                }
+                foreach (var r in p.renderers) if (r != null) { var c = r.color; c.a = alpha; r.color = c; }
+                foreach (var s in p.shadows) if (s != null) { var c = s.color; c.a = alpha; s.color = c; }
+            } catch (Exception e) {
+                if (!petLogged) { petLogged = true; UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] figure pet failed: {e.Message}"); }
+            }
+        }
+
+        internal static int PetCount => pets.Values.Count(x => x.Pet != null && x.Pet.gameObject.activeSelf);
+
+        private static void PetHide(byte id) {
+            if (pets.TryGetValue(id, out var st) && st.Pet != null && st.Pet.gameObject.activeSelf) st.Pet.gameObject.SetActive(false);
+        }
+
+        // a new outfit: the old pet is ours since it left the bean, so it goes here; the bean loads the next one
+        private static void PetForget(byte id) {
+            if (pets.TryGetValue(id, out var st) && st.Pet != null) UnityEngine.Object.Destroy(st.Pet.gameObject);
+            pets.Remove(id);
+        }
 
         // ---- names above the darkness ----
         private static readonly Dictionary<byte, TMPro.TextMeshProUGUI> nameLabels = new Dictionary<byte, TMPro.TextMeshProUGUI>();

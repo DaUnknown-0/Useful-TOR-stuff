@@ -260,6 +260,17 @@ namespace UsefulTORStuff {
             }
         }
 
+        // ends the button's green phase early (meeting, or the mixup ran out first) and puts the
+        // countdown colour back, as TOR does at the regular end of an effect
+        private static void StopEffect() {
+            try {
+                if (sabotageButton == null || !sabotageButton.isEffectActive) return;
+                sabotageButton.isEffectActive = false;
+                sabotageButton.Timer = sabotageButton.MaxTimer;
+                if (sabotageButton.actionButton != null) sabotageButton.actionButton.cooldownTimerText.color = Palette.EnabledColor;
+            } catch { }
+        }
+
         private static void EndMixup() {
             mixupTimer = 0f;
             mixupMap.Clear();
@@ -267,6 +278,7 @@ namespace UsefulTORStuff {
             // the click, a 10 s cooldown with a 30 s mixup was ready again before it ended).
             try {
                 if (Trickster.trickster != null && Trickster.trickster == PlayerControl.LocalPlayer) {
+                    StopEffect();
                     if (sabotageButton != null) sabotageButton.Timer = sabotageButton.MaxTimer;
                     var lob = LightsOutButton();
                     if (lob != null) lob.Timer = lob.MaxTimer;
@@ -365,9 +377,15 @@ namespace UsefulTORStuff {
             [HarmonyPriority(Priority.Low)]
             public static void Postfix(HudManager __instance) {
                 try {
+                    // Green countdown while the looks are swapped, like the Bomber's: TOR's own effect
+                    // phase (onClickEvent starts it after OnClick, with EffectDuration). OnClick sets the
+                    // duration from the option and switches the effect off if no mixup started.
                     sabotageButton = new CustomButton(
                         () => {
+                            sabotageButton.HasEffect = true;
+                            sabotageButton.EffectDuration = DurationOption != null ? UTSGate.Num(DurationOption) : 10f;
                             TriggerMixup();   // the cooldown starts at the effect's end (EndMixup)
+                            if (mixupTimer <= 0f) sabotageButton.HasEffect = false;
                         },
                         () => Option != null && UTSGate.Bool(Option) && everyoneHasMod
                               && Trickster.trickster != null && Trickster.trickster == PlayerControl.LocalPlayer
@@ -375,7 +393,8 @@ namespace UsefulTORStuff {
                         // Any map; not during camouflage, not while a mixup runs, shared CD with lights.
                         () => PlayerControl.LocalPlayer.CanMove
                               && Camouflager.camouflageTimer <= 0f && mixupTimer <= 0f && LightsReady(),
-                        () => { },
+                        // a meeting ends the mixup (EndMixup): the green phase goes with it
+                        () => StopEffect(),
                         // Own mixup icon; the Camouflager sprite only as fallback.
                         UTSAssets.MixupIcon ?? Camouflager.getButtonSprite(),
                         // Trickster is an Impostor: avoid right-side kill-button slots and the
@@ -383,6 +402,10 @@ namespace UsefulTORStuff {
                         CustomButton.ButtonPositions.upperRowFarLeft,
                         __instance,
                         KeyCode.C,
+                        true,
+                        DurationOption != null ? UTSGate.Num(DurationOption) : 10f,
+                        // green time is up: the cooldown runs from here (EndMixup sets it too)
+                        () => { if (sabotageButton != null) sabotageButton.Timer = sabotageButton.MaxTimer; },
                         false,
                         ""
                     );

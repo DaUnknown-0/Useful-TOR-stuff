@@ -66,7 +66,7 @@ namespace UsefulTORStuff {
             public readonly List<(int S, Look L)> Looks = new List<(int, Look)>();
             // his own outfit (for the figures of the real map view, also after a disconnect)
             public int OColor = -1;
-            public string OHat = "", OSkin = "", OVisor = "";
+            public string OHat = "", OSkin = "", OVisor = "", OPet = "";
             public float NameDy = float.NaN;   // height of his name tag over his position (tall hats lift it)
         }
 
@@ -183,7 +183,7 @@ namespace UsefulTORStuff {
                     t.Name = p.Data.PlayerName ?? t.Name; t.Col = SessionStatsUI.PlayerColor(p);
                     try {
                         var o = p.Data.DefaultOutfit;
-                        t.OColor = o.ColorId; t.OHat = o.HatId ?? ""; t.OSkin = o.SkinId ?? ""; t.OVisor = o.VisorId ?? "";
+                        t.OColor = o.ColorId; t.OHat = o.HatId ?? ""; t.OSkin = o.SkinId ?? ""; t.OVisor = o.VisorId ?? ""; t.OPet = o.PetId ?? "";
                         if (p.cosmetics?.nameText != null) t.NameDy = p.cosmetics.nameText.transform.position.y - p.transform.position.y;
                     } catch { }
                 }
@@ -850,7 +850,7 @@ namespace UsefulTORStuff {
             Animate();
             string shot = System.IO.Path.Combine(BepInEx.Paths.BepInExRootPath, "UTSReplay_diag.png");
             ScreenCapture.CaptureScreenshot(shot);
-            UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag: player opened ({tracks.Count} tracks, {Duration:F1}s), world state {worldState}, figures {figures.Count}, bodies {bodies.Count}, screenshot -> {shot}");
+            UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag: player opened ({tracks.Count} tracks, {Duration:F1}s), world state {worldState}, figures {figures.Count}, pets {PetCount}, bodies {bodies.Count}, screenshot -> {shot}");
             if (diagIngameT2 >= 0f) { diagSecond = true; diagSecondFrame = Time.frameCount + 5; }
             UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag: host data {HostData}, events by kind: " +
                 string.Join(", ", events.GroupBy(e => e.Kind).Select(g => $"{g.Key}x{g.Count()}")));
@@ -860,7 +860,7 @@ namespace UsefulTORStuff {
                 int k = t.R.Count - 1;
                 if (k < 0) continue;
                 int mid = k / 2;
-                UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag track {t.Name}: R {t.R[mid]:F2} -> {t.R[k]:F2}, sees {Convert.ToString((long)t.Sees[mid], 2)} -> {Convert.ToString((long)t.Sees[k], 2)}, looks {t.Looks.Count}, name dy {t.NameDy:F3}, hat '{t.OHat}'");
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] diag track {t.Name}: R {t.R[mid]:F2} -> {t.R[k]:F2}, sees {Convert.ToString((long)t.Sees[mid], 2)} -> {Convert.ToString((long)t.Sees[k], 2)}, looks {t.Looks.Count}, name dy {t.NameDy:F3}, hat '{t.OHat}', pet '{t.OPet}'");
             }
         }
     }

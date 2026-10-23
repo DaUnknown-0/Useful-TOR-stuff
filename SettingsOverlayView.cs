@@ -1071,7 +1071,7 @@ namespace UsefulTORStuff {
         private static bool gameModeResolved;
         private static FieldInfo gameModeField;
 
-        private static CustomGamemodes TorGameMode() {
+        internal static CustomGamemodes TorGameMode() {
             if (!gameModeResolved) {
                 gameModeResolved = true;
                 gameModeField = typeof(CustomOption).Assembly

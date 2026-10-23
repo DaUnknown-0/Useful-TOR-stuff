@@ -525,6 +525,52 @@ namespace UsefulTORStuff {
         }
 
         // ══════════════════════════════════════════════════════════════════════════════════════
+        // TOR-M33b) Through the vent network INTO a sealed vent (User 23.10.: "Der Engineer konnte in
+        // einen verschlossenen Vent huepfen ... durch Security Guard geschlossen")
+        //
+        // TOR blocks entering a sealed vent from outside (VentCanUsePatch), but not moving to it
+        // inside the network: Vent.TryMoveToVent only has TOR's Trapper check (UsablesPatch.cs:139),
+        // and the arrow to the sealed neighbour is shown like any other. Once there, the player
+        // counts as its occupant, and M33 above (meant for someone trapped by a seal) let him climb
+        // out - a sealed vent was an exit for every venter. Now the arrows to sealed vents are hidden
+        // and a move into one is refused. M33 stays for a real occupant.
+        // Only "SealedVent_": "FutureSealedVent_" is the Security Guard's own preview until the next
+        // meeting (TOR seals for everybody in the exile wrap-up), the vent is still open by design.
+        // Both methods are detoured already (TOR's MoveToVentPatch, SpyFullVent's SetButtons prefix).
+        // DESYNC: none - both run only for the local venter; the move itself is the vanilla RPC.
+        // ══════════════════════════════════════════════════════════════════════════════════════
+        private static bool IsSealed(Vent v) {
+            try { return v != null && v.name != null && v.name.StartsWith("SealedVent_"); } catch { return false; }
+        }
+
+        [HarmonyPatch(typeof(Vent), nameof(Vent.TryMoveToVent))]
+        static class SealedVentMovePatch {
+            public static bool Prefix(Vent otherVent, ref bool __result, ref string error) {
+                if (!IsSealed(otherVent)) return true;
+                __result = false;
+                error = "Vent is sealed";
+                ThrottledLog("M33b", "move into a sealed vent refused.");
+                return false;
+            }
+        }
+
+        [HarmonyPatch(typeof(Vent), nameof(Vent.SetButtons))]
+        static class SealedVentArrowPatch {
+            public static void Postfix(Vent __instance, bool enabled) {
+                try {
+                    if (!enabled || __instance == null) return;
+                    var near = __instance.NearbyVents;
+                    var buttons = __instance.Buttons;
+                    if (near == null || buttons == null) return;
+                    for (int i = 0; i < buttons.Length && i < near.Length; i++)
+                        if (buttons[i] != null && IsSealed(near[i])) buttons[i].gameObject.SetActive(false);
+                } catch (Exception e) {
+                    ThrottledLog("M33b", $"sealed-vent arrows failed: {e.GetType().Name}: {e.Message}");
+                }
+            }
+        }
+
+        // ══════════════════════════════════════════════════════════════════════════════════════
         // Section 3) Guesser.remainingShots' else-branch decrements the Evil count for a foreign id
         //
         // TheOtherRoles.cs:1289-1296:
