@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Par défaut",
  "uts.music.reactor_default_style": "musique du réacteur d'Unknown's Collection",
  "uts.options.vip_scream_toggle": "Cri du VIP",
+ "uts.failsound.option_name": "Son d'échec personnalisé",
+ "uts.options.failsound_toggle": "Son d'échec personnalisé",
  "uts.endscreen.wrong_guess": "mauvaise supposition : {0} en {1}"
 }

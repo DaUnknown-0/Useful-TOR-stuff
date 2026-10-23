@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Réamhshocrú",
  "uts.music.reactor_default_style": "ceol imoibreora Unknown's Collection",
  "uts.options.vip_scream_toggle": "Scread VIP",
+ "uts.failsound.option_name": "Fuaim Teipe Féin",
+ "uts.options.failsound_toggle": "Fuaim Teipe Féin",
  "uts.endscreen.wrong_guess": "buille faoi thuairim mícheart: {0} mar {1}"
 }

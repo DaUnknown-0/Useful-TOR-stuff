@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Varsayılan",
  "uts.music.reactor_default_style": "Unknown's Collection reaktör müziği",
  "uts.options.vip_scream_toggle": "VIP Çığlığı",
+ "uts.failsound.option_name": "Özel Başarısızlık Sesi",
+ "uts.options.failsound_toggle": "Özel Başarısızlık Sesi",
  "uts.endscreen.wrong_guess": "yanlış tahmin: {0}, {1} olarak"
 }

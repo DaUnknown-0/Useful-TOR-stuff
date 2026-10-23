@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Bawaan",
  "uts.music.reactor_default_style": "musik reaktor Unknown's Collection",
  "uts.options.vip_scream_toggle": "Teriakan VIP",
+ "uts.failsound.option_name": "Suara Gagal Sendiri",
+ "uts.options.failsound_toggle": "Suara Gagal Sendiri",
  "uts.endscreen.wrong_guess": "tebakan salah: {0} sebagai {1}"
 }

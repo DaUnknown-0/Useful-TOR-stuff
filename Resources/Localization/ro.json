@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Implicit",
  "uts.music.reactor_default_style": "muzica reactorului din Unknown's Collection",
  "uts.options.vip_scream_toggle": "Țipătul VIP",
+ "uts.failsound.option_name": "Sunet de eșec propriu",
+ "uts.options.failsound_toggle": "Sunet de eșec propriu",
  "uts.endscreen.wrong_guess": "ghicit greșit: {0} ca {1}"
 }

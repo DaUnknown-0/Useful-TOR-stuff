@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Domyślna",
  "uts.music.reactor_default_style": "muzyka reaktora z Unknown's Collection",
  "uts.options.vip_scream_toggle": "Krzyk VIP",
+ "uts.failsound.option_name": "Własny dźwięk niepowodzenia",
+ "uts.options.failsound_toggle": "Własny dźwięk niepowodzenia",
  "uts.endscreen.wrong_guess": "zły strzał: {0} jako {1}"
 }

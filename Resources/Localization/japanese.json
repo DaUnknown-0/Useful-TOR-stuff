@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "デフォルト",
  "uts.music.reactor_default_style": "Unknown's Collection の原子炉音楽",
  "uts.options.vip_scream_toggle": "VIPの悲鳴",
+ "uts.failsound.option_name": "独自の失敗音",
+ "uts.options.failsound_toggle": "独自の失敗音",
  "uts.endscreen.wrong_guess": "推理ミス: {0} を {1} と推理"
 }

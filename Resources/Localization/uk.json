@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Типово",
  "uts.music.reactor_default_style": "музика реактора з Unknown's Collection",
  "uts.options.vip_scream_toggle": "Крик VIP",
+ "uts.failsound.option_name": "Власний звук невдачі",
+ "uts.options.failsound_toggle": "Власний звук невдачі",
  "uts.endscreen.wrong_guess": "хибна здогадка: {0} як {1}"
 }

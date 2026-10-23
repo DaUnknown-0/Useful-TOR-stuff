@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Predefinita",
  "uts.music.reactor_default_style": "musica del reattore di Unknown's Collection",
  "uts.options.vip_scream_toggle": "Urlo del VIP",
+ "uts.failsound.option_name": "Suono di fallimento proprio",
+ "uts.options.failsound_toggle": "Suono di fallimento proprio",
  "uts.endscreen.wrong_guess": "ipotesi sbagliata: {0} come {1}"
 }

@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.3";
+    public const string PluginVersion = "1.5.4";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -148,6 +148,7 @@ public class UsefulTORStuffPlugin : BasePlugin
             + "without an explicit click.");
         UTSRejoin.Bind(Config);
         VipDeathScream.Bind(Config);
+        OwnFailSound.Bind(Config);
         PacedOptionSync.Bind(Config);
         DraftEndPacing.Bind(Config);
         DraftMusic.Bind(Config);
@@ -422,6 +423,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Kill feed for dead players (option 1396, General tab, off by default). Ticked by SessionStatsUI.
         GhostKillFeed.CreateOptions();
+        OwnFailSound.CreateOptions();
 
         // Round replay in the lobby (option 1397, General tab, on by default). Records on every client,
         // ticked by SessionStatsUI. The host additionally records vision and abilities for the player

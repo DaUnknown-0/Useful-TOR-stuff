@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Default",
  "uts.music.reactor_default_style": "reactor music ng Unknown's Collection",
  "uts.options.vip_scream_toggle": "Sigaw ng VIP",
+ "uts.failsound.option_name": "Sariling Tunog ng Pagkabigo",
+ "uts.options.failsound_toggle": "Sariling Tunog ng Pagkabigo",
  "uts.endscreen.wrong_guess": "maling hula: {0} bilang {1}"
 }

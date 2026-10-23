@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Padrão",
  "uts.music.reactor_default_style": "trilha do reator do Unknown's Collection",
  "uts.options.vip_scream_toggle": "Grito Do VIP",
+ "uts.failsound.option_name": "Som de falha próprio",
+ "uts.options.failsound_toggle": "Som de falha próprio",
  "uts.endscreen.wrong_guess": "palpite errado: {0} como {1}"
 }

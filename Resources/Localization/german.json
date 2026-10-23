@@ -1458,6 +1458,8 @@
  "uts.music.reactor_default": "Standard",
  "uts.music.reactor_default_style": "Reaktor-Musik von Unknown's Collection",
  "uts.options.vip_scream_toggle": "VIP-Schrei",
+ "uts.failsound.option_name": "Eigener Fehlschlag-Sound",
+ "uts.options.failsound_toggle": "Eigener Fehlschlag-Sound",
  "uts.endscreen.wrong_guess": "Fehlguess: {0} als {1}",
   "uts.presets.button": "Presets",
   "uts.presets.title": "Einstellungs-Presets",

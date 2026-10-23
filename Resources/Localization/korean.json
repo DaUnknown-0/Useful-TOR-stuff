@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "기본",
  "uts.music.reactor_default_style": "Unknown's Collection 원자로 음악",
  "uts.options.vip_scream_toggle": "VIP 비명",
+ "uts.failsound.option_name": "자체 실패 효과음",
+ "uts.options.failsound_toggle": "자체 실패 효과음",
  "uts.endscreen.wrong_guess": "추측 실패: {0}을(를) {1}(으)로"
 }

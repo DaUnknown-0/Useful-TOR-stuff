@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "預設",
  "uts.music.reactor_default_style": "Unknown's Collection 的反應爐音樂",
  "uts.options.vip_scream_toggle": "VIP 尖叫",
+ "uts.failsound.option_name": "自製失敗音效",
+ "uts.options.failsound_toggle": "自製失敗音效",
  "uts.endscreen.wrong_guess": "猜錯：把 {0} 猜成 {1}"
 }

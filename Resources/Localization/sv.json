@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Standard",
  "uts.music.reactor_default_style": "reaktormusiken från Unknown's Collection",
  "uts.options.vip_scream_toggle": "VIP-skrik",
+ "uts.failsound.option_name": "Eget misslyckandeljud",
+ "uts.options.failsound_toggle": "Eget misslyckandeljud",
  "uts.endscreen.wrong_guess": "fel gissning: {0} som {1}"
 }

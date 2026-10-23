@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Mặc định",
  "uts.music.reactor_default_style": "nhạc lò phản ứng của Unknown's Collection",
  "uts.options.vip_scream_toggle": "Tiếng hét VIP",
+ "uts.failsound.option_name": "Âm thanh thất bại riêng",
+ "uts.options.failsound_toggle": "Âm thanh thất bại riêng",
  "uts.endscreen.wrong_guess": "đoán sai: {0} là {1}"
 }

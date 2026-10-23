@@ -35,6 +35,8 @@ namespace UsefulTORStuff {
         public static void PlayBombCancel(float volume = 0.7f) => Play("uts_bombcancel", volume);
         public static void PlayRevenger(float volume = 0.85f) => Play("uts_revenger", volume);
         public static void PlayVipDeath(float volume = 0.8f) => Play("uts_vipdeath", volume);
+        /// <summary>The own "fail" clip for OwnFailSound (handed to TOR's sound table, not played from here).</summary>
+        public static AudioClip FailClip => GetClip("uts_fail");
 
         private static Sprite GetSprite(string path, float pixelsPerUnit) {
             string key = path + "_" + pixelsPerUnit;

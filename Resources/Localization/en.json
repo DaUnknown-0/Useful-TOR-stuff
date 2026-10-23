@@ -1457,6 +1457,8 @@
   "uts.music.reactor_default": "Default",
   "uts.music.reactor_default_style": "reactor score of Unknown's Collection",
   "uts.options.vip_scream_toggle": "VIP Scream",
+  "uts.failsound.option_name": "Own Fail Sound",
+  "uts.options.failsound_toggle": "Own Fail Sound",
   "uts.endscreen.wrong_guess": "wrong guess: {0} as {1}",
   "uts.presets.button": "Presets",
   "uts.presets.title": "Settings presets",

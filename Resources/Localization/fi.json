@@ -1458,5 +1458,7 @@
  "uts.music.reactor_default": "Oletus",
  "uts.music.reactor_default_style": "Unknown's Collectionin reaktorimusiikki",
  "uts.options.vip_scream_toggle": "VIP-huuto",
+ "uts.failsound.option_name": "Oma epäonnistumisääni",
+ "uts.options.failsound_toggle": "Oma epäonnistumisääni",
  "uts.endscreen.wrong_guess": "väärä arvaus: {0} roolina {1}"
 }
