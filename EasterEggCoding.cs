@@ -171,7 +171,8 @@ namespace UsefulTORStuff {
             return $"<color={Green}>{body}</color>";
         }
 
-        private static string PlateText() => $"<color={Green}>&gt; </color>{CodingText(true)}<color={Green}>{Cursor()}</color>";
+        // TMP kennt keine HTML-Entities: "&gt;" stand woertlich auf der Platte (User 25.10.)
+        private static string PlateText() => $"<color={Green}>> </color>{CodingText(true)}<color={Green}>{Cursor()}</color>";
 
         private static void ResetFor(ShipStatus ship) {
             game = ship; owner = 255; nextOwnerLookup = 0f;
@@ -232,7 +233,16 @@ namespace UsefulTORStuff {
                 try {
                     if (!coding || owner == 255 || __instance == null || __instance.playerStates == null) return;
                     foreach (var pva in __instance.playerStates)
-                        if (pva != null && pva.TargetPlayerId == owner && pva.NameText != null) pva.NameText.text = PlateText();
+                        if (pva != null && pva.TargetPlayerId == owner && pva.NameText != null) {
+                            var nt = pva.NameText;
+                            // einzeilig und auf die Plattenbreite schrumpfen, sonst bricht "Pushing v1.5.6..." um und liegt
+                            // ueber der Rollenzeile (User 25.10.)
+                            if (!nt.enableAutoSizing) {
+                                nt.fontSizeMax = nt.fontSize; nt.fontSizeMin = nt.fontSize * 0.35f;
+                                nt.enableAutoSizing = true; nt.enableWordWrapping = false;
+                            }
+                            nt.text = PlateText();
+                        }
                 } catch { }
             }
         }
