@@ -155,6 +155,7 @@ namespace UsefulTORStuff {
                 if (p == null || p.Data == null || p.Data.Disconnected) continue;
                 tracks.Add(new Track { Id = p.PlayerId, Name = p.Data.PlayerName ?? "?", Col = SessionStatsUI.PlayerColor(p) });
             }
+            MarkersBegin();
             mapName = SafeMapName();
             CloseView();
             UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] recording started: {tracks.Count} player(s), map {mapName}.");
@@ -190,6 +191,7 @@ namespace UsefulTORStuff {
                 t.P.Add(p.transform.position);
                 t.Vent.Add(p.inVent);
             }
+            MarkersSample();
             if (hostRec) {
                 try { HostSample(); }
                 catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] host sample failed: {e.Message}"); }
@@ -438,6 +440,7 @@ namespace UsefulTORStuff {
                 vis.SetActive(false);
                 // trail, halos and the event spot, below the dots (RoundReplayView)
                 BuildMapMarks();
+                MarkersBuildUi();     // other mods' fixed points with a value per player (RoundReplayMarkers)
 
                 dots.Clear();
                 foreach (var t in tracks) {
@@ -586,6 +589,7 @@ namespace UsefulTORStuff {
             panelRoot = null; mapArea = null; banner = null;
             dots.Clear(); marks.Clear(); chips.Clear();
             seesLabel = null; visionRt = null;
+            MarkersDestroy();
             ViewDestroy();
         }
 
@@ -675,6 +679,7 @@ namespace UsefulTORStuff {
                 }
             }
             if (visionRt != null && visionRt.gameObject.activeSelf != visionShown) visionRt.gameObject.SetActive(visionShown);
+            MarkersAnimate(i);
             bool world = WorldAnimate(pt, i, u);
             // the wheel scrolls the event list under the mouse, zooms the real map view otherwise
             float wheel = Input.mouseScrollDelta.y;
