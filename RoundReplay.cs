@@ -207,7 +207,7 @@ namespace UsefulTORStuff {
                 Vector2 pos = dp.player.transform.position;
                 var tr = tracks.FirstOrDefault(t => t.Id == dp.player.PlayerId);
                 if (tr != null) for (int i = tr.P.Count - 1; i >= 0; i--) if (!float.IsNaN(tr.P[i].x)) { pos = tr.P[i]; break; }
-                byte killer = dp.killerIfExisting != null ? dp.killerIfExisting.PlayerId : (byte)255;
+                byte killer = dp.killerIfExisting != null && GhostKillFeed.CauseOf(dp) == null ? dp.killerIfExisting.PlayerId : (byte)255;
                 events.Add(new Ev { T = clock, Kind = exile ? EvExile : EvDeath, Pos = pos, Text = GhostKillFeed.Describe(dp, true), Actor = killer, Target = dp.player.PlayerId,
                                     Seen = hostRec && !exile ? Witnesses(pos, killer).Where(id => id != dp.player.PlayerId).ToList() : null });
             }

@@ -151,6 +151,9 @@ namespace UsefulTORStuff {
             string v = Who(victim, roles);
             string k = killer != null ? Who(killer, roles) : null;
             bool self = killer != null && killer.PlayerId == victim.PlayerId;
+            string cause = self ? CauseOf(dp) : null;
+            if (cause != null)
+                return UTSLocalization.Tr("uts.killfeed.died", v, "?") + $" <size=85%><color=#B98CFF>({cause.Replace("<", "").Replace(">", "")})</color></size>";
             string key;
             switch (dp.deathReason) {
                 case DeadPlayer.CustomDeathReason.Exile:         key = "exile"; break;
@@ -165,6 +168,16 @@ namespace UsefulTORStuff {
                 default:                                         key = self ? "misfire" : k == null ? "died" : "kill"; break;
             }
             return UTSLocalization.Tr("uts.killfeed." + key, v, k ?? "?");
+        }
+
+        /// <summary>A death TOR records as a self kill although no player killed (another mod kills through TOR's
+        /// murder path with victim = killer, a deadly candy for example): that mod names the cause through the
+        /// AppDomain key "Unknowns.DeathCause" (Func&lt;byte, string&gt;). Null for every other death.</summary>
+        internal static string CauseOf(DeadPlayer dp) {
+            try {
+                if (dp?.player == null || dp.killerIfExisting == null || dp.killerIfExisting.PlayerId != dp.player.PlayerId) return null;
+                return (AppDomain.CurrentDomain.GetData("Unknowns.DeathCause") as Func<byte, string>)?.Invoke(dp.player.PlayerId);
+            } catch { return null; }
         }
 
         // ---- UI: one screen-space text block on the right ----

@@ -226,7 +226,7 @@ namespace UsefulTORStuff {
                 int kills = 0;
                 foreach (var item in deadPlayers) {
                     var dead = item as DeadPlayer;
-                    if (dead?.killerIfExisting != null && dead.killerIfExisting.PlayerId == playerId) kills++;
+                    if (dead?.killerIfExisting != null && dead.killerIfExisting.PlayerId == playerId && GhostKillFeed.CauseOf(dead) == null) kills++;
                 }
                 return kills > 0 ? kills : (int?)null;
             } catch {
