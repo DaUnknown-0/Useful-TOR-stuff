@@ -38,7 +38,29 @@ namespace UsefulTORStuff {
                     use.gameObject.SetActive(true);
                     if (use.currentTarget == null) use.SetDisabled();
                 }
+                // Vanilla only switches the use button on (target + canInteract) when it swaps it in for the pet button
+                // itself. Since we keep it visible, that swap never happens: the button showed a target but clicks and
+                // the use key did nothing until the player had petted once (User 2026-10-28). Mirror the player's
+                // closest usable onto the button; with no target leave it alone (Atlas offers its own actions then).
+                var closest = lp.closest;
+                if (closest != null && lp.CanMove) {
+                    bool stale = use.currentTarget == null || use.currentTarget.Pointer != closest.Pointer;
+                    bool locked = !use.canInteract;
+                    if (stale) use.SetTarget(closest);
+                    if (!use.canInteract) { use.canInteract = true; use.SetEnabled(); }
+                    if (stale || locked) Note($"use button repaired (stale target {stale}, locked {locked})");
+                }
+                if (!pet.canInteract && lp.CanPet()) { pet.canInteract = true; Note("pet button unlocked"); }
             } catch { }
+        }
+
+        private static int _notes;
+
+        // Only the first few repairs per session go to the log: enough to see in a player's log that it happened.
+        private static void Note(string what) {
+            if (_notes >= 5) return;
+            _notes++;
+            UsefulTORStuffPlugin.Logger?.LogInfo("[UTS/PetRow] " + what);
         }
     }
 }
