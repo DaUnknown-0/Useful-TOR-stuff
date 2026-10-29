@@ -12,7 +12,14 @@
  *   c<N>.mp4    1080p24 video + two AAC tracks (0 = English, 1 = German: voice and sound effects mixed)
  *   c<N>.json   subtitles, seconds from the chapter start: s_de, e_de, s_en, e_en, who, de, en
  * This file knows nothing about the chapters' content; a chapter whose mod is not loaded (or whose files are missing)
- * is left out without a trace.
+ * is left out without a trace. Further film.<name>.json files in the folder add chapters and films (merged by id).
+ *
+ * Download: the film is not in the DLL. A source is a small manifest.json in a public repository of DaUnknown-0 that
+ * names the files (name, url, size, sha256); the files are release attachments. Forgotten Fixes has its own source,
+ * another mod adds one with "public static class IntroFilmSource { public const string Manifest = ...; }" in the
+ * namespace of its plugin class. On the first start everything loads in the background and the film plays once it is
+ * there. "Delete film" in the Mod Manager removes the files; after that nothing loads until the player presses the
+ * film button in the main menu.
  *
  * Playback: Unity's VideoPlayer (VideoModule) renders onto the far plane of an own camera that draws last and clears
  * the screen black (same camera trick as AtlasCinematic: other cameras' UI cannot show through). Subtitles in the game
@@ -24,7 +31,11 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using BepInEx.Configuration;
 using HarmonyLib;
 using TMPro;
@@ -36,7 +47,7 @@ namespace UsefulTORStuff {
     public static class IntroFilm {
         private const string LogPrefix = "[IntroFilm]";
 
-        private static ConfigEntry<bool> seen;
+        private static ConfigEntry<bool> seen, deleted;
         private static ConfigEntry<string> folder;
         private static bool playing;
         internal static bool IsPlaying => playing;
@@ -44,6 +55,7 @@ namespace UsefulTORStuff {
         internal static void Bind(ConfigFile cfg) {
             seen = cfg.Bind("IntroFilm", "Seen", false, "The introduction film has been shown once (set to false to see it again on the next start).");
             folder = cfg.Bind("IntroFilm", "Folder", "", "Folder of the film (film.json + chapter files). Empty = BepInEx\\intro-film.");
+            deleted = cfg.Bind("IntroFilm", "Deleted", false, "The film was deleted in the Mod Manager; it loads again only when you press the film button in the main menu.");
         }
 
         private static string Folder => string.IsNullOrWhiteSpace(folder?.Value)
@@ -58,15 +70,37 @@ namespace UsefulTORStuff {
         private sealed class Chapter { public int Id; public bool Available; public float Seconds; public string Key = "", Video = ""; public List<Line> Lines = new(); }
         private sealed class FilmFile { public string File = ""; public List<int> Ids = new(); }
 
-        /// <summary>All chapters in film order; Available = its mod is loaded here. Video is set when its own file exists.</summary>
-        private static List<Chapter> LoadChapters() {
-            var list = new List<Chapter>();
+        /// <summary>film.json first, then film.*.json (chapters and films that other sources add).</summary>
+        private static List<string> Descriptions() {
+            var list = new List<string>();
             try {
                 string dir = Folder;
-                string path = Path.Combine(dir, "film.json");
-                if (!File.Exists(path)) return list;
-                using var doc = JsonDocument.Parse(File.ReadAllText(path));
-                foreach (var ch in doc.RootElement.GetProperty("chapters").EnumerateArray()) {
+                if (!Directory.Exists(dir)) return list;
+                string main = Path.Combine(dir, "film.json");
+                if (File.Exists(main)) list.Add(main);
+                var extra = new List<string>(Directory.GetFiles(dir, "film.*.json"));
+                extra.Sort(StringComparer.OrdinalIgnoreCase);
+                list.AddRange(extra);
+            } catch (Exception e) { Warn($"film folder unreadable: {e.Message}"); }
+            return list;
+        }
+
+        /// <summary>All chapters in film order; Available = its mod is loaded here. Video is set when its own file exists.</summary>
+        private static List<Chapter> LoadChapters() {
+            var byId = new SortedDictionary<int, Chapter>();
+            foreach (var path in Descriptions()) {
+                try { ReadChapters(path, byId); }
+                catch (Exception e) { Warn($"{Path.GetFileName(path)} unreadable: {e.Message}"); }
+            }
+            return new List<Chapter>(byId.Values);
+        }
+
+        private static void ReadChapters(string path, SortedDictionary<int, Chapter> byId) {
+            string dir = Path.GetDirectoryName(path);
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty("chapters", out var chapters)) return;
+            {
+                foreach (var ch in chapters.EnumerateArray()) {
                     string requires = ch.TryGetProperty("requires", out var r) ? r.GetString() ?? "" : "";
                     bool available = requires.Length == 0 || BepInEx.Unity.IL2CPP.IL2CPPChainloader.Instance.Plugins.ContainsKey(requires);
                     string video = ch.TryGetProperty("video", out var v) ? Path.Combine(dir, v.GetString() ?? "") : "";
@@ -85,25 +119,25 @@ namespace UsefulTORStuff {
                                 Who = l.GetProperty("who").GetString() ?? "", De = l.GetProperty("de").GetString() ?? "", En = l.GetProperty("en").GetString() ?? "",
                             });
                     }
-                    list.Add(c);
+                    byId[c.Id] = c;
                 }
-            } catch (Exception e) { Warn($"film.json unreadable: {e.Message}"); list.Clear(); }
-            return list;
+            }
         }
 
         /// <summary>Whole-film files (film.json "films"): one continuous video for a set of chapters.</summary>
         private static List<FilmFile> LoadFilms() {
             var list = new List<FilmFile>();
-            try {
-                string path = Path.Combine(Folder, "film.json");
-                using var doc = JsonDocument.Parse(File.ReadAllText(path));
-                if (!doc.RootElement.TryGetProperty("films", out var films)) return list;
-                foreach (var f in films.EnumerateArray()) {
-                    var ff = new FilmFile { File = Path.Combine(Folder, f.GetProperty("file").GetString() ?? "") };
-                    foreach (var id in f.GetProperty("chapters").EnumerateArray()) ff.Ids.Add(id.GetInt32());
-                    if (File.Exists(ff.File)) list.Add(ff);
-                }
-            } catch (Exception e) { Warn($"film list unreadable: {e.Message}"); list.Clear(); }
+            foreach (var path in Descriptions()) {
+                try {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(path));
+                    if (!doc.RootElement.TryGetProperty("films", out var films)) continue;
+                    foreach (var f in films.EnumerateArray()) {
+                        var ff = new FilmFile { File = Path.Combine(Folder, f.GetProperty("file").GetString() ?? "") };
+                        foreach (var id in f.GetProperty("chapters").EnumerateArray()) ff.Ids.Add(id.GetInt32());
+                        if (File.Exists(ff.File)) list.Add(ff);
+                    }
+                } catch (Exception e) { Warn($"film list in {Path.GetFileName(path)} unreadable: {e.Message}"); }
+            }
             return list;
         }
 
@@ -113,13 +147,17 @@ namespace UsefulTORStuff {
 
         // ---- main menu -------------------------------------------------------------------------------
 
+        private static bool checkedThisRun;
+
         [HarmonyPatch(typeof(MainMenuManager), nameof(MainMenuManager.Start))]
         private static class MainMenuPatch {
             public static void Postfix(MainMenuManager __instance) {
                 try {
-                    if (playing || !File.Exists(Path.Combine(Folder, "film.json"))) return;
+                    if (playing) return;
                     BuildButton(__instance);
-                    if (seen != null && !seen.Value) {
+                    // once per game start: fetch what is missing or outdated, unless the player deleted the film
+                    if (!checkedThisRun && deleted != null && !deleted.Value) { checkedThisRun = true; StartDownload(); }
+                    if (seen != null && !seen.Value && (Playable() || syncing)) {
                         Log("first start: introduction scheduled after main menu initialisation");
                         BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(__instance, AutoPlay(__instance));
                     }
@@ -133,7 +171,9 @@ namespace UsefulTORStuff {
             float deadline = Time.realtimeSinceStartup + 70f;
             while (menu != null && !StartupTiming.Ready && Time.realtimeSinceStartup < deadline)
                 yield return null;
-            if (menu == null || playing || seen == null || seen.Value) yield break;
+            // a first start without the film: it plays once the background download is through
+            while (menu != null && syncing) yield return null;
+            if (menu == null || playing || seen == null || seen.Value || !Playable()) yield break;
             Log("startup settled: starting automatic introduction");
             var playback = Play(true);
             while (playback.MoveNext()) yield return playback.Current;
@@ -150,13 +190,248 @@ namespace UsefulTORStuff {
             button.GetComponent<AspectPosition>().anchorPoint = new Vector2(UsefulTORStuffPlugin.ModManagerButtonX?.Value ?? 0.8f, y);
             var passive = button.GetComponent<PassiveButton>();
             passive.OnClick = new UnityEngine.UI.Button.ButtonClickedEvent();
-            passive.OnClick.AddListener((Action)(() => {
-                if (!playing) BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, Play(false));
-            }));
             var text = button.transform.GetComponentInChildren<TMP_Text>();
-            string label = German() ? "Einführungsfilm" : "Intro film";
+            passive.OnClick.AddListener((Action)(() => {
+                if (playing || clickBusy) return;
+                // the film here: play it; not here (deleted, or never loaded): load it now, then play
+                if (Playable() && !syncing) BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, Play(false));
+                else BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, LoadThenPlay(text));
+            }));
             // Among Us rewrites a cloned button's text on its first frame; set ours one lerp later.
-            menu.StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(label))));
+            menu.StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(ButtonLabel()))));
+        }
+
+        private static bool clickBusy;
+        private static string ButtonLabel() => German() ? "Einführungsfilm" : "Intro film";
+
+        private static IEnumerator LoadThenPlay(TMP_Text text) {
+            clickBusy = true;
+            try {
+                if (deleted != null && deleted.Value) deleted.Value = false;
+                if (!syncing) StartDownload();
+                while (syncing) {
+                    if (text != null) text.SetText(German() ? $"Lädt … {Mathf.RoundToInt(Progress * 100f)} %" : $"Loading … {Mathf.RoundToInt(Progress * 100f)} %");
+                    yield return null;
+                }
+                if (Playable()) {
+                    if (text != null) text.SetText(ButtonLabel());
+                    var playback = Play(false);
+                    while (playback.MoveNext()) yield return playback.Current;
+                    yield break;
+                }
+                if (text != null) text.SetText(German() ? "Laden fehlgeschlagen" : "Download failed");
+                float until = Time.realtimeSinceStartup + 3f;
+                while (Time.realtimeSinceStartup < until) yield return null;
+                if (text != null) text.SetText(ButtonLabel());
+            } finally { clickBusy = false; }
+        }
+
+        /// <summary>Something can be shown: a film file or chapter file for at least one chapter that plays here.</summary>
+        private static bool Playable() {
+            var all = LoadChapters();
+            var available = all.FindAll(c => c.Available);
+            if (available.Count == 0) return false;
+            if (available.Exists(c => c.Video.Length > 0)) return true;
+            foreach (var f in LoadFilms()) if (available.Exists(c => f.Ids.Contains(c.Id))) return true;
+            return false;
+        }
+
+        // ---- download --------------------------------------------------------------------------------
+
+        private const string OwnManifest = "https://raw.githubusercontent.com/DaUnknown-0/UTS-Music/main/film/manifest.json";
+        private const string StampFile = "stamps.txt";
+
+        private sealed class Remote { public string Name = "", Url = ""; public long Size; public string Sha = ""; }
+
+        private static volatile bool syncing, deleteWhenStopped;
+        private static long bytesTotal, bytesDone;
+        private static CancellationTokenSource cancel;
+        private static int changes;
+
+        internal static bool Syncing => syncing;
+        /// <summary>Counts every change of the film's state (download progress in whole percent, done, deleted) for the Mod Manager.</summary>
+        internal static int Changes => changes + (syncing ? Mathf.RoundToInt(Progress * 100f) * 7919 : 0);
+        internal static float Progress {
+            get { long t = Interlocked.Read(ref bytesTotal); return t <= 0 ? 0f : Mathf.Clamp01(Interlocked.Read(ref bytesDone) / (float)t); }
+        }
+
+        /// <summary>Bytes of film files on this computer (what "Delete film" removes).</summary>
+        internal static long LocalBytes() {
+            long sum = 0;
+            foreach (var f in OwnFiles()) try { sum += new FileInfo(f).Length; } catch { }
+            return sum;
+        }
+
+        // Only what the film consists of; nothing else in the folder is touched.
+        private static List<string> OwnFiles() {
+            var list = new List<string>();
+            try {
+                if (!Directory.Exists(Folder)) return list;
+                foreach (var f in Directory.GetFiles(Folder)) {
+                    string n = Path.GetFileName(f).ToLowerInvariant();
+                    if (n.EndsWith(".mp4") || n.EndsWith(".part") || n == StampFile
+                        || (n.EndsWith(".json") && (n.StartsWith("film") || (n.Length > 1 && n[0] == 'c' && char.IsDigit(n[1])))))
+                        list.Add(f);
+                }
+            } catch { }
+            return list;
+        }
+
+        /// <summary>Mod Manager: remove the film. It loads again only from the main-menu button.</summary>
+        internal static void Delete() {
+            if (deleted != null) deleted.Value = true;
+            if (syncing) { deleteWhenStopped = true; cancel?.Cancel(); }
+            else RemoveFiles();
+            Interlocked.Increment(ref changes);
+        }
+
+        private static void RemoveFiles() {
+            int n = 0;
+            foreach (var f in OwnFiles()) try { File.Delete(f); n++; } catch (Exception e) { Warn($"delete {Path.GetFileName(f)}: {e.Message}"); }
+            Log($"film deleted ({n} files)");
+        }
+
+        private static void StartDownload() {
+            if (syncing) return;
+            syncing = true;
+            deleteWhenStopped = false;
+            Interlocked.Exchange(ref bytesTotal, 0);
+            Interlocked.Exchange(ref bytesDone, 0);
+            var sources = Sources();
+            cancel = new CancellationTokenSource();
+            var token = cancel.Token;
+            Task.Run(async () => {
+                try { await Download(sources, token); }
+                catch (OperationCanceledException) { Log("download stopped"); }
+                catch (Exception e) { Warn($"download failed: {e.Message}"); }
+                finally {
+                    if (deleteWhenStopped) RemoveFiles();
+                    syncing = false;
+                    Interlocked.Increment(ref changes);
+                }
+            });
+        }
+
+        // Own manifest plus IntroFilmSource.Manifest of every loaded plugin that has one (next to its plugin class).
+        private static List<string> Sources() {
+            var list = new List<string> { OwnManifest };
+            try {
+                foreach (var info in BepInEx.Unity.IL2CPP.IL2CPPChainloader.Instance.Plugins.Values) {
+                    var type = info?.Instance?.GetType();
+                    if (type == null) continue;
+                    var src = type.Assembly.GetType((type.Namespace != null ? type.Namespace + "." : "") + "IntroFilmSource");
+                    var field = src?.GetField("Manifest", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                    if (field?.GetValue(null) is string url && Allowed(url) && !list.Contains(url)) list.Add(url);
+                }
+            } catch (Exception e) { Warn($"film sources: {e.Message}"); }
+            return list;
+        }
+
+        private static bool Allowed(string url) =>
+            url.StartsWith("https://raw.githubusercontent.com/DaUnknown-0/", StringComparison.Ordinal)
+            || url.StartsWith("https://github.com/DaUnknown-0/", StringComparison.Ordinal);
+
+        // Worker thread. Videos first and the descriptions last, so a half-loaded film is never offered.
+        private static async Task Download(List<string> sources, CancellationToken token) {
+            string dir = Folder;
+            Directory.CreateDirectory(dir);
+            using var http = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd($"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
+            var stamps = ReadStamps(dir);
+            var wanted = new List<Remote>();
+            foreach (var src in sources) {
+                try {
+                    using var doc = JsonDocument.Parse(await http.GetStringAsync(src, token));
+                    foreach (var f in doc.RootElement.GetProperty("files").EnumerateArray()) {
+                        var r = new Remote {
+                            Name = f.GetProperty("name").GetString() ?? "", Url = f.GetProperty("url").GetString() ?? "",
+                            Size = f.GetProperty("size").GetInt64(), Sha = (f.GetProperty("sha256").GetString() ?? "").ToLowerInvariant(),
+                        };
+                        if (r.Name.Length == 0 || Path.GetFileName(r.Name) != r.Name || r.Name == StampFile || !Allowed(r.Url)) { Warn($"manifest entry {r.Name} refused"); continue; }
+                        wanted.RemoveAll(w => w.Name == r.Name);
+                        wanted.Add(r);
+                    }
+                } catch (Exception e) when (e is not OperationCanceledException) { Warn($"manifest {src}: {e.Message}"); }
+            }
+            var missing = new List<Remote>();
+            foreach (var r in wanted) {
+                string path = Path.Combine(dir, r.Name);
+                var fi = new FileInfo(path);
+                if (fi.Exists && fi.Length == r.Size) {
+                    if (stamps.TryGetValue(r.Name, out var st) && st == r.Sha) continue;
+                    // a file from before the stamps (or copied by hand): check it once instead of loading it again
+                    if (HashOf(path) == r.Sha) { stamps[r.Name] = r.Sha; continue; }
+                }
+                missing.Add(r);
+            }
+            WriteStamps(dir, stamps);
+            if (missing.Count == 0) { Log($"film up to date ({wanted.Count} files)"); return; }
+            missing.Sort((a, b) => (a.Name.EndsWith(".json") ? 1 : 0).CompareTo(b.Name.EndsWith(".json") ? 1 : 0));
+            long total = 0;
+            foreach (var r in missing) total += r.Size;
+            Interlocked.Exchange(ref bytesTotal, total);
+            Log($"downloading {missing.Count} film files ({total / 1048576.0:F1} MB)");
+            foreach (var r in missing) {
+                token.ThrowIfCancellationRequested();
+                string path = Path.Combine(dir, r.Name), part = path + ".part";
+                try {
+                    using (var resp = await http.GetAsync(r.Url, HttpCompletionOption.ResponseHeadersRead, token)) {
+                        resp.EnsureSuccessStatusCode();
+                        using var input = await resp.Content.ReadAsStreamAsync(token);
+                        using var output = File.Create(part);
+                        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+                        var buf = new byte[1 << 16];
+                        long got = 0;
+                        int n;
+                        while ((n = await input.ReadAsync(buf, 0, buf.Length, token)) > 0) {
+                            await output.WriteAsync(buf, 0, n, token);
+                            hash.AppendData(buf, 0, n);
+                            got += n;
+                            Interlocked.Add(ref bytesDone, n);
+                        }
+                        string sha = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+                        if (got != r.Size || sha != r.Sha) throw new InvalidDataException($"{r.Name}: size {got} / checksum do not match");
+                    }
+                    if (File.Exists(path)) File.Delete(path);
+                    File.Move(part, path);
+                    stamps[r.Name] = r.Sha;
+                    WriteStamps(dir, stamps);
+                    Interlocked.Increment(ref changes);
+                } catch {
+                    try { if (File.Exists(part)) File.Delete(part); } catch { }
+                    throw;
+                }
+            }
+            Log("film downloaded");
+        }
+
+        private static string HashOf(string path) {
+            try {
+                using var sha = SHA256.Create();
+                using var fs = File.OpenRead(path);
+                return Convert.ToHexString(sha.ComputeHash(fs)).ToLowerInvariant();
+            } catch { return ""; }
+        }
+
+        private static Dictionary<string, string> ReadStamps(string dir) {
+            var d = new Dictionary<string, string>();
+            try {
+                string p = Path.Combine(dir, StampFile);
+                if (File.Exists(p))
+                    foreach (var line in File.ReadAllLines(p)) {
+                        int bar = line.IndexOf('|');
+                        if (bar > 0) d[line.Substring(0, bar)] = line.Substring(bar + 1);
+                    }
+            } catch { }
+            return d;
+        }
+
+        private static void WriteStamps(string dir, Dictionary<string, string> d) {
+            try {
+                var lines = new List<string>();
+                foreach (var kv in d) if (File.Exists(Path.Combine(dir, kv.Key))) lines.Add(kv.Key + "|" + kv.Value);
+                File.WriteAllLines(Path.Combine(dir, StampFile), lines);
+            } catch { }
         }
 
         // ---- playback --------------------------------------------------------------------------------
@@ -177,10 +452,13 @@ namespace UsefulTORStuff {
             if (available.Count == 0) { Warn("no playable chapter"); yield break; }
             // One continuous file that holds every chapter playable here (fewest extra chapters wins). Switching between
             // two video files stuttered in the game every time (User 29.10.); inside one file the cuts are smooth.
+            // (A source may be missing: then the file that covers the most chapters playable here, the rest is left out.)
             FilmFile film = null;
+            int best = 0;
             foreach (var f in LoadFilms()) {
-                if (!available.TrueForAll(c => f.Ids.Contains(c.Id))) continue;
-                if (film == null || f.Ids.Count < film.Ids.Count) film = f;
+                int covered = available.FindAll(c => f.Ids.Contains(c.Id)).Count;
+                if (covered == 0) continue;
+                if (film == null || covered > best || (covered == best && f.Ids.Count < film.Ids.Count)) { film = f; best = covered; }
             }
             var perChapter = available.FindAll(c => c.Video.Length > 0);
             if (film == null && perChapter.Count == 0) { Warn("no playable chapter"); yield break; }

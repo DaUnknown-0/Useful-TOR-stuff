@@ -1018,7 +1018,22 @@ namespace UsefulTORStuff
         // ====================================================================
         private float CreateMusicRows(GameObject parent, float yPos)
         {
-            var hint = VanillaUI.Text(parent, UTSLocalization.Tr("uts.modmanagerui.music_hint"), 14, VanillaUI.Muted, new Vector2(4, yPos), new Vector2(1100, 40));
+            // the intro film: loads by itself on the first start; deleted, it comes back only from its main-menu button
+            var filmRow = VanillaUI.Row(parent, yPos, 50, 2);
+            _filmText = VanillaUI.Label(filmRow, "", 16, VanillaUI.Muted, new Vector2(0, 0), new Vector2(0, 1), new Vector2(0, 0.5f),
+                new Vector2(16, 0), new Vector2(880, 0), TMPro.TextAlignmentOptions.Left);
+            _filmButton = VanillaUI.Button(filmRow, UTSLocalization.Tr("uts.modmanagerui.film_delete"), new Vector2(-12, 0), new Vector2(200, 38), VanillaUI.Red, () => {
+                long bytes = IntroFilm.LocalBytes();
+                if (bytes <= 0 && !IntroFilm.Syncing) return;
+                ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.film_delete"),
+                    UTSLocalization.Tr("uts.modmanagerui.film_delete_msg", MusicLibrary.Mb(bytes)),
+                    () => { IntroFilm.Delete(); _filmShown = -1; RefreshFilm(); });
+            }, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+            _filmShown = -1;
+            RefreshFilm();
+            yPos -= 62;
+
+            var hint =VanillaUI.Text(parent, UTSLocalization.Tr("uts.modmanagerui.music_hint"), 14, VanillaUI.Muted, new Vector2(4, yPos), new Vector2(1100, 40));
             hint.enableWordWrapping = true;
             yPos -= 46;
             _musicLoadButton = VanillaUI.Button(parent, "", new Vector2(4, yPos), new Vector2(300, 44), VanillaUI.Pink, () => {
@@ -1068,9 +1083,28 @@ namespace UsefulTORStuff
         }
 
         private int _musicShownVersion = -1;
+        private TMPro.TextMeshProUGUI _filmText;
+        private GameObject _filmButton;
+        private int _filmShown = -1;
+
+        private void RefreshFilm()
+        {
+            if (_tab != Tab.Music || _filmText == null || _filmShown == IntroFilm.Changes) return;
+            _filmShown = IntroFilm.Changes;
+            long bytes = IntroFilm.LocalBytes();
+            string status; Color col = VanillaUI.Muted;
+            if (IntroFilm.Syncing) { status = UTSLocalization.Tr("uts.modmanagerui.film_loading", Mathf.RoundToInt(IntroFilm.Progress * 100f)); col = VanillaUI.Blue; }
+            else if (bytes > 0) { status = UTSLocalization.Tr("uts.modmanagerui.film_here", MusicLibrary.Mb(bytes)); col = VanillaUI.Good; }
+            else status = UTSLocalization.Tr("uts.modmanagerui.film_none");
+            _filmText.color = col;
+            VanillaUI.SetText(_filmText, status);
+            bool can = bytes > 0 || IntroFilm.Syncing;
+            if (_filmButton != null && _filmButton.activeSelf != can) _filmButton.SetActive(can);
+        }
 
         private void RefreshMusic()
         {
+            RefreshFilm();
             if (_tab != Tab.Music || _musicSummary == null || _musicShownVersion == DraftMusic.Version) return;
             _musicShownVersion = DraftMusic.Version;
             var all = MusicLibrary.AllVersions.ToList();
