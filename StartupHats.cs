@@ -27,7 +27,71 @@ namespace UsefulTORStuff {
             private static bool Prefix() => !active;
         }
 
+        // ---- fixed package order in the hats tab ----------------------------------------------------
+        // TOR lists the packages in the order their first hat appears in GetUnlockedHats, i.e. registration order. Loading
+        // step by step (and registering a requested hat at once) shuffled that from start to start, so Unknown's Collection
+        // sometimes stood at the top (User 29.10.). Now: TOR's own packages in their original order (snapshot of the
+        // pending list before the first registration), then Unknown's Collection, then other "Unknown's" packages, and
+        // Unknown's Collective last. Hats inside a package keep TOR's sorting (by name).
+        private static Dictionary<string, int> originalOrder;
+
+        private static void Snapshot() {
+            if (originalOrder != null) return;
+            var pending = Pending;
+            if (pending == null || pending.Count == 0) return;
+            originalOrder = new Dictionary<string, int>();
+            for (int i = 0; i < pending.Count; i++) {
+                var h = pending[i];
+                if (h?.Name == null) continue;
+                string id = "hat_" + h.Name.Replace(' ', '_');
+                if (!originalOrder.ContainsKey(id)) originalOrder[id] = i;
+            }
+        }
+
+        // TOR's HatData.GetHatExtension and its ExtensionCache are internal; the cache is read by reflection.
+        private static readonly FieldInfo ExtensionField = AccessTools.Field(typeof(CustomHatManager), "ExtensionCache");
+
+        private static string PackageOf(HatData h) {
+            try {
+                if (h == null || ExtensionField?.GetValue(null) is not Dictionary<string, HatExtension> cache) return "";
+                return cache.TryGetValue(h.name, out var ext) && ext != null ? ext.Package ?? "" : "";
+            } catch { return ""; }
+        }
+
+        private static int Rank(string package) {
+            if (package == "Unknown's Collection") return 1;
+            if (package == "Unknown's Collective") return 3;
+            if (package != null && package.StartsWith("Unknown's ")) return 2;
+            return 0;
+        }
+
+        [HarmonyPatch(typeof(HatManager), nameof(HatManager.GetUnlockedHats))]
+        private static class PackageOrder {
+            [HarmonyPriority(Priority.Last)]
+            private static void Postfix(ref Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<HatData> __result) {
+                try {
+                    if (__result == null || __result.Length < 2) return;
+                    var hats = new List<HatData>(__result.Length);
+                    foreach (var h in __result) hats.Add(h);
+                    // package -> (rank, position of its first hat in the original order)
+                    var first = new Dictionary<string, (int rank, int pos)>();
+                    for (int i = 0; i < hats.Count; i++) {
+                        var h = hats[i];
+                        string pkg = PackageOf(h);
+                        int pos = originalOrder != null && h != null && originalOrder.TryGetValue(h.ProductId ?? "", out int o) ? o : i + 100000;
+                        if (!first.TryGetValue(pkg, out var f) || pos < f.pos) first[pkg] = (Rank(pkg), pos);
+                    }
+                    var sorted = hats.Select((h, i) => (h, i, key: first[PackageOf(h)]))
+                        .OrderBy(x => x.key.rank).ThenBy(x => x.key.pos).ThenBy(x => x.i).Select(x => x.h).ToArray();
+                    __result = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppReferenceArray<HatData>(sorted);
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[StartupHats] package order failed: {e.Message}");
+                }
+            }
+        }
+
         private static HatData Register(CustomHat hat) {
+            Snapshot();
             try {
                 var result = (HatData)Create.Invoke(null, new object[] { hat, false });
                 Pending.Remove(hat);
