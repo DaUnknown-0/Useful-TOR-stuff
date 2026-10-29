@@ -28,6 +28,8 @@ namespace UsefulTORStuff {
         public static Sprite MixupIcon => GetSprite("UsefulTORStuff.Resources.uts_mixup.png", 115f);
         public static Sprite BombCancelIcon => GetSprite("UsefulTORStuff.Resources.uts_bombcancel.png", 115f);
         public static Sprite RevengerIcon => GetSprite("UsefulTORStuff.Resources.uts_revenger.png", 115f);
+        /// <summary>Unknown's Collective mark (Assets/Branding/unknown/logo_final.py), shown small in the panel title tabs.</summary>
+        public static Sprite LogoIcon => GetSprite("UsefulTORStuff.Resources.uts_logo.png", 100f);
 
         public static void PlayReshield(float volume = 0.7f) => Play("uts_reshield", volume);
         public static void PlayLimpToggle(float volume = 0.6f) => Play("uts_limp", volume);

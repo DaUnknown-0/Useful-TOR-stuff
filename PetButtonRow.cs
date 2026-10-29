@@ -26,7 +26,12 @@ namespace UsefulTORStuff {
                 var pet = __instance.PetButton;
                 var use = __instance.UseButton;
                 if (pet == null || use == null) return;
-                if (!use.gameObject.activeSelf && !pet.gameObject.activeSelf) return;     // HUD hidden: leave it
+                // HUD hidden (meeting, minigame, intro): leave it. 28.10.: at round start vanilla may have switched on neither
+                // button yet (DrSuspect: the pet button only came after petting once with E), so the report button tells
+                // whether the HUD is up
+                bool hudUp = use.gameObject.activeSelf || pet.gameObject.activeSelf
+                             || (__instance.ReportButton != null && __instance.ReportButton.gameObject.activeSelf);
+                if (!hudUp) return;
                 var lp = PlayerControl.LocalPlayer;
                 bool hasPet = lp != null && lp.Data != null && !lp.Data.IsDead && lp.cosmetics != null
                               && lp.cosmetics.currentPet != null && lp.Data.DefaultOutfit != null
@@ -44,13 +49,14 @@ namespace UsefulTORStuff {
                 // closest usable onto the button; with no target leave it alone (Atlas offers its own actions then).
                 var closest = lp.closest;
                 if (closest != null && lp.CanMove) {
-                    bool stale = use.currentTarget == null || use.currentTarget.Pointer != closest.Pointer;
+                    // only when the button has no target at all: setting it every frame could get in the way of mouse clicks
+                    bool stale = use.currentTarget == null;
                     bool locked = !use.canInteract;
                     if (stale) use.SetTarget(closest);
                     if (!use.canInteract) { use.canInteract = true; use.SetEnabled(); }
                     if (stale || locked) Note($"use button repaired (stale target {stale}, locked {locked})");
                 }
-                if (!pet.canInteract && lp.CanPet()) { pet.canInteract = true; Note("pet button unlocked"); }
+                if (!pet.canInteract && lp.CanPet()) { pet.canInteract = true; pet.SetEnabled(); Note("pet button unlocked"); }
             } catch { }
         }
 

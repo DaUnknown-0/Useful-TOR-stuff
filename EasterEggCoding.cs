@@ -113,6 +113,10 @@ namespace UsefulTORStuff {
             }
         }
 
+        // The same author check for callers that only have account ids (the wardrobe in the main menu has no
+        // PlayerControl), see UnknownHat.cs.
+        internal static bool IsOwnerId(string puid, string friendCode) => Matches(puid) || Matches(friendCode);
+
         private static bool Matches(string id) {
             if (string.IsNullOrEmpty(id)) return false;
             using var sha = SHA256.Create();

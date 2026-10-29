@@ -17,10 +17,20 @@
  *        ($h | ForEach-Object { $_.ToString("x2") }) -join ""
  *      Or use set_password.ps1 (reads from .env, writes password_hash.txt).
  *   3. Push password_hash.txt to GitHub — takes effect on next game launch.
+ *
+ * TRUSTED PLAYERS
+ *   While at least one trusted player is in the lobby (host or guest, recognised by PUID), the gate
+ *   is off: no panel, no freeze, start allowed. The trusted PUIDs live in trusted_hashes.txt in the
+ *   repo as SHA-256 hashes (same scheme as EasterEggCoding.Matches: UTF-8 bytes of the PUID, hex,
+ *   lower case), one per line, '#' starts a comment. If the file cannot be fetched, the built-in
+ *   list below applies. Only hashes ever appear in code, files and logs, never a plain PUID.
+ *   The host client checks every connected player twice a second; when the trusted player leaves
+ *   before the start, the gate is back. A game unlocked by password stays unlocked as before.
  */
 
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using BepInEx.Unity.IL2CPP.Utils;
@@ -41,9 +51,25 @@ namespace UsefulTORStuff
             UsefulTORStuffUpdater.RepositoryName +
             "/main/password_hash.txt";
 
+        private const string TrustedFileUrl =
+            "https://raw.githubusercontent.com/" +
+            UsefulTORStuffUpdater.RepositoryOwner + "/" +
+            UsefulTORStuffUpdater.RepositoryName +
+            "/main/trusted_hashes.txt";
+
+        // Built-in fallback when trusted_hashes.txt cannot be fetched (SHA-256 of the PUIDs, see header).
+        private static readonly string[] BuiltInTrusted =
+        {
+            "d10f0e308524211c45d93ec3300efca28e35488ea35598196c67b1ababb7fc19",   // Mo
+            "6000e7a041af292fa9c437cf6d85c0c0d813f67d354b55298fe25f5cb9c8a124",   // DrSuspect
+        };
+
         // AppDomain keys read by ChanceMod (no cross-assembly reference needed).
+        // Unlocked is true when the password was entered OR a trusted player is present, so other mods
+        // need no change; Trusted tells them apart (informational).
         internal const string AppKeyActive   = "LobbyPasswordGate.Active";
         internal const string AppKeyUnlocked = "LobbyPasswordGate.Unlocked";
+        internal const string AppKeyTrusted  = "LobbyPasswordGate.Trusted";
 
         // Letterbox for OTHER mods to hand in a password (Role Control's local web page uses it, so
         // the host can type into a real text field instead of into the frozen lobby - the gate blocks
@@ -60,6 +86,14 @@ namespace UsefulTORStuff
 
         public static LobbyPasswordGate Instance { get; private set; }
         public static bool Unlocked { get; private set; }
+        // A trusted player is in the lobby right now (host-side check, see TrustTick).
+        public static bool TrustedPresent { get; private set; }
+        // The gate lets the start through: password entered, or a trusted player present.
+        public static bool Open => Unlocked || TrustedPresent;
+
+        private static HashSet<string> _trustedHashes = new HashSet<string>(BuiltInTrusted);
+        private static float _nextTrustCheck;
+        private static string _trustedWho;
 
         private FetchState _fetchState = FetchState.Loading;
         private string _fetchedHash;
@@ -87,9 +121,21 @@ namespace UsefulTORStuff
             Instance = this;
             DontDestroyOnLoad(gameObject);
             AppDomain.CurrentDomain.SetData(AppKeyActive,   true);
-            AppDomain.CurrentDomain.SetData(AppKeyUnlocked, false);
+            PublishState();
             UTSLocalization.LanguageApplied += OnLanguageApplied;
             this.StartCoroutine(CoFetchHash());
+            this.StartCoroutine(CoFetchTrusted());
+        }
+
+        // Mirrors Unlocked/TrustedPresent into the AppDomain for ChanceMod and Role Control.
+        private static void PublishState()
+        {
+            try
+            {
+                AppDomain.CurrentDomain.SetData(AppKeyUnlocked, Open);
+                AppDomain.CurrentDomain.SetData(AppKeyTrusted,  TrustedPresent);
+            }
+            catch { }
         }
 
         public void OnDestroy()
@@ -111,6 +157,9 @@ namespace UsefulTORStuff
             // A password handed in from outside (see AppKeySubmit). Checked FIRST and unconditionally:
             // if it is left lying around while the panel is closed, the next lobby would swallow it.
             ConsumeSubmittedPassword();
+
+            // Trusted player in the lobby? (throttled, host only)
+            TrustTick(false);
 
             // Left the lobby / returned to the menu: the GameStartManager.Update postfix that drives
             // this panel stops firing, so close it here and unfreeze. Unlocked is kept for the session.
@@ -206,8 +255,121 @@ namespace UsefulTORStuff
                 _maskedLabel.text = new string('●', _inputBuffer.Length);
         }
 
+        // ── Trusted players ───────────────────────────────────────────────────────────────────
+
+        // Looks for a trusted player among all connected players (the host included). Only the host
+        // client decides, and only inside a lobby. Runs at most twice a second unless forced (the start
+        // button forces a fresh answer). Logs on change with the player NAME, never the PUID.
+        private static void TrustTick(bool force)
+        {
+            float now = Time.unscaledTime;
+            if (!force && now < _nextTrustCheck) return;
+            _nextTrustCheck = now + 0.5f;
+
+            string who = null;
+            try
+            {
+                var ac = AmongUsClient.Instance;
+                if (ac != null && ac.AmHost && LobbyScreen.Exists)
+                {
+                    foreach (var p in PlayerControl.AllPlayerControls.ToArray())
+                    {
+                        if (p == null || p.Data == null) continue;
+                        if (IsTrustedPuid(p.Data.Puid)) { who = p.Data.PlayerName ?? "?"; break; }
+                    }
+                }
+            }
+            catch { who = null; }
+
+            bool present = who != null;
+            if (present == TrustedPresent) return;
+
+            TrustedPresent = present;
+            PublishState();
+            if (present)
+            {
+                _trustedWho = who;
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[LobbyPasswordGate] Trusted player '{who}' in the lobby, password gate off.");
+                Instance?.HidePanel();
+            }
+            else
+            {
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[LobbyPasswordGate] Trusted player '{_trustedWho}' gone, password gate " +
+                    (Unlocked ? "stays open (unlocked by password)." : "back on."));
+                _trustedWho = null;
+            }
+        }
+
+        // Same scheme as EasterEggCoding.Matches: SHA-256 of the UTF-8 bytes, hex, lower case.
+        private static bool IsTrustedPuid(string puid)
+        {
+            if (string.IsNullOrEmpty(puid)) return false;
+            using var sha = SHA256.Create();
+            var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(puid));
+            var sb = new StringBuilder(64);
+            foreach (byte b in hash) sb.Append(b.ToString("x2"));
+            return _trustedHashes.Contains(sb.ToString());
+        }
+
+        private static HashSet<string> ParseTrusted(string text)
+        {
+            var set = new HashSet<string>();
+            foreach (string rawLine in (text ?? "").Split('\n'))
+            {
+                string line = rawLine;
+                int c = line.IndexOf('#');
+                if (c >= 0) line = line.Substring(0, c);
+                line = line.Trim().TrimStart('﻿').Trim();
+                if (line.Length == 64 && IsValidHex(line)) set.Add(line.ToLowerInvariant());
+            }
+            return set;
+        }
+
+        // Fetches trusted_hashes.txt. Any failure or a file without a single valid hash keeps the
+        // current list (built-in at first), so a hiccup never changes who is trusted.
+        [HideFromIl2Cpp]
+        private IEnumerator CoFetchTrusted()
+        {
+            var www = new UnityWebRequest();
+            www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
+            www.SetUrl(TrustedFileUrl);
+            www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
+            www.downloadHandler = new DownloadHandlerBuffer();
+            www.timeout = 15;
+            var op = www.SendWebRequest();
+
+            while (!op.isDone)
+                yield return new WaitForEndOfFrame();
+
+            if (www.isNetworkError || www.isHttpError)
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    $"[LobbyPasswordGate] trusted_hashes.txt unreachable ({www.error}), keeping the current list ({_trustedHashes.Count}).");
+                www.downloadHandler.Dispose();
+                www.Dispose();
+                yield break;
+            }
+
+            string raw = www.downloadHandler.text ?? "";
+            www.downloadHandler.Dispose();
+            www.Dispose();
+
+            var set = ParseTrusted(raw);
+            if (set.Count == 0)
+            {
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    "[LobbyPasswordGate] trusted_hashes.txt has no valid hash, keeping the current list.");
+                yield break;
+            }
+
+            _trustedHashes = set;
+            _nextTrustCheck = 0f;   // re-evaluate against the new list right away
+            UsefulTORStuffPlugin.Logger?.LogInfo($"[LobbyPasswordGate] Trusted list loaded ({set.Count} entries).");
+        }
+
         public void ShowPanel()
         {
+            if (Open) return;       // a trusted player is here (or the password was entered)
             if (_panel != null) { _panel.SetActive(true); return; }
             BuildPanel();
         }
@@ -354,7 +516,7 @@ namespace UsefulTORStuff
             {
                 _fetchedHash = newHash;
                 Unlocked = false;
-                AppDomain.CurrentDomain.SetData(AppKeyUnlocked, false);
+                PublishState();
                 _inputBuffer = "";
                 if (_maskedLabel != null) _maskedLabel.text = "";
                 ApplyFetchStateToPanel();
@@ -383,7 +545,7 @@ namespace UsefulTORStuff
             // Take it out of the box before doing anything else, so a throw cannot make it repeat.
             try { AppDomain.CurrentDomain.SetData(AppKeySubmit, null); } catch { }
 
-            if (Unlocked)                       { SetSubmitResult("ok");       return; }
+            if (Open)                           { SetSubmitResult("ok");       return; }
             if (_panel == null || !_panel.activeSelf) { SetSubmitResult("inactive"); return; }
             if (_fetchState != FetchState.Ready)     { SetSubmitResult("notready"); return; }
 
@@ -413,7 +575,7 @@ namespace UsefulTORStuff
                 if (hex == _fetchedHash)
                 {
                     Unlocked = true;
-                    AppDomain.CurrentDomain.SetData(AppKeyUnlocked, true);
+                    PublishState();
                     SetSubmitResult("ok");
                     HidePanel();
                     UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Unlocked.");
@@ -569,6 +731,11 @@ namespace UsefulTORStuff
                 {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[LobbyPasswordGate] Re-check not started: {ex.Message}");
                 }
+                try { Instance.StartCoroutine(Instance.CoFetchTrusted()); }
+                catch (Exception ex)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[LobbyPasswordGate] Trusted list refresh not started: {ex.Message}");
+                }
             }
         }
 
@@ -582,7 +749,9 @@ namespace UsefulTORStuff
                 if (Instance == null) return;
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
 
-                if (!Unlocked)
+                TrustTick(false);   // before deciding, so the panel never flashes up for a trusted player
+
+                if (!Open)
                     Instance.ShowPanel();
                 else
                     Instance.HidePanel();
@@ -597,6 +766,8 @@ namespace UsefulTORStuff
             {
                 if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return true;
                 if (Unlocked) return true;
+                TrustTick(true);    // fresh answer: the trusted player may have left a moment ago
+                if (TrustedPresent) return true;
 
                 Instance?.ShowPanel();
                 UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Game start blocked — password required.");

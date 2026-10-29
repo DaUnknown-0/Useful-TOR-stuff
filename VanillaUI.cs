@@ -139,6 +139,22 @@ namespace UsefulTORStuff {
                           Vector2.zero, new Vector2(-60f, 0f), TMPro.TextAlignmentOptions.Left, TMPro.FontStyles.UpperCase);
             t.rectTransform.offsetMin = new Vector2(22f, 0f);
             Heading(t);
+            // Unknown's Collective mark in the reserved right end of the tab (the label stops 60 px short of it)
+            try {
+                var logo = UTSAssets.LogoIcon;
+                if (logo != null) {
+                    var mark = new GameObject("CollectiveMark");
+                    mark.transform.SetParent(tab.transform, false);
+                    var mrt = Rect(mark, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(1, 0.5f));
+                    float ms = Mathf.Max(28f, h - 14f);
+                    mrt.sizeDelta = new Vector2(ms, ms);
+                    mrt.anchoredPosition = new Vector2(-18f, 0f);
+                    var mi = mark.AddComponent<Image>();
+                    mi.sprite = logo;
+                    mi.preserveAspect = true;
+                    mi.raycastTarget = false;
+                }
+            } catch { }
             return -FrameW - top - h - 4f;
         }
 

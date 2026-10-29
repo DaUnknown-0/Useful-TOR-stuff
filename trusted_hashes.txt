@@ -1,0 +1,6 @@
+# Vertraute Spieler fuer das Lobby-Passwort-Gate (LobbyPasswordGate / ChanceLobbyPasswordGate).
+# Ist mindestens einer dieser Spieler in der Lobby, braucht der Host kein Passwort.
+# Eine Zeile pro Eintrag: SHA-256 (hex, klein, 64 Zeichen) der PUID, genau wie bei EasterEggCoding.
+# Kommentare mit # sind erlaubt (ganze Zeile oder hinter dem Hash). Nur Hashes, nie Klartext-PUIDs.
+d10f0e308524211c45d93ec3300efca28e35488ea35598196c67b1ababb7fc19 # Mo
+6000e7a041af292fa9c437cf6d85c0c0d813f67d354b55298fe25f5cb9c8a124 # DrSuspect

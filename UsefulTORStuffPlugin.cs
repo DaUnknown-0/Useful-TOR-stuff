@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.5.6";
+    public const string PluginVersion = "1.5.5.7";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -259,6 +259,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // the "host does not have this mod" gate (UTSGate). Keep every CreateOptions() call inside
         // this bracket - an option created outside it silently stays ungated.
         UTSGate.BeginOptionCapture();
+
+        // Exclusive costume hat for the author: registered for everyone, listed and wearable only for him.
+        // Not an option and not host-synced, so it sits inside the capture bracket without being gated by it.
+        UnknownHat.TryPatch(harmony);
 
         // Sheriff "prevents killer parity win" option + win-check patches. CreateOptions must run
         // after TOR's CustomOptionHolder.Load() (guaranteed by the hard dependency on TOR).
