@@ -270,6 +270,9 @@ namespace UsefulTORStuff {
         private static float lastBreakdownMb = -1f;
 
         private static void MaybeBreakdown(float mb) {
+            // Full object enumeration and grouping compete with startup and movie frames.
+            // Leave lastScene untouched so the report runs once playback/startup has settled.
+            if (!StartupTiming.Ready || IntroFilm.IsPlaying) return;
             if (breakdown?.Value != true) return;
             string scene;
             try { scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? ""; } catch { scene = "?"; }

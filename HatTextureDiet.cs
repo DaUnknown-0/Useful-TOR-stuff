@@ -51,9 +51,8 @@
  * and later starts upload it with LoadRawTextureData, no PNG, no compressing. A cache file names the size and
  * the write time of its PNG; TOR replacing a hat changes both, and the hat is decoded anew. Anything odd about a
  * cache file (wrong header, size, a refused upload) falls back to the decode and rewrites it.
- * Only a game started by the Mod Manager's "Restart now" reads the cache (user, 15.10.: speed-ups for that
- * restart only, not for closing and opening the game by hand); a normal start loads the hats as before and
- * merely writes the cache files that are missing, so the next restart finds them.
+ * Normal starts also read the validated cache (29.10.: avoid the multi-second startup/intro freeze).
+ * Missing, changed or invalid entries are decoded and replaced, regardless of how the game was started.
  *
  * Not gated on the host and not an in-game option: this is the local client's own memory, no
  * outcome depends on it, and it must work in a lobby whose host runs nothing at all. Off switch in
@@ -109,7 +108,7 @@ namespace UsefulTORStuff {
         private static readonly byte[] Magic = { (byte)'U', (byte)'H', (byte)'C', (byte)'1' };
 
         private static bool UseCache => cache != null && cache.Value && compress != null && compress.Value;
-        private static bool ReadCache => UseCache && UTSRestart.IsRestart;
+        private static bool ReadCache => UseCache;
 
         private static Texture2D LoadCached(string path, FileInfo png) {
             string file = CacheFile(path);
@@ -230,8 +229,9 @@ namespace UsefulTORStuff {
                         }
                         compressTicks += System.Diagnostics.Stopwatch.GetTimestamp() - t0;
                     }
-                    // a restart rewrites what it could not use; a normal start only adds what is missing
-                    if (UseCache && texture.format == TextureFormat.DXT5 && (UTSRestart.IsRestart || !File.Exists(CacheFile(path)))) {
+                    // Reaching this point means the cache missed or was stale/invalid. Replace it so
+                    // a changed PNG does not get decoded again on every subsequent normal start.
+                    if (UseCache && texture.format == TextureFormat.DXT5) {
                         try { SaveCached(path, png, texture); }
                         catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[HatTextureDiet] cache copy failed: {e.Message}"); }
                     }

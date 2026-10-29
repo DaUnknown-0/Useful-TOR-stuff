@@ -25,6 +25,7 @@ namespace UsefulTORStuff {
     [HarmonyPatch(typeof(MainMenuManager), nameof(MainMenuManager.Start))]
     internal static class StartupTiming {
         private static bool done;
+        internal static bool Ready { get; private set; }
         private const float Stall = 0.15f, Calm = 5f, Limit = 60f;
 
         private static void Postfix(MainMenuManager __instance) {
@@ -66,9 +67,10 @@ namespace UsefulTORStuff {
                 if (login < 0) {
                     try { if (EOSManager.Instance != null && EOSManager.Instance.HasFinishedLoginFlow()) login = SinceStart(); } catch { }
                 }
-                if (login >= 0 && now - lastStall > Calm) break;
+                if (login >= 0 && !StartupHats.Loading && now - lastStall > Calm) break;
             }
             double ready = SinceStart() - (Time.realtimeSinceStartup - lastStall);
+            Ready = true;
             string click = clickToStart >= 0 ? $" ({ready + clickToStart:F1} s after \"Restart now\")" : "";
             Log($"takes input {ready:F1} s after Among Us.exe was started{click}; login {(login >= 0 ? login.ToString("F1") + " s" : "not finished")}; "
                 + $"stalls over {Stall * 1000:F0} ms:{(stalls.Length > 0 ? stalls.ToString() : " none")}");

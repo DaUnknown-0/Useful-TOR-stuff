@@ -12,8 +12,10 @@
  * at them are appended by reflection to the internal CustomHatManager.UnregisteredHats. TOR then turns them into
  * real HatData on its normal path. A GenerateDownloadList postfix keeps TOR from asking its repository for files
  * it does not host (the records carry no hash, which TOR reads as "download me").
- * Layers: main = front view on the real crewmate silhouette (visor cut out), back = the coat tails that flare
- * out sideways (behind the player), climb = rear view for the ladder.
+ * Layers: main = front view on the real crewmate silhouette (visor cut out), back = an almost empty image (the
+ * short coat has no tails behind the player; the layer stays because the ladder and corpse poses are recognised by
+ * the game switching it off), climb = rear view for the ladder. All images come from
+ * Assets\Branding\unknown\gpt_outfit.py (GPT outfit, User 29.10.).
  *
  * Exclusive wardrobe entry: only the author sees and can equip it.
  *   - HatManager.GetUnlockedHats postfix drops the hat from the list for everybody else. TOR builds its whole
@@ -240,6 +242,113 @@ namespace UsefulTORStuff {
                 nextSanitize = Time.time + 1f;
                 SanitizeSavedHat();
             }
+        }
+
+        // ---- walk loop -----------------------------------------------------------------------------
+        // TOR hats have one front image. While the wearer runs, the front layer gets one of 12 walk frames
+        // (Resources\unknownhat\unknown_walk_N.png, Assets\Branding\unknown\gpt_overlay.py), picked from the
+        // crewmate's own run animation so the outfit bobs with the real body. Standing, the ladder and the corpse pose keep TOR's images: the ladder and corpse
+        // poses switch the back layer off and put their own image on the front layer, so nothing is written then.
+
+        private const int WalkFrames = 12;
+        private static Sprite[] walkFrames;
+        private static Sprite walkFor;          // the main sprite the walk frames were sized against
+        private static Sprite idleSprite;       // TOR's main sprite of the hat, put back when the wearer stops
+        private static bool walkFailed;
+
+        [HarmonyPatch(typeof(HatParent), nameof(HatParent.LateUpdate))]
+        private static class WalkPatch {
+            public static void Postfix(HatParent __instance) {
+                if (!registered || walkFailed || __instance == null) return;
+                try { Animate(__instance); }
+                catch (Exception ex) {
+                    walkFailed = true;
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[UnknownHat] walk loop disabled after an error: {ex.Message}");
+                }
+            }
+        }
+
+        private static void Animate(HatParent hp) {
+            var hat = hp.Hat;
+            if (hat == null || !IsOurs(hat.ProductId)) return;
+            var front = hp.FrontLayer;
+            var back = hp.BackLayer;
+            if (front == null || !front.enabled || front.sprite == null) return;
+            if (back == null || !back.enabled) return;
+            FollowHead(hp, front, back);
+
+            var current = front.sprite;
+            if (walkFrames == null || Array.IndexOf(walkFrames, current) < 0) idleSprite = current;
+            if (idleSprite == null) return;
+
+            float cycle = -1f;
+            var pc = hp.GetComponentInParent<PlayerControl>();
+            if (pc != null && pc.Data != null && !pc.Data.IsDead && !pc.onLadder && !pc.inVent && !pc.inMovingPlat) {
+                var anims = pc.MyPhysics != null ? pc.MyPhysics.Animations : null;
+                if (anims != null && anims.IsPlayingRunAnimation()) {
+                    var animator = anims.Animator != null ? anims.Animator.m_animator : null;
+                    if (animator != null) {
+                        float t = animator.GetCurrentAnimatorStateInfo(0).normalizedTime;
+                        cycle = t - Mathf.Floor(t);
+                    }
+                }
+            }
+
+            Sprite want = idleSprite;
+            if (cycle >= 0f && EnsureWalkFrames(idleSprite)) {
+                var f = walkFrames[Mathf.Clamp(Mathf.FloorToInt(cycle * WalkFrames), 0, WalkFrames - 1)];
+                if (f != null) want = f;
+            }
+            if (front.sprite != want) front.sprite = want;
+        }
+
+        // The walk frames are measured against a hat that hangs on the head node (NodeId 0), like the costume hats of
+        // Unknown's Collection (UCHats.SetBounceNode): the front layer bobs with the head and the
+        // frames only add what the body does relative to it. TOR leaves a non-bouncing custom hat on another node, so the
+        // costume moved twice and cut into the visor (User 29.10.). Same fix as UCHats: sync on the head, back layer copies
+        // the front layer's X/Y (the sync only moves the front layer).
+        private static void FollowHead(HatParent hp, SpriteRenderer front, SpriteRenderer back) {
+            var sync = hp.SpriteSyncNode != null ? hp.SpriteSyncNode : hp.GetComponent<PowerTools.SpriteAnimNodeSync>();
+            if (sync != null && sync.NodeId != 0) sync.NodeId = 0;
+            var f = front.transform.localPosition;
+            var b = back.transform.localPosition;
+            if (Mathf.Abs(b.x - f.x) > 0.0005f || Mathf.Abs(b.y - f.y) > 0.0005f)
+                back.transform.localPosition = new Vector3(f.x, f.y, b.z);
+        }
+
+        // The frames share the main image's canvas, so pivot and scale are taken from TOR's main sprite.
+        private static bool EnsureWalkFrames(Sprite main) {
+            if (walkFrames != null && walkFor == main) return true;
+            var frames = new Sprite[WalkFrames];
+            Vector2 pivot = new Vector2(main.pivot.x / main.rect.width, main.pivot.y / main.rect.height);
+            for (int i = 0; i < WalkFrames; i++) {
+                byte[] data = ReadResource(ResourcePrefix + "unknown_walk_" + (i + 1) + ".png");
+                if (data == null) { walkFailed = true; UsefulTORStuffPlugin.Logger?.LogWarning("[UnknownHat] walk frame " + (i + 1) + " missing."); return false; }
+                var tex = new Texture2D(2, 2, TextureFormat.ARGB32, false);
+                if (!ImageConversion.LoadImage(tex, data, false)) { walkFailed = true; return false; }
+                tex.Apply(false, true);
+                tex.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontSaveInEditor;
+                float ppu = main.pixelsPerUnit * tex.width / main.rect.width;
+                var s = Sprite.Create(tex, new Rect(0, 0, tex.width, tex.height), pivot, ppu);
+                s.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontSaveInEditor;
+                frames[i] = s;
+            }
+            walkFrames = frames;
+            walkFor = main;
+            return true;
+        }
+
+        private static byte[] ReadResource(string name) {
+            using var stream = typeof(UnknownHat).Assembly.GetManifestResourceStream(name);
+            if (stream == null) return null;
+            var data = new byte[stream.Length];
+            int read = 0;
+            while (read < data.Length) {
+                int n = stream.Read(data, read, data.Length - read);
+                if (n <= 0) break;
+                read += n;
+            }
+            return read == data.Length ? data : null;
         }
 
         // Saved hat is ours but the account is not the author's: back to the empty hat, and tell the lobby when in one.

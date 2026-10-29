@@ -134,7 +134,7 @@ namespace UsefulTORStuff {
 
         // While the music panel previews a track, the theme (ours or the original) pauses; true = skip the rest.
         private bool HandlePreview() {
-            bool preview = DraftMusic.PreviewKey != null;
+            bool preview = DraftMusic.PreviewKey != null || (tag == "MenuMusic" && IntroFilm.IsPlaying);
             if (preview) {
                 if (pausedSrc == null) {
                     var s = Alive(src) ? src : find(DraftMusic.PreviewClip);
