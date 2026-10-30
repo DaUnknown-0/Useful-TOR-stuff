@@ -153,6 +153,91 @@ namespace UsefulTORStuff {
             }
         }
 
+        // ── Tiering-proof layer (User 2026-10-30: "das war an und ich wurde trotzdem geguessed") ──────────
+        // Every patch above sits on a MANAGED TOR method (timeMasterRewindTime, guesserShoot, guesserOnClick), and
+        // .NET tiered compilation silently drops Harmony detours on those (project note "Tiering killt Harmony-
+        // Detours"; guesserShoot was listed there as unprotected). The playtest log shows exactly that: option on,
+        // shield saved the Time Master, a correct guess in the next meeting killed him anyway. The layer below
+        // only hooks Il2Cpp game methods, which never lose their detours, and reads TOR's state through plain
+        // static FIELDS (no detour involved). The managed patches above stay as a first line.
+
+        // TOR's CustomRPC enum and MeetingHudPatch are internal: the RPC id and the guess-list field are looked up
+        // once by reflection (a field read and an enum value, no method detour involved).
+        private static readonly int GuesserShootId = ResolveGuesserShootId();
+        private static readonly FieldInfo GuesserUiField = typeof(CustomOption).Assembly
+            .GetType("TheOtherRoles.Patches.MeetingHudPatch")?.GetField("guesserUI", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+
+        private static int ResolveGuesserShootId() {
+            try {
+                var t = typeof(CustomOption).Assembly.GetType("TheOtherRoles.CustomRPC");
+                return t == null ? -1 : Convert.ToInt32(Enum.Parse(t, "GuesserShoot"));
+            } catch { return -1; }
+        }
+
+        // 1) The latch: TOR sets TimeMaster.isRewinding while a saved kill rewinds time, on every client.
+        [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
+        static class RewindPollPatch {
+            public static void Postfix() {
+                try { if (TimeMaster.isRewinding && !shieldSavedThisGame) shieldSavedThisGame = true; } catch { }
+            }
+        }
+
+        // the round reset also on an Il2Cpp method (resetVariables is managed and can lose its postfix)
+        [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
+        static class RoundStartResetPatch {
+            public static void Postfix() { shieldSavedThisGame = false; }
+        }
+
+        // 2) The remote path: TOR handles CustomRPC.GuesserShoot in its POSTFIX on PlayerControl.HandleRpc, so a
+        // prefix there sees the message first. For a protected Time Master the dying target byte is rewritten to
+        // 255: guesserShoot then finds no player and returns at once (no death, shot not consumed), on every client
+        // that runs this mod - and ActiveForEveryone() makes that every client.
+        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
+        static class GuesserRpcPatch {
+            [HarmonyPriority(Priority.First)]
+            public static void Prefix([HarmonyArgument(0)] byte callId, [HarmonyArgument(1)] Hazel.MessageReader reader) {
+                try {
+                    if (GuesserShootId < 0 || callId != GuesserShootId || reader == null || !ActiveForEveryone()) return;
+                    if (TimeMaster.timeMaster == null) return;
+                    int at = reader.Offset + reader.Position;          // killerId, dyingTarget, guessedTarget, guessedRoleId
+                    var buf = reader.Buffer;
+                    if (buf == null || at + 3 >= buf.Length) return;
+                    byte dying = buf[at + 1], role = buf[at + 3];
+                    if (role != (byte)RoleId.TimeMaster || dying != TimeMaster.timeMaster.PlayerId) return;
+                    buf[at + 1] = 255;
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[TimeMasterUnguessable] guess on the saved Time Master refused (RPC).");
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogError($"[TimeMasterUnguessable] HandleRpc prefix failed: {e.Message}");
+                }
+            }
+        }
+
+        // 3) The guesser's own client calls guesserShoot directly from the button, without the RPC: hide the Time
+        // Master's button in TOR's guess list every frame (the list-hide prefix above is on a managed method too).
+        private static string timeMasterName;
+
+        [HarmonyPatch(typeof(MeetingHud), nameof(MeetingHud.Update))]
+        static class GuessListPatch {
+            public static void Postfix() {
+                try {
+                    if (!Active()) return;
+                    var ui = GuesserUiField?.GetValue(null) as UnityEngine.GameObject;
+                    if (ui == null) return;
+                    if (timeMasterName == null) {
+                        foreach (var ri in RoleInfo.allRoleInfos)
+                            if (ri != null && ri.roleId == RoleId.TimeMaster) { timeMasterName = ri.name; break; }
+                        if (timeMasterName == null) return;
+                    }
+                    foreach (var label in ui.GetComponentsInChildren<TMPro.TextMeshPro>()) {
+                        if (label == null || label.text == null || !label.text.Contains(timeMasterName)) continue;
+                        var button = label.transform.parent;              // TOR: label is a child of the role button
+                        if (button != null && button.gameObject.activeSelf && button.GetComponent<PassiveButton>() != null)
+                            button.gameObject.SetActive(false);
+                    }
+                } catch { }
+            }
+        }
+
         // Block a successful guess of the Time Master once the shield has saved a kill.
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.guesserShoot))]
         static class GuesserShootPatch {

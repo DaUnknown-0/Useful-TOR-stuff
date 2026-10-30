@@ -17,6 +17,9 @@ namespace UsefulTORStuff
 
         private GameObject _button;
 
+        /// <summary>The button in the current main menu (IntroFilm sizes its own after it).</summary>
+        internal static GameObject Current { get; private set; }
+
         // Red badge on the button's top-right corner with the number of mods that have an update.
         // A screen-space canvas placed over the world-space button every frame (the button lives in
         // the menu's world, the badge is UGUI so it can use VanillaUI's circle and fonts).
@@ -115,6 +118,7 @@ namespace UsefulTORStuff
 
                 // Button instantiieren und positionieren
                 _button = Instantiate(template, null);
+                Current = _button;
                 var buttonPosition = new Vector2(
                     UsefulTORStuffPlugin.ModManagerButtonX.Value,
                     UsefulTORStuffPlugin.ModManagerButtonY.Value

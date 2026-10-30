@@ -17,9 +17,11 @@
  * Download: the film is not in the DLL. A source is a small manifest.json in a public repository of DaUnknown-0 that
  * names the files (name, url, size, sha256); the files are release attachments. Forgotten Fixes has its own source,
  * another mod adds one with "public static class IntroFilmSource { public const string Manifest = ...; }" in the
- * namespace of its plugin class. Missing files load only after the player presses the film button in the main menu,
- * then playback starts. Opening the main menu never fetches a manifest or video. "Delete film" in the Mod Manager
- * removes the files; the next film-button click may load them again.
+ * namespace of its plugin class. Pressing the film button in the main menu checks the manifests and loads what is missing
+ * or changed (a new film release too), then playback starts. Opening the main menu never fetches a manifest or video.
+ * "Delete film" in the Mod Manager removes the files; the next film-button click may load them again.
+ *
+ * Once the last chapter was reached, the button first offers a chapter list (titles from film.json, title_de/title_en).
  *
  * Playback: Unity's VideoPlayer (VideoModule) renders onto the far plane of an own camera that draws last and clears
  * the screen black (same camera trick as AtlasCinematic: other cameras' UI cannot show through). Subtitles in the game
@@ -49,13 +51,17 @@ namespace UsefulTORStuff {
 
         private static ConfigEntry<bool> deleted;
         private static ConfigEntry<string> folder;
+        private static ConfigEntry<bool> seen;
         private static bool playing;
         internal static bool IsPlaying => playing;
 
         internal static void Bind(ConfigFile cfg) {
             folder = cfg.Bind("IntroFilm", "Folder", "", "Folder of the film (film.json + chapter files). Empty = BepInEx\\intro-film.");
             deleted = cfg.Bind("IntroFilm", "Deleted", false, "The film was deleted in the Mod Manager; it loads again only when you press the film button in the main menu.");
+            seen = cfg.Bind("IntroFilm", "Seen", false, "The film's last chapter was reached once; the film button then offers the chapter list.");
         }
+
+        private static void MarkSeen() { if (seen != null && !seen.Value) seen.Value = true; }
 
         private static string Folder => string.IsNullOrWhiteSpace(folder?.Value)
             ? Path.Combine(BepInEx.Paths.BepInExRootPath, "intro-film") : folder.Value;
@@ -66,7 +72,7 @@ namespace UsefulTORStuff {
         // ---- film description ----------------------------------------------------------------------
 
         private sealed class Line { public float SDe, EDe, SEn, EEn; public string Who = "", De = "", En = ""; }
-        private sealed class Chapter { public int Id; public bool Available; public float Seconds; public string Key = "", Video = ""; public List<Line> Lines = new(); }
+        private sealed class Chapter { public int Id; public bool Available; public float Seconds; public string Key = "", Video = "", TitleDe = "", TitleEn = ""; public List<Line> Lines = new(); }
         private sealed class FilmFile { public string File = ""; public List<int> Ids = new(); }
 
         /// <summary>film.json first, then film.*.json (chapters and films that other sources add).</summary>
@@ -107,6 +113,8 @@ namespace UsefulTORStuff {
                         Id = ch.GetProperty("id").GetInt32(), Key = ch.GetProperty("key").GetString() ?? "", Available = available,
                         Seconds = ch.TryGetProperty("seconds", out var sec) ? (float)sec.GetDouble() : 0f,
                         Video = video.Length > 0 && File.Exists(video) ? video : "",
+                        TitleDe = ch.TryGetProperty("title_de", out var td) ? td.GetString() ?? "" : "",
+                        TitleEn = ch.TryGetProperty("title_en", out var te) ? te.GetString() ?? "" : "",
                     };
                     string subs = ch.TryGetProperty("subtitles", out var s) ? Path.Combine(dir, s.GetString() ?? "") : null;
                     if (subs != null && File.Exists(subs)) {
@@ -163,16 +171,24 @@ namespace UsefulTORStuff {
             if (!template) return;
             var button = Object.Instantiate(template, null);
             button.name = "UTSIntroFilmButton";
-            float y = Mathf.Max(0.05f, (UsefulTORStuffPlugin.ModManagerButtonY?.Value ?? 0.21f) - 0.085f);
+            // TOR shrinks ExitGameButton in its own MainMenuManager.Start patch; the Mod Manager button was cloned before that
+            float step = 0.085f;
+            var manager = ModManagerButton.Current;
+            if (manager) {
+                button.transform.localScale = manager.transform.localScale;
+                var box = manager.GetComponent<BoxCollider2D>();
+                var cam = Camera.main;
+                if (box && cam) step = Mathf.Max(step, box.size.y * manager.transform.lossyScale.y / (cam.orthographicSize * 2f) * 1.08f);
+            }
+            float y = Mathf.Max(0.05f, (UsefulTORStuffPlugin.ModManagerButtonY?.Value ?? 0.21f) - step);
             button.GetComponent<AspectPosition>().anchorPoint = new Vector2(UsefulTORStuffPlugin.ModManagerButtonX?.Value ?? 0.8f, y);
             var passive = button.GetComponent<PassiveButton>();
             passive.OnClick = new UnityEngine.UI.Button.ButtonClickedEvent();
             var text = button.transform.GetComponentInChildren<TMP_Text>();
             passive.OnClick.AddListener((Action)(() => {
                 if (playing || clickBusy) return;
-                // the film here: play it; not here (deleted, or never loaded): load it now, then play
-                if (Playable() && !syncing) BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, Play());
-                else BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, LoadThenPlay(text));
+                // always asks the manifests: nothing missing or changed plays right away, a new film release loads first
+                BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, LoadThenPlay(text));
             }));
             // Among Us rewrites a cloned button's text on its first frame; set ours one lerp later.
             menu.StartCoroutine(Effects.Lerp(0.1f, (Action<float>)(p => text.SetText(ButtonLabel()))));
@@ -192,7 +208,13 @@ namespace UsefulTORStuff {
                 }
                 if (Playable()) {
                     if (text != null) text.SetText(ButtonLabel());
-                    var playback = Play();
+                    int start = NoPick;
+                    if (seen != null && seen.Value) {
+                        var choose = ChooseChapter(id => start = id);
+                        while (choose.MoveNext()) yield return choose.Current;
+                        if (start == Cancelled) yield break;
+                    }
+                    var playback = Play(start);
                     while (playback.MoveNext()) yield return playback.Current;
                     yield break;
                 }
@@ -201,6 +223,47 @@ namespace UsefulTORStuff {
                 while (Time.realtimeSinceStartup < until) yield return null;
                 if (text != null) text.SetText(ButtonLabel());
             } finally { clickBusy = false; }
+        }
+
+        private const int NoPick = -1, Cancelled = -2;
+
+        // The chapter list after the film was seen once: from the start, or any chapter that plays here. Esc or a click
+        // beside the panel closes it. The menu's own buttons are off meanwhile (they would react through the panel).
+        private static IEnumerator ChooseChapter(Action<int> done) {
+            bool de = German();
+            int pick = int.MinValue;
+            var chapters = LoadChapters().FindAll(c => c.Available);
+            const float rowH = 58f, rowGap = 8f;
+            var canvas = VanillaUI.Canvas("UTS_IntroFilmChapters", 8950, false);
+            try {
+                MuteMenu(true);
+                VanillaUI.Backdrop(canvas, () => pick = Cancelled);
+                float height = 118f + (chapters.Count + 1) * (rowH + rowGap) + 16f;
+                var panel = VanillaUI.CenterPanel(canvas, new Vector2(620f, height));
+                float y = VanillaUI.Title(panel, de ? "Kapitel wählen" : "Choose a chapter") - 12f;
+                VanillaUI.CloseButton(panel, "", () => pick = Cancelled);
+                var top = new Vector2(0.5f, 1f);
+                VanillaUI.Button(panel, de ? "Von vorn" : "From the start", new Vector2(0f, y), new Vector2(540f, rowH), VanillaUI.Teal,
+                                 () => pick = NoPick, top, top, top);
+                y -= rowH + rowGap;
+                int number = 1;
+                foreach (var c in chapters) {
+                    int id = c.Id;
+                    string title = de ? c.TitleDe : c.TitleEn;
+                    string label = title.Length > 0 ? $"{number}. {title}" : (de ? $"Kapitel {number}" : $"Chapter {number}");
+                    VanillaUI.Button(panel, label, new Vector2(0f, y), new Vector2(540f, rowH), VanillaUI.Blue, () => pick = id, top, top, top);
+                    y -= rowH + rowGap;
+                    number++;
+                }
+                while (pick == int.MinValue) {
+                    if (Input.GetKeyDown(KeyCode.Escape)) pick = Cancelled;
+                    yield return null;
+                }
+            } finally {
+                Object.Destroy(canvas);
+                MuteMenu(false);
+            }
+            done(pick);
         }
 
         /// <summary>Something can be shown: a film file or chapter file for at least one chapter that plays here.</summary>
@@ -318,7 +381,10 @@ namespace UsefulTORStuff {
             var wanted = new List<Remote>();
             foreach (var src in sources) {
                 try {
-                    using var doc = JsonDocument.Parse(await http.GetStringAsync(src, token));
+                    // every click asks: a dead connection must not hold the film back
+                    using var quick = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    quick.CancelAfter(TimeSpan.FromSeconds(5));
+                    using var doc = JsonDocument.Parse(await http.GetStringAsync(src, quick.Token));
                     foreach (var f in doc.RootElement.GetProperty("files").EnumerateArray()) {
                         var r = new Remote {
                             Name = f.GetProperty("name").GetString() ?? "", Url = f.GetProperty("url").GetString() ?? "",
@@ -328,7 +394,7 @@ namespace UsefulTORStuff {
                         wanted.RemoveAll(w => w.Name == r.Name);
                         wanted.Add(r);
                     }
-                } catch (Exception e) when (e is not OperationCanceledException) { Warn($"manifest {src}: {e.Message}"); }
+                } catch (Exception e) when (!token.IsCancellationRequested) { Warn($"manifest {src}: {e.Message}"); }
             }
             var missing = new List<Remote>();
             foreach (var r in wanted) {
@@ -422,7 +488,8 @@ namespace UsefulTORStuff {
         private static readonly List<Object> ownedAssets = new();
         private static readonly List<Collider2D> mutedButtons = new();
 
-        private static IEnumerator Play() {
+        // startId: chapter to begin with, NoPick = the first one
+        private static IEnumerator Play(int startId = NoPick) {
             if (playing) yield break;
             var all = LoadChapters();
             var available = all.FindAll(c => c.Available);
@@ -441,7 +508,7 @@ namespace UsefulTORStuff {
             if (film == null && perChapter.Count == 0) { Warn("no playable chapter"); yield break; }
             playing = true;
             try {
-                var playback = film != null ? PlayFilm(film, all) : PlayChapters(perChapter);
+                var playback = film != null ? PlayFilm(film, all, startId) : PlayChapters(perChapter, startId);
                 while (true) {
                     bool next;
                     try { next = playback.MoveNext(); }
@@ -454,7 +521,7 @@ namespace UsefulTORStuff {
 
         // One file, chapters back to back: subtitles by chapter-local time, Space seeks to the next playable chapter,
         // chapters of a mod that is not loaded are seeked over.
-        private static IEnumerator PlayFilm(FilmFile film, List<Chapter> all) {
+        private static IEnumerator PlayFilm(FilmFile film, List<Chapter> all, int startId) {
             bool de = German();
             var byId = new Dictionary<int, Chapter>();
             foreach (var c in all) byId[c.Id] = c;
@@ -483,8 +550,9 @@ namespace UsefulTORStuff {
             }
             if (!quit && (!cur.isPrepared || cur.length <= 0)) { Warn($"{Path.GetFileName(film.File)}: video did not prepare"); yield break; }
             if (!quit) {
-                // start at the first playable chapter
-                int first = parts.FindIndex(x => x.ch.Available);
+                // start at the chosen chapter, otherwise at the first playable one
+                int first = parts.FindIndex(x => x.ch.Id == startId && x.ch.Available);
+                if (first < 0) first = parts.FindIndex(x => x.ch.Available);
                 if (first > 0) cur.time = parts[first].start;
                 cur.Play();
                 if (videoMaterial != null) videoMaterial.mainTexture = cur.targetTexture;
@@ -521,6 +589,7 @@ namespace UsefulTORStuff {
                         continue;
                     }
                     Log($"chapter {parts[pi].ch.Key} at {t:F2} s");
+                    if (pi == parts.FindLastIndex(x => x.ch.Available)) MarkSeen();
                 }
                 float local = t - parts[pi].start;
                 Layout(view, sub, subBg, note, noteBg);
@@ -546,8 +615,10 @@ namespace UsefulTORStuff {
             Log(quit ? "film ended by the player" : "film finished");
         }
 
-        private static IEnumerator PlayChapters(List<Chapter> chapters) {
+        private static IEnumerator PlayChapters(List<Chapter> chapters, int startId) {
             bool de = German();
+            int from = chapters.FindIndex(c => c.Id == startId);
+            if (from > 0) chapters = chapters.GetRange(from, chapters.Count - from);
             Log($"playing {chapters.Count} chapter(s) ({string.Join(", ", chapters.ConvertAll(c => c.Key))}), {(de ? "de" : "en")}");
             Build(out var view, out var sub, out var subBg, out var note, out var noteBg);
             note.text = de ? "<b>[Leertaste]</b> nächstes Kapitel   <b>[Esc]</b> Film beenden"
@@ -581,6 +652,7 @@ namespace UsefulTORStuff {
                     continue;
                 }
                 Log($"chapter {ch.Key}: prepared, {cur.audioTrackCount} audio tracks, selected {(de ? "de" : "en")}");
+                if (i == chapters.Count - 1) MarkSeen();
                 float playAt = Time.realtimeSinceStartup;
                 Fade(0f);                                   // black until this chapter's first frame is really there
                 cur.Play();
