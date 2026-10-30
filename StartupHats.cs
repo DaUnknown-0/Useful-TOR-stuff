@@ -110,6 +110,38 @@ namespace UsefulTORStuff {
             var all = manager.allHats.ToList();
             all.AddRange(added);
             manager.allHats = all.ToArray();
+            published++;
+        }
+
+        // ---- hats tab opened while hats are still coming in -------------------------------------------
+        // User 30.10. (screenshot, "manche skins fehlen, wenn sie beim join nicht geladen waren"): TOR builds the hats tab
+        // once in OnEnable from the hats registered at that moment. Opened during the incremental load (or before a mod's
+        // late hats, e.g. Halloween costumes after their download), the missing hats never showed up until the tab was
+        // opened again. Now an open tab rebuilds itself when new hats arrived: once the load is through, or at most every
+        // 2 s while it still runs.
+        private static int published, tabBuiltAt;
+        private static float lastRebuild;
+
+        [HarmonyPatch(typeof(HatsTab), nameof(HatsTab.OnEnable))]
+        private static class TabBuilt {
+            [HarmonyPriority(Priority.First)]
+            private static void Postfix() { tabBuiltAt = published; lastRebuild = Time.realtimeSinceStartup; }
+        }
+
+        [HarmonyPatch(typeof(HatsTab), nameof(HatsTab.Update))]
+        private static class TabRefresh {
+            private static void Postfix(HatsTab __instance) {
+                if (tabBuiltAt == published || __instance == null || !__instance.isActiveAndEnabled) return;
+                bool done = (Pending?.Count ?? 0) == 0;
+                if (!done && Time.realtimeSinceStartup - lastRebuild < 2f) return;
+                try {
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"[StartupHats] hats tab rebuilt: {published - tabBuiltAt} batch(es) of hats arrived while it was open");
+                    __instance.OnEnable();
+                } catch (Exception e) {
+                    tabBuiltAt = published;
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[StartupHats] hats tab rebuild failed: {e.Message}");
+                }
+            }
         }
 
         [HarmonyPatch(typeof(HatManager), nameof(HatManager.GetHatById))]
