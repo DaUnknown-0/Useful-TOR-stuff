@@ -14,8 +14,8 @@
  * the lines as shown, wrapped lines included), Home/End to the line ends, Ctrl+arrows by words,
  * Delete/Backspace on either side. Enter starts a new line; saving is the button or Ctrl+Enter
  * (2026-10-28: Enter used to save and closed the panel by accident, also when Windows voice typing
- * sent a line break). Dictation (FeedbackSpeech) only through its button (the hotkey no longer
- * switches it). A note under 20 characters needs a second Save to confirm. "Earlier" loads the
+ * sent a line break). Dictation (FeedbackSpeech) starts only after a double-click on its button;
+ * one click stops it (the hotkey never switches it). A note under 20 characters needs a second Save to confirm. "Earlier" loads the
  * player's own earlier notes (FeedbackStore.Mine) for editing; saving sends the edit with the same
  * id, the author's client replaces the old note. Up to 1000 characters (FeedbackNet sends parts).
  * While the panel is open:
@@ -55,6 +55,8 @@ internal static class FeedbackPanel
     private static FeedbackNote draft;
     private static bool lockedMove;
     private static int closeMenuFrames;
+    private const float DictationDoubleClickWindow = 0.4f;
+    private static float dictationClickAt = float.NegativeInfinity;
 
     // ---- per frame ----
 
@@ -235,7 +237,18 @@ internal static class FeedbackPanel
 
     private static void ToggleDictation()
     {
-        if (FeedbackSpeech.Current == FeedbackSpeech.State.Listening) { FeedbackSpeech.Stop(); return; }
+        if (FeedbackSpeech.Current == FeedbackSpeech.State.Listening) {
+            dictationClickAt = float.NegativeInfinity;
+            FeedbackSpeech.Stop();
+            return;
+        }
+        float now = Time.realtimeSinceStartup;
+        float sinceClick = now - dictationClickAt;
+        if (sinceClick < 0f || sinceClick > DictationDoubleClickWindow) {
+            dictationClickAt = now;
+            return;
+        }
+        dictationClickAt = float.NegativeInfinity;
         if (!FeedbackSpeech.Available) {
             FeedbackToast.Show(FeedbackText.Get("mic.unavailable"), FeedbackToast.Kind.Warn, 5f);
             return;
@@ -269,6 +282,7 @@ internal static class FeedbackPanel
         caret = 0;
         editIndex = -1;
         confirmShort = false;
+        dictationClickAt = float.NegativeInfinity;
         Build();
         root.SetActive(true);
         IsOpen = true;
@@ -283,6 +297,7 @@ internal static class FeedbackPanel
 
     internal static void Close()
     {
+        dictationClickAt = float.NegativeInfinity;
         FeedbackSpeech.Stop();
         FeedbackPick.End();
         IsOpen = false;
@@ -296,6 +311,7 @@ internal static class FeedbackPanel
     internal static void Save()
     {
         if (draft == null) return;
+        dictationClickAt = float.NegativeInfinity;
         FeedbackSpeech.Stop();
         string late = FeedbackSpeech.Drain();
         if (!string.IsNullOrEmpty(late)) AppendWords(late);
@@ -331,6 +347,7 @@ internal static class FeedbackPanel
     private static void StartPick(bool area)
     {
         if (draft == null) return;
+        dictationClickAt = float.NegativeInfinity;
         FeedbackSpeech.Stop();
         root.SetActive(false);
         FeedbackPick.Begin(area, (shape, centre, size) => {
@@ -444,7 +461,8 @@ internal static class FeedbackPanel
 
         bool micAvailable = FeedbackSpeech.Current != FeedbackSpeech.State.Unavailable;
         VanillaUI.Recolor(micButton, listening ? (blink ? VanillaUI.Red : new Color(0.62f, 0.18f, 0.22f)) : micAvailable ? VanillaUI.Blue : VanillaUI.Grey);
-        VanillaUI.SetText(micText, FeedbackText.Get(listening ? "mic.on" : micAvailable ? "mic" : "mic.none"));
+        bool confirmDictation = Time.realtimeSinceStartup - dictationClickAt <= DictationDoubleClickWindow;
+        VanillaUI.SetText(micText, FeedbackText.Get(listening ? "mic.on" : micAvailable ? (confirmDictation ? "mic.confirm" : "mic") : "mic.none"));
     }
 
     private static void Build()
