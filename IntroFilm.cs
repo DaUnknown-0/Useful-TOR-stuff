@@ -2,8 +2,8 @@
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 
 /*
- * IntroFilm - the introduction film "Welcome to the Collective", played in the main menu on the first start with the
- * mods (once per player, local, never synchronised) and again from the main-menu button "Intro".
+ * IntroFilm - the introduction film "Welcome to the Collective", played only from the main-menu button "Intro".
+ * Playback is local, never synchronised, and never started automatically.
  *
  * The film is a folder of chapter files (Assets\Cinematics\intro_unknown\make_film_pack.py), by default
  * BepInEx\intro-film:
@@ -17,9 +17,9 @@
  * Download: the film is not in the DLL. A source is a small manifest.json in a public repository of DaUnknown-0 that
  * names the files (name, url, size, sha256); the files are release attachments. Forgotten Fixes has its own source,
  * another mod adds one with "public static class IntroFilmSource { public const string Manifest = ...; }" in the
- * namespace of its plugin class. On the first start everything loads in the background and the film plays once it is
- * there. "Delete film" in the Mod Manager removes the files; after that nothing loads until the player presses the
- * film button in the main menu.
+ * namespace of its plugin class. Missing files load only after the player presses the film button in the main menu,
+ * then playback starts. Opening the main menu never fetches a manifest or video. "Delete film" in the Mod Manager
+ * removes the files; the next film-button click may load them again.
  *
  * Playback: Unity's VideoPlayer (VideoModule) renders onto the far plane of an own camera that draws last and clears
  * the screen black (same camera trick as AtlasCinematic: other cameras' UI cannot show through). Subtitles in the game
@@ -47,13 +47,12 @@ namespace UsefulTORStuff {
     public static class IntroFilm {
         private const string LogPrefix = "[IntroFilm]";
 
-        private static ConfigEntry<bool> seen, deleted;
+        private static ConfigEntry<bool> deleted;
         private static ConfigEntry<string> folder;
         private static bool playing;
         internal static bool IsPlaying => playing;
 
         internal static void Bind(ConfigFile cfg) {
-            seen = cfg.Bind("IntroFilm", "Seen", false, "The introduction film has been shown once (set to false to see it again on the next start).");
             folder = cfg.Bind("IntroFilm", "Folder", "", "Folder of the film (film.json + chapter files). Empty = BepInEx\\intro-film.");
             deleted = cfg.Bind("IntroFilm", "Deleted", false, "The film was deleted in the Mod Manager; it loads again only when you press the film button in the main menu.");
         }
@@ -147,36 +146,14 @@ namespace UsefulTORStuff {
 
         // ---- main menu -------------------------------------------------------------------------------
 
-        private static bool checkedThisRun;
-
         [HarmonyPatch(typeof(MainMenuManager), nameof(MainMenuManager.Start))]
         private static class MainMenuPatch {
             public static void Postfix(MainMenuManager __instance) {
                 try {
                     if (playing) return;
                     BuildButton(__instance);
-                    // once per game start: fetch what is missing or outdated, unless the player deleted the film
-                    if (!checkedThisRun && deleted != null && !deleted.Value) { checkedThisRun = true; StartDownload(); }
-                    if (seen != null && !seen.Value && (Playable() || syncing)) {
-                        Log("first start: introduction scheduled after main menu initialisation");
-                        BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(__instance, AutoPlay(__instance));
-                    }
                 } catch (Exception e) { Warn($"main menu hook failed: {e.Message}"); }
             }
-        }
-
-        private static IEnumerator AutoPlay(MainMenuManager menu) {
-            // TOR's first hat lookup and login finish after MainMenu.Start. Playing before those
-            // jobs complete freezes the movie during their synchronous work on Unity's main thread.
-            float deadline = Time.realtimeSinceStartup + 70f;
-            while (menu != null && !StartupTiming.Ready && Time.realtimeSinceStartup < deadline)
-                yield return null;
-            // a first start without the film: it plays once the background download is through
-            while (menu != null && syncing) yield return null;
-            if (menu == null || playing || seen == null || seen.Value || !Playable()) yield break;
-            Log("startup settled: starting automatic introduction");
-            var playback = Play(true);
-            while (playback.MoveNext()) yield return playback.Current;
         }
 
         // Same way the rejoin and update buttons are built: clone ExitGameButton, move it via AspectPosition. The column
@@ -194,7 +171,7 @@ namespace UsefulTORStuff {
             passive.OnClick.AddListener((Action)(() => {
                 if (playing || clickBusy) return;
                 // the film here: play it; not here (deleted, or never loaded): load it now, then play
-                if (Playable() && !syncing) BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, Play(false));
+                if (Playable() && !syncing) BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, Play());
                 else BepInEx.Unity.IL2CPP.Utils.MonoBehaviourExtensions.StartCoroutine(menu, LoadThenPlay(text));
             }));
             // Among Us rewrites a cloned button's text on its first frame; set ours one lerp later.
@@ -215,7 +192,7 @@ namespace UsefulTORStuff {
                 }
                 if (Playable()) {
                     if (text != null) text.SetText(ButtonLabel());
-                    var playback = Play(false);
+                    var playback = Play();
                     while (playback.MoveNext()) yield return playback.Current;
                     yield break;
                 }
@@ -445,7 +422,7 @@ namespace UsefulTORStuff {
         private static readonly List<Object> ownedAssets = new();
         private static readonly List<Collider2D> mutedButtons = new();
 
-        private static IEnumerator Play(bool firstStart) {
+        private static IEnumerator Play() {
             if (playing) yield break;
             var all = LoadChapters();
             var available = all.FindAll(c => c.Available);
@@ -464,7 +441,7 @@ namespace UsefulTORStuff {
             if (film == null && perChapter.Count == 0) { Warn("no playable chapter"); yield break; }
             playing = true;
             try {
-                var playback = film != null ? PlayFilm(film, all, firstStart) : PlayChapters(perChapter, firstStart);
+                var playback = film != null ? PlayFilm(film, all) : PlayChapters(perChapter);
                 while (true) {
                     bool next;
                     try { next = playback.MoveNext(); }
@@ -477,7 +454,7 @@ namespace UsefulTORStuff {
 
         // One file, chapters back to back: subtitles by chapter-local time, Space seeks to the next playable chapter,
         // chapters of a mod that is not loaded are seeked over.
-        private static IEnumerator PlayFilm(FilmFile film, List<Chapter> all, bool firstStart) {
+        private static IEnumerator PlayFilm(FilmFile film, List<Chapter> all) {
             bool de = German();
             var byId = new Dictionary<int, Chapter>();
             foreach (var c in all) byId[c.Id] = c;
@@ -566,11 +543,10 @@ namespace UsefulTORStuff {
             }
             try { cur.Stop(); } catch { }
             Log($"film: largest update gap {worstFrameGap * 1000:F0} ms, {frameStalls} stalls over 150 ms, video skipped frames {frameSkips} times");
-            if (firstStart && seen != null && (started || quit)) seen.Value = true;
             Log(quit ? "film ended by the player" : "film finished");
         }
 
-        private static IEnumerator PlayChapters(List<Chapter> chapters, bool firstStart) {
+        private static IEnumerator PlayChapters(List<Chapter> chapters) {
             bool de = German();
             Log($"playing {chapters.Count} chapter(s) ({string.Join(", ", chapters.ConvertAll(c => c.Key))}), {(de ? "de" : "en")}");
             Build(out var view, out var sub, out var subBg, out var note, out var noteBg);
@@ -579,7 +555,6 @@ namespace UsefulTORStuff {
             MuteMenu(true);
 
             bool quit = false;
-            int played = 0;
             // Two players take turns: the next chapter is opened and decoded while the current one runs, so the cut
             // does not wait for Media Foundation (User 29.10.: lag spike between chapter 0 and 1).
             var players = new[] { player, MakePlayer(cameraGo) };
@@ -632,7 +607,7 @@ namespace UsefulTORStuff {
                     }
                     // isPlaying alone was true even for failed/empty files on this backend.
                     // Only advancing, valid video counts as having actually shown the film.
-                    if (cur.isPlaying && t > 0f && !started) { started = true; played++; firstFrameAfter = Time.realtimeSinceStartup - playAt; }
+                    if (cur.isPlaying && t > 0f && !started) { started = true; firstFrameAfter = Time.realtimeSinceStartup - playAt; }
                     // cuts go through black: fade in after the first frame, fade out before the end (or the skip)
                     if (started) Fade(Mathf.Min(Mathf.Clamp01(t / FadeSeconds), Mathf.Clamp01(((float)cur.length - t) / FadeSeconds)));
                     long vf = cur.frame;
@@ -661,7 +636,6 @@ namespace UsefulTORStuff {
                     + $"first frame {firstFrameAfter * 1000:F0} ms after Play, video skipped frames {frameSkips} times (worst {worstSkip})");
                 sub.text = "";
             }
-            if (firstStart && seen != null && (played > 0 || quit)) seen.Value = true;
             Log(quit ? "film ended by the player" : "film finished");
         }
 

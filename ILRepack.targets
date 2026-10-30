@@ -10,6 +10,9 @@
             <InputAssemblies Include="$(TargetPath)" />
             <InputAssemblies Include="$(TargetDir)NVorbis.dll" />
             <InputAssemblies Include="$(TargetDir)NLayer.dll" />
+            <InputAssemblies Include="$(TargetDir)Konscious.Security.Cryptography.Argon2.dll" />
+            <InputAssemblies Include="$(TargetDir)Konscious.Security.Cryptography.Blake2.dll" />
+            <InputAssemblies Include="$(PkgSystem_Speech)\runtimes\win\lib\net6.0\System.Speech.dll" />
             <LibraryPath Include="$(TargetDir)" />
             <LibraryPath Include="@(ReferencePathWithRefAssemblies->'%(RootDir)%(Directory)')" />
             <LibraryPath Include="$(NuGetPackageRoot)harmonyx\2.10.2\lib\netstandard2.0" />

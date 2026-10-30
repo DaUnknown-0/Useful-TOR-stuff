@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.5.5.10";
+    public const string PluginVersion = "1.5.5.11";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -212,6 +212,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // TOR's 1032-file hat pack decoded to ~600 MB of ARGB32 on every client; this shrinks it
         // to DXT5 without a CPU copy (see HatTextureDiet.cs). Attribute patch, applied by PatchAll.
         HatTextureDiet.Bind(Config);
+
+        // Feedback notes to the author (taken over from the standalone Unknown's Feedback, see FeedbackModule.cs).
+        // Config here, store and takeover after PatchAll.
+        FeedbackModule.Bind(Config);
         _ = UTSRestart.IsRestart;
 
         var harmony = new Harmony(PluginGuid);
@@ -484,6 +488,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // the UsefulVersionHandshake patches (RPC 253 + lobby messages), and the gated Snitch
         // surface patches. Assembly-wide so nested patch classes are picked up too.
         harmony.PatchAll(typeof(UsefulTORStuffPlugin).Assembly);
+        FeedbackModule.Init();
 
         // After PatchAll (TOR, a hard dependency, has patched long before): swap TOR's per-spawn option
         // sync for the bundled one (PacedOptionSync.cs).

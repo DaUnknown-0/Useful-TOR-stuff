@@ -97,6 +97,8 @@ namespace UsefulTORStuff
 
         private FetchState _fetchState = FetchState.Loading;
         private string _fetchedHash;
+        private System.Threading.Tasks.Task<bool> _passwordCheck;
+        private string _passwordCheckRecord;
 
         private GameObject _panel;
         private TextMeshProUGUI _titleLabel;
@@ -156,6 +158,7 @@ namespace UsefulTORStuff
         {
             // A password handed in from outside (see AppKeySubmit). Checked FIRST and unconditionally:
             // if it is left lying around while the panel is closed, the next lobby would swallow it.
+            PollPasswordCheck();
             ConsumeSubmittedPassword();
 
             // Trusted player in the lobby? (throttled, host only)
@@ -447,16 +450,16 @@ namespace UsefulTORStuff
             www.downloadHandler.Dispose();
             www.Dispose();
 
-            if (raw.Length == 64 && IsValidHex(raw))
+            if (HostGuardSecurity.HostPasswordHash.IsSupported(raw))
             {
-                _fetchedHash = raw.ToLowerInvariant();
+                _fetchedHash = HostGuardSecurity.HostPasswordHash.Normalize(raw);
                 _fetchState = FetchState.Ready;
                 UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Hash loaded successfully.");
             }
             else
             {
                 UsefulTORStuffPlugin.Logger?.LogError(
-                    $"[LobbyPasswordGate] Invalid hash file (length {raw.Length}, expected 64 hex chars).");
+                    $"[LobbyPasswordGate] Invalid hash file (length {raw.Length}; expected a supported password verifier).");
                 _fetchState = FetchState.Failed;
             }
 
@@ -493,14 +496,14 @@ namespace UsefulTORStuff
             www.downloadHandler.Dispose();
             www.Dispose();
 
-            if (raw.Length != 64 || !IsValidHex(raw))
+            if (!HostGuardSecurity.HostPasswordHash.IsSupported(raw))
             {
                 UsefulTORStuffPlugin.Logger?.LogWarning(
                     $"[LobbyPasswordGate] Re-check skipped — invalid hash file (length {raw.Length}).");
                 yield break; // skip
             }
 
-            string newHash = raw.ToLowerInvariant();
+            string newHash = HostGuardSecurity.HostPasswordHash.Normalize(raw);
 
             // If the initial load had failed, treat this success as the (now recovered) initial load.
             if (_fetchState != FetchState.Ready || _fetchedHash == null)
@@ -563,34 +566,55 @@ namespace UsefulTORStuff
         private void TryUnlock()
         {
             if (_fetchState != FetchState.Ready || _fetchedHash == null) { SetSubmitResult("notready"); return; }
-            try
+            if (_passwordCheck != null)
             {
-                byte[] inputBytes = Encoding.UTF8.GetBytes(_inputBuffer);
-                byte[] hashBytes  = SHA256.Create().ComputeHash(inputBytes);
-                string hex = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
-
+                SetSubmitResult("checking");
                 _inputBuffer = "";
                 if (_maskedLabel != null) _maskedLabel.text = "";
-
-                if (hex == _fetchedHash)
-                {
-                    Unlocked = true;
-                    PublishState();
-                    SetSubmitResult("ok");
-                    HidePanel();
-                    UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Unlocked.");
-                }
-                else
-                {
-                    SetSubmitResult("wrong");
-                    ShowError(UTSLocalization.Tr("uts.lobbypasswordgate.wrong_password"));
-                    UsefulTORStuffPlugin.Logger?.LogInfo("[LobbyPasswordGate] Wrong password attempt.");
-                }
+                return;
             }
-            catch (Exception ex)
+            _errorClearTimer = 0f;
+            string submitted = _inputBuffer;
+            _inputBuffer = "";
+            if (_maskedLabel != null) _maskedLabel.text = "";
+            _passwordCheckRecord = _fetchedHash;
+            _passwordCheck = HostGuardSecurity.HostPasswordHash.VerifyAsync(submitted, _passwordCheckRecord);
+            SetSubmitResult("checking");
+            if (_statusLabel != null)
             {
-                UsefulTORStuffPlugin.Logger?.LogError($"[LobbyPasswordGate] Hash check failed: {ex}");
-                _inputBuffer = "";
+                _statusLabel.text = "Checking password...";
+                _statusLabel.color = new Color(1f, 0.85f, 0.4f);
+            }
+        }
+
+        private void PollPasswordCheck()
+        {
+            var check = _passwordCheck;
+            if (check == null || !check.IsCompleted) return;
+            string record = _passwordCheckRecord;
+            _passwordCheck = null;
+            _passwordCheckRecord = null;
+            if (check.IsFaulted) _ = check.Exception;
+            // Results for a rotated verifier must never unlock the current gate.
+            if (_fetchState != FetchState.Ready || !string.Equals(record, _fetchedHash, StringComparison.Ordinal))
+            { SetSubmitResult("notready"); return; }
+            if (check.IsFaulted)
+            {
+                _ = check.Exception;
+                ShowError("Password check unavailable. Try again."); SetSubmitResult("notready");
+                return;
+            }
+            if (check.IsCompletedSuccessfully && check.Result)
+            {
+                Unlocked = true;
+                PublishState();
+                SetSubmitResult("ok");
+                HidePanel();
+            }
+            else
+            {
+                SetSubmitResult("wrong");
+                ShowError(UTSLocalization.Tr("uts.lobbypasswordgate.wrong_password"));
             }
         }
 
