@@ -649,8 +649,12 @@ namespace UsefulTORStuff {
                         if (ar.sprite != acc[f]) ar.sprite = acc[f];
                         ar.flipX = r0.flipX;
                         if (dm != null && ar.sharedMaterial != dm) ar.sharedMaterial = dm;
+                        // same order as the pet picture, in front of it only by the small z offset (like the costume accents):
+                        // with order + 1 the mask was drawn over everything in the world, e.g. over a crate the pet stood
+                        // behind, and it stayed visible in the dark outside your vision (User 06.11., two screenshots)
                         ar.sortingLayerID = r0.sortingLayerID;
-                        ar.sortingOrder = r0.sortingOrder + 1;
+                        ar.sortingOrder = r0.sortingOrder;
+                        if (ar.enabled != r0.enabled) ar.enabled = r0.enabled;
                         ar.maskInteraction = r0.maskInteraction;
                         var body = OwnerColor(__instance);
                         ar.color = new Color(body.r, body.g, body.b, r0.color.a);
