@@ -18,6 +18,10 @@
  *   - online: pets/pets.json on main of DaUnknown-0/UTS-Music, sheets next to it (size + SHA-256 checked, kept in
  *     BepInEx/uts-pets; tools/build_online_pet.py writes both). An entry with the key of a built-in pet replaces its sheet.
  *     New or changed entries apply at once: new pets join the list, a changed sheet shows on the next frame.
+ *   - other mods: a mod may hand over its own pets through the AppDomain key "UTSPets.External" (object[] of entries,
+ *     each object[] { string key, string name, byte[] sheet PNG, string layout JSON as in pets.json, string carrier or null,
+ *     string[] lockedTo hashes or null }). Read at start and every few seconds after; setting a new array replaces the set.
+ *     The mod's own players see its pets; players without that mod see the carrier pet in their place.
  *
  * Lock ("lockedTo"): SHA-256 (lowercase hex) of the PUID or friend code of everyone who may wear the pet; empty = everyone.
  * Every pet is registered for EVERY player (or nobody would see the owner's pet); only the wardrobe is locked: no chip, no
@@ -27,7 +31,8 @@
  * most once a minute) and with "/loadpets" (the author only; also asks everyone in the lobby to reload, UTS module 232
  * Sub 0, every receiver checks the sender itself).
  *
- * Diagnostics: UTS_PET_DIAG=1 (freeplay: equip, walk, screenshots in BepInEx/UTSPetShots), "wardrobe" (pet tab in the main
+ * Diagnostics: UTS_PET_DIAG=1 (freeplay: equip, walk, screenshots in BepInEx/UTSPetShots; UTS_PET_DIAG_KEYS=a,b for several pets,
+ * UTS_PET_DIAG_COLOR=<colour id> to wear another colour), "wardrobe" (pet tab in the main
  * menu), ",notowner" (act as somebody else). Nothing here is gameplay: no option, no host authority.
  */
 
@@ -88,20 +93,22 @@ namespace UsefulTORStuff {
             public int[] Idle, Walk;
             public float Fps = 12f, Height = 0.62f;
             public float Drop;                        // world units the picture sits below the carrier's sprite (ground pets on a hovering carrier)
+            public int Accent;                        // > 0: frame i has a white colour mask at cell i + Accent, tinted in the owner's colour
             public bool Flip;                         // pictures face left instead of right
             public HashSet<string> Locks;             // null/empty = everyone
             public string ProductId => IdPrefix + Key;
-            public string Signature => $"{Sha256 ?? "builtin"}|{CellW}x{CellH}|{Cols}|{string.Join(",", Idle ?? Array.Empty<int>())}|{string.Join(",", Walk ?? Array.Empty<int>())}|{Fps}|{Height}|{Drop}|{Flip}";
+            public string Signature => $"{Sha256 ?? "builtin"}|{CellW}x{CellH}|{Cols}|{string.Join(",", Idle ?? Array.Empty<int>())}|{string.Join(",", Walk ?? Array.Empty<int>())}|{Fps}|{Height}|{Drop}|{Accent}|{Flip}";
         }
 
         private sealed class Live {
             public Def Def;
             public Texture2D Tex;
             public Sprite[] Idle, Walk;               // sized for an unscaled parent (chips, previews)
+            public Sprite[] AccIdle, AccWalk;         // colour masks to Idle/Walk, null without Def.Accent
             public Sprite Icon;
             public PetData Data;
             public string Signature;
-            public readonly Dictionary<int, (Sprite[] Idle, Sprite[] Walk)> Scaled = new();   // per carrier root scale (x1000)
+            public readonly Dictionary<int, Sprite[][]> Scaled = new();   // per carrier root scale (x1000): idle, walk, accent idle, accent walk
         }
 
         private static readonly Dictionary<string, Live> live = new(StringComparer.Ordinal);       // ProductId -> registered
@@ -153,6 +160,7 @@ namespace UsefulTORStuff {
             if (e.TryGetProperty("fps", out var fps)) d.Fps = Mathf.Clamp(fps.GetSingle(), 1f, 60f);
             if (e.TryGetProperty("height", out var h)) d.Height = Mathf.Clamp(h.GetSingle(), 0.1f, 3f);
             if (e.TryGetProperty("drop", out var dr)) d.Drop = Mathf.Clamp(dr.GetSingle(), -2f, 2f);
+            if (e.TryGetProperty("accent", out var ac) && ac.ValueKind == JsonValueKind.Number) d.Accent = Math.Clamp(ac.GetInt32(), 0, 4096);
             if (e.TryGetProperty("flip", out var fl) && (fl.ValueKind == JsonValueKind.True || fl.ValueKind == JsonValueKind.False)) d.Flip = fl.GetBoolean();
             if (d.CellW < 8 || d.CellH < 8 || d.CellW > 1024 || d.CellH > 1024) throw new FormatException($"{d.Key}: bad cell size");
             if (d.Idle == null || d.Idle.Length == 0) throw new FormatException($"{d.Key}: no idle frames");
@@ -336,13 +344,14 @@ namespace UsefulTORStuff {
             l.Tex = tex;
             l.Def = d;
             l.Scaled.Clear();
-            (l.Idle, l.Walk) = Cut(l, 1f);
+            var cut = Cut(l, 1f);
+            l.Idle = cut[0]; l.Walk = cut[1]; l.AccIdle = cut[2]; l.AccWalk = cut[3];
             l.Icon = MakeIcon(l);
             l.Signature = d.Signature;
         }
 
         /// <summary>The sheet cut into sprites whose world height is Def.Height under a parent of the given scale.</summary>
-        private static (Sprite[] Idle, Sprite[] Walk) Cut(Live l, float parentScale) {
+        private static Sprite[][] Cut(Live l, float parentScale) {
             var d = l.Def;
             var tex = l.Tex;
             int rows = Math.Max(1, tex.height / d.CellH);
@@ -356,7 +365,9 @@ namespace UsefulTORStuff {
                 s.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontUnloadUnusedAsset;
                 return s;
             }
-            return (d.Idle.Select(Cell).ToArray(), d.Walk.Select(Cell).ToArray());
+            bool acc = d.Accent > 0;
+            return new[] { d.Idle.Select(Cell).ToArray(), d.Walk.Select(Cell).ToArray(),
+                           acc ? d.Idle.Select(i => Cell(i + d.Accent)).ToArray() : null, acc ? d.Walk.Select(i => Cell(i + d.Accent)).ToArray() : null };
         }
 
         /// <summary>Chip picture: the first idle frame, centred on the body and large enough to fill a wardrobe chip.</summary>
@@ -371,9 +382,9 @@ namespace UsefulTORStuff {
             return s;
         }
 
-        private static (Sprite[] Idle, Sprite[] Walk) FramesFor(Live l, float scale) {
+        private static Sprite[][] FramesFor(Live l, float scale) {
             int key = Mathf.RoundToInt(Mathf.Abs(scale) * 1000f);
-            if (key == 1000) return (l.Idle, l.Walk);
+            if (key == 1000) return new[] { l.Idle, l.Walk, l.AccIdle, l.AccWalk };
             if (!l.Scaled.TryGetValue(key, out var v)) {
                 if (l.Scaled.Count > 16) l.Scaled.Clear();
                 v = Cut(l, key / 1000f);
@@ -576,6 +587,40 @@ namespace UsefulTORStuff {
             return p != null ? p.lossyScale.y : 1f;
         }
 
+        // colour mask: a child renderer over the pet picture, tinted in the owner's body colour (like the costume accents)
+        private const string AccName = "uts_pet_accent";
+
+        private static SpriteRenderer AccentRenderer(SpriteRenderer r0, bool want) {
+            var t = r0.transform.Find(AccName);
+            if (!want) {
+                if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);
+                return null;
+            }
+            if (t == null) {
+                var go = new GameObject(AccName) { layer = r0.gameObject.layer };
+                go.transform.SetParent(r0.transform, false);
+                go.transform.localPosition = new Vector3(0f, 0f, -0.0002f);
+                go.AddComponent<SpriteRenderer>();
+                t = go.transform;
+            }
+            if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
+            return t.GetComponent<SpriteRenderer>();
+        }
+
+        // the colour the owner shows right now (Morphling, Camouflage included); previews without an owner use the local colour
+        private static Color OwnerColor(PetBehaviour pet) {
+            try {
+                var pc = pet.TargetPlayer;
+                int id = -1;
+                if (pc != null && pc.Data != null) {
+                    try { id = pc.CurrentOutfit.ColorId; } catch { id = pc.Data.DefaultOutfit.ColorId; }
+                } else if (DataManager.Player != null) id = DataManager.Player.Customization.Color;
+                var bodies = Palette.PlayerColors;
+                if (bodies != null && id >= 0 && id < bodies.Length) return bodies[id];
+            } catch { }
+            return Color.white;
+        }
+
         [HarmonyPatch(typeof(PetBehaviour), nameof(PetBehaviour.LateUpdate))]
         private static class AnimPatch {
             public static void Postfix(PetBehaviour __instance) {
@@ -592,12 +637,24 @@ namespace UsefulTORStuff {
                     } catch { }
                     var r0 = rends[0];
                     var set = FramesFor(l, r0.transform.lossyScale.y / Mathf.Max(1e-4f, Mathf.Abs(SceneScale(__instance))));
-                    var frames = moving ? set.Walk : set.Idle;
+                    var frames = moving ? set[1] : set[0];
                     int f = (int)(Time.time * l.Def.Fps) % frames.Length;
                     if (r0.sprite != frames[f]) r0.sprite = frames[f];
                     if (l.Def.Flip) r0.flipX = !__instance.FlipX;
                     var dm = DefaultMat();
                     if (dm != null && r0.sharedMaterial != dm) r0.sharedMaterial = dm;
+                    var acc = moving ? set[3] : set[2];
+                    var ar = AccentRenderer(r0, acc != null);
+                    if (ar != null) {
+                        if (ar.sprite != acc[f]) ar.sprite = acc[f];
+                        ar.flipX = r0.flipX;
+                        if (dm != null && ar.sharedMaterial != dm) ar.sharedMaterial = dm;
+                        ar.sortingLayerID = r0.sortingLayerID;
+                        ar.sortingOrder = r0.sortingOrder + 1;
+                        ar.maskInteraction = r0.maskInteraction;
+                        var body = OwnerColor(__instance);
+                        ar.color = new Color(body.r, body.g, body.b, r0.color.a);
+                    }
                     for (int i = 1; i < rends.Length; i++) if (rends[i] != null && rends[i].enabled) rends[i].enabled = false;
                 } catch (Exception e) {
                     animFailed = true;
@@ -655,7 +712,33 @@ namespace UsefulTORStuff {
 
         // ---------------------------------------------------------------- pump (main thread)
 
+        // pets handed over by other mods (see the header); checked now and then, only a new array is read again
+        private static object externalSeen;
+        private static float externalAt;
+
+        private static void ScanExternal() {
+            object o;
+            try { o = AppDomain.CurrentDomain.GetData("UTSPets.External"); } catch { return; }
+            if (o == null || ReferenceEquals(o, externalSeen)) return;
+            externalSeen = o;
+            if (o is not object[] entries) return;
+            foreach (var x in entries) {
+                try {
+                    if (x is not object[] e || e.Length < 4) continue;
+                    var d = new Def { Key = e[0] as string, Name = e[1] as string, Sheet = e[2] as byte[], Carrier = e.Length > 4 ? e[4] as string : null };
+                    if (d.Key == null || !KeyRx.IsMatch(d.Key) || d.Sheet == null || d.Sheet.Length == 0 || d.Sheet.Length > MaxFile) throw new FormatException("bad entry");
+                    if (string.IsNullOrWhiteSpace(d.Name) || d.Name.Length > 32) d.Name = d.Key;
+                    d.Sha256 = Sha(d.Sheet);
+                    using (var doc = JsonDocument.Parse(e[3] as string ?? "{}")) ReadLayout(doc.RootElement, d);
+                    if (e.Length > 5 && e[5] is string[] locks && locks.Length > 0) d.Locks = new HashSet<string>(locks.Select(h => h.Trim().ToLowerInvariant()).Where(h => ShaRx.IsMatch(h)), StringComparer.Ordinal);
+                    Enqueue(d);
+                    Log($"pet '{d.Name}' handed over by another mod");
+                } catch (Exception ex) { Warn($"external pet skipped: {ex.Message}"); }
+            }
+        }
+
         internal static void Tick() {
+            if (Time.realtimeSinceStartup - externalAt > 3f) { externalAt = Time.realtimeSinceStartup; ScanExternal(); }
             int n = 0;
             while (n++ < 16 && mainQueue.TryDequeue(out var a)) { try { a(); } catch (Exception e) { Warn($"queued action: {e.Message}"); } }
             if (pending.Count > 0 && Time.frameCount % 30 == 0) TryRegister();
@@ -690,6 +773,7 @@ namespace UsefulTORStuff {
             if (phase == 0) {
                 Directory.CreateDirectory(dir);
                 diagWalk = 0f;
+                if (int.TryParse(Environment.GetEnvironmentVariable("UTS_PET_DIAG_COLOR"), out int col)) lp.RpcSetColor((byte)col);
                 lp.RpcSetPet(IdPrefix + key);
                 Log($"diag: pet {key} set (known {live.ContainsKey(IdPrefix + key)}, may wear {LocalMay(IdPrefix + key)})");
             } else if (phase == 1) {
