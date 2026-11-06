@@ -12,7 +12,7 @@ Sperre: --lock nimmt Freundescodes (name#1234) oder PUIDs und speichert nur dere
 Ohne Sperre darf jeder das Haustier tragen. --owner sperrt auf den Mod-Autor (dieselben Hashes wie EasterEggCoding).
 
 Aufruf: python tools/build_online_pet.py <key> "<Name>" <blatt.png> --cell 74 176 [--cols 6] [--idle 0-11] [--walk 12-23]
-        [--fps 12] [--height 0.72] [--flip] [--drop 0.2] [--accent N] [--carrier pet_UFO] [--lock CODE ...] [--lock-hash HASH ...] [--owner]
+        [--fps 12] [--pet 13-20] [--pet-fps 10] [--height 0.72] [--flip] [--drop 0.2] [--accent N] [--carrier pet_UFO] [--lock CODE ...] [--lock-hash HASH ...] [--owner]
         [--author NAME] [--min-version 1.6.3] [--repo PFAD]
         python tools/build_online_pet.py --remove <key>
 """
@@ -58,6 +58,8 @@ def main():
     ap.add_argument("--idle", default="0-11")
     ap.add_argument("--walk")
     ap.add_argument("--fps", type=float, default=12)
+    ap.add_argument("--pet", help="Bilder beim Streicheln (ab Forgotten Fixes 1.7.4, aeltere ignorieren es)")
+    ap.add_argument("--pet-fps", type=float, default=0)
     ap.add_argument("--height", type=float, default=0.72)
     ap.add_argument("--flip", action="store_true")
     ap.add_argument("--drop", type=float, default=0.0)
@@ -100,6 +102,10 @@ def main():
              "sheet": {"file": name, "size": len(raw), "sha256": h},
              "cell": a.cell, "cols": a.cols, "idle": frames(a.idle), "walk": frames(a.walk or a.idle),
              "fps": a.fps, "height": a.height}
+    if a.pet:
+        entry["pet"] = frames(a.pet)
+        if a.pet_fps:
+            entry["petFps"] = a.pet_fps
     if a.flip:
         entry["flip"] = True
     if a.drop:

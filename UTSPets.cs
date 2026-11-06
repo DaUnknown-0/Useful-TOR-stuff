@@ -91,13 +91,16 @@ namespace UsefulTORStuff {
             public byte[] Sheet;                      // sheet (PNG) once available
             public int CellW, CellH, Cols = 6;
             public int[] Idle, Walk;
+            public int[] Pet;                         // optional: frames while the pet is being petted (PetBehaviour.beingPet), played from frame 0
             public float Fps = 12f, Height = 0.62f;
+            public float PetFps;                      // 0 = Fps
             public float Drop;                        // world units the picture sits below the carrier's sprite (ground pets on a hovering carrier)
             public int Accent;                        // > 0: frame i has a white colour mask at cell i + Accent, tinted in the owner's colour
             public bool Flip;                         // pictures face left instead of right
             public HashSet<string> Locks;             // null/empty = everyone
             public string ProductId => IdPrefix + Key;
-            public string Signature => $"{Sha256 ?? "builtin"}|{CellW}x{CellH}|{Cols}|{string.Join(",", Idle ?? Array.Empty<int>())}|{string.Join(",", Walk ?? Array.Empty<int>())}|{Fps}|{Height}|{Drop}|{Accent}|{Flip}";
+            public string Signature => $"{Sha256 ?? "builtin"}|{CellW}x{CellH}|{Cols}|{string.Join(",", Idle ?? Array.Empty<int>())}|{string.Join(",", Walk ?? Array.Empty<int>())}|{Fps}|{Height}|{Drop}|{Accent}|{Flip}" +
+                                       $"|{string.Join(",", Pet ?? Array.Empty<int>())}|{PetFps}";
         }
 
         private sealed class Live {
@@ -105,10 +108,11 @@ namespace UsefulTORStuff {
             public Texture2D Tex;
             public Sprite[] Idle, Walk;               // sized for an unscaled parent (chips, previews)
             public Sprite[] AccIdle, AccWalk;         // colour masks to Idle/Walk, null without Def.Accent
+            public Sprite[] Pet, AccPet;              // petting frames and their masks, null without Def.Pet
             public Sprite Icon;
             public PetData Data;
             public string Signature;
-            public readonly Dictionary<int, Sprite[][]> Scaled = new();   // per carrier root scale (x1000): idle, walk, accent idle, accent walk
+            public readonly Dictionary<int, Sprite[][]> Scaled = new();   // per carrier root scale (x1000): idle, walk, accent idle, accent walk, pet, accent pet
         }
 
         private static readonly Dictionary<string, Live> live = new(StringComparer.Ordinal);       // ProductId -> registered
@@ -157,7 +161,9 @@ namespace UsefulTORStuff {
             if (e.TryGetProperty("cols", out var cols)) d.Cols = Math.Clamp(cols.GetInt32(), 1, 64);
             d.Idle = Ints(e, "idle");
             d.Walk = Ints(e, "walk");
+            d.Pet = Ints(e, "pet");                   // 06.11. (Feedback DrSuspect: "animation for cuddling, similar to cat"); older versions ignore it
             if (e.TryGetProperty("fps", out var fps)) d.Fps = Mathf.Clamp(fps.GetSingle(), 1f, 60f);
+            if (e.TryGetProperty("petFps", out var pfps)) d.PetFps = Mathf.Clamp(pfps.GetSingle(), 1f, 60f);
             if (e.TryGetProperty("height", out var h)) d.Height = Mathf.Clamp(h.GetSingle(), 0.1f, 3f);
             if (e.TryGetProperty("drop", out var dr)) d.Drop = Mathf.Clamp(dr.GetSingle(), -2f, 2f);
             if (e.TryGetProperty("accent", out var ac) && ac.ValueKind == JsonValueKind.Number) d.Accent = Math.Clamp(ac.GetInt32(), 0, 4096);
@@ -345,7 +351,7 @@ namespace UsefulTORStuff {
             l.Def = d;
             l.Scaled.Clear();
             var cut = Cut(l, 1f);
-            l.Idle = cut[0]; l.Walk = cut[1]; l.AccIdle = cut[2]; l.AccWalk = cut[3];
+            l.Idle = cut[0]; l.Walk = cut[1]; l.AccIdle = cut[2]; l.AccWalk = cut[3]; l.Pet = cut[4]; l.AccPet = cut[5];
             l.Icon = MakeIcon(l);
             l.Signature = d.Signature;
         }
@@ -365,9 +371,10 @@ namespace UsefulTORStuff {
                 s.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontUnloadUnusedAsset;
                 return s;
             }
-            bool acc = d.Accent > 0;
+            bool acc = d.Accent > 0, pet = d.Pet != null && d.Pet.Length > 0;
             return new[] { d.Idle.Select(Cell).ToArray(), d.Walk.Select(Cell).ToArray(),
-                           acc ? d.Idle.Select(i => Cell(i + d.Accent)).ToArray() : null, acc ? d.Walk.Select(i => Cell(i + d.Accent)).ToArray() : null };
+                           acc ? d.Idle.Select(i => Cell(i + d.Accent)).ToArray() : null, acc ? d.Walk.Select(i => Cell(i + d.Accent)).ToArray() : null,
+                           pet ? d.Pet.Select(Cell).ToArray() : null, pet && acc ? d.Pet.Select(i => Cell(i + d.Accent)).ToArray() : null };
         }
 
         /// <summary>Chip picture: the first idle frame, centred on the body and large enough to fill a wardrobe chip.</summary>
@@ -384,7 +391,7 @@ namespace UsefulTORStuff {
 
         private static Sprite[][] FramesFor(Live l, float scale) {
             int key = Mathf.RoundToInt(Mathf.Abs(scale) * 1000f);
-            if (key == 1000) return new[] { l.Idle, l.Walk, l.AccIdle, l.AccWalk };
+            if (key == 1000) return new[] { l.Idle, l.Walk, l.AccIdle, l.AccWalk, l.Pet, l.AccPet };
             if (!l.Scaled.TryGetValue(key, out var v)) {
                 if (l.Scaled.Count > 16) l.Scaled.Clear();
                 v = Cut(l, key / 1000f);
@@ -621,6 +628,8 @@ namespace UsefulTORStuff {
             return Color.white;
         }
 
+        private static readonly Dictionary<IntPtr, float> petStart = new();
+
         [HarmonyPatch(typeof(PetBehaviour), nameof(PetBehaviour.LateUpdate))]
         private static class AnimPatch {
             public static void Postfix(PetBehaviour __instance) {
@@ -637,13 +646,21 @@ namespace UsefulTORStuff {
                     } catch { }
                     var r0 = rends[0];
                     var set = FramesFor(l, r0.transform.lossyScale.y / Mathf.Max(1e-4f, Mathf.Abs(SceneScale(__instance))));
-                    var frames = moving ? set[1] : set[0];
-                    int f = (int)(Time.time * l.Def.Fps) % frames.Length;
+                    // being petted: the pet's own cuddle frames from frame 0 (vanilla plays its petClip on the carrier, which we draw over)
+                    bool petted = false;
+                    try { petted = set[4] != null && __instance.beingPet; } catch { }
+                    var key = __instance.Pointer;
+                    if (petted && !petStart.ContainsKey(key)) petStart[key] = Time.time;
+                    else if (!petted && petStart.Count > 0) petStart.Remove(key);
+                    var frames = petted ? set[4] : moving ? set[1] : set[0];
+                    int f = petted
+                        ? (int)((Time.time - petStart[key]) * (l.Def.PetFps > 0f ? l.Def.PetFps : l.Def.Fps)) % frames.Length
+                        : (int)(Time.time * l.Def.Fps) % frames.Length;
                     if (r0.sprite != frames[f]) r0.sprite = frames[f];
                     if (l.Def.Flip) r0.flipX = !__instance.FlipX;
                     var dm = DefaultMat();
                     if (dm != null && r0.sharedMaterial != dm) r0.sharedMaterial = dm;
-                    var acc = moving ? set[3] : set[2];
+                    var acc = petted ? set[5] : moving ? set[3] : set[2];
                     var ar = AccentRenderer(r0, acc != null);
                     if (ar != null) {
                         if (ar.sprite != acc[f]) ar.sprite = acc[f];
@@ -935,6 +952,6 @@ namespace UsefulTORStuff {
     /// <summary>Pump for UTSPets (downloads onto the main thread, pending registrations, diagnostics).</summary>
     public class UTSPetsDriver : MonoBehaviour {
         public UTSPetsDriver(IntPtr ptr) : base(ptr) { }
-        private void Update() { try { UTSPets.Tick(); } catch { } }
+        private void Update() { try { UTSPets.Tick(); } catch { } try { PetCuddle.Tick(); } catch { } }
     }
 }

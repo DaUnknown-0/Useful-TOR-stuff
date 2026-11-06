@@ -7,8 +7,8 @@
  * A clone of the game's own map button (top right): the same grey tile and frame, hover behaviour and
  * screen anchoring (AspectPosition); only the map glyph is swapped for a bug drawn here in the grey and
  * dark outline of the game's corner icons. It sits right under the map button. Shown in the lobby and
- * during a round; hidden in meetings and exile screens, while the editor is open and whenever the
- * settings button is hidden (intro, cutscenes).
+ * during a round; hidden in meetings and exile screens, while the editor is open and whenever both the
+ * settings button and the map button are hidden (intro, cutscenes).
  */
 
 using System;
@@ -33,9 +33,12 @@ internal static class FeedbackButton
         if (button == null) return;
         bool show = false;
         try {
+            // the HUD is up when the settings gear OR the map button shows: as a ghost the gear stayed hidden until the map
+            // had been opened once, and with it the bug button (DrSuspect 2026-11-06); in the lobby only the gear shows
+            bool hudUp = (hud.SettingsButton != null && hud.SettingsButton.gameObject.activeInHierarchy)
+                         || (hud.MapButton != null && hud.MapButton.gameObject.activeInHierarchy);
             show = PlayerControl.LocalPlayer != null && !FeedbackPanel.IsOpen
-                   && MeetingHud.Instance == null && ExileController.Instance == null
-                   && hud.SettingsButton != null && hud.SettingsButton.gameObject.activeInHierarchy;
+                   && MeetingHud.Instance == null && ExileController.Instance == null && hudUp;
         } catch { }
         if (button.activeSelf != show) button.SetActive(show);
     }
