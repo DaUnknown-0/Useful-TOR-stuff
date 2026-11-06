@@ -44,6 +44,9 @@ namespace UsefulTORStuff {
             "cf2eab42fba217e7af4237f7a3bcd35402f2790602e07d92c6344096701480c6",   // friend code
         };
 
+        /// <summary>The author's id hashes, for features locked to him (UTSPets).</summary>
+        internal static IEnumerable<string> OwnerHashList => OwnerHashes;
+
         private static ShipStatus game;          // the game the state below belongs to
         private static byte owner = 255;         // the author's PlayerId in this game (255 = not here)
         private static float nextOwnerLookup;

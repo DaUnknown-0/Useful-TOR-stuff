@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.6.2";
+    public const string PluginVersion = "1.7.0";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -105,6 +105,8 @@ public class UsefulTORStuffPlugin : BasePlugin
     {
         Logger = Log;
         Logger.LogInfo($"{PluginName} v{PluginVersion} loading...");
+        // files of mods deleted in the Mod Manager that were still in use last session
+        ModManagerDelete.ProcessPending();
         MusicVolumeDiag.AtLoad(new HarmonyLib.Harmony(PluginGuid + ".soundtrace"));
 
         // Check if this mod is enabled. Early return wenn deaktiviert - ABER der Mod Manager läuft
@@ -268,6 +270,9 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Exclusive costume hat for the author: registered for everyone, listed and wearable only for him.
         // Not an option and not host-synced, so it sits inside the capture bracket without being gated by it.
         UnknownHat.TryPatch(harmony);
+
+        // Custom pets in the pet tab (Bit for the author, more from the online list), TOR's custom-hat scheme.
+        UTSPets.Init();
 
         // Sheriff "prevents killer parity win" option + win-check patches. CreateOptions must run
         // after TOR's CustomOptionHolder.Load() (guaranteed by the hard dependency on TOR).
@@ -535,6 +540,9 @@ public class UsefulTORStuffPlugin : BasePlugin
         // The lobby menu: one corner button that opens every lobby panel (the panels register
         // their entries in their own Awake, UC's colour grant through the AppDomain contract).
         AddComponent<LobbyMenuUI>();
+
+        // Pets: main-thread pump for the online list and pending registrations.
+        AddComponent<UTSPetsDriver>();
 
         // Host-only lobby panel for the newcomer kill shield (who gets a free first round).
         AddComponent<NewcomerShieldUI>();

@@ -66,6 +66,7 @@ internal static class FeedbackModule
         }
         try {
             FeedbackStore.Init();
+            FeedbackReplies.Init();
             FeedbackNet.Init();
             loaded = true;
             TakeOverStandalone();

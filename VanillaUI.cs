@@ -51,6 +51,7 @@ namespace UsefulTORStuff {
         public static readonly Color TealBright = new Color(0.36f, 0.88f, 0.82f);     // the selected tab
         public static readonly Color Green = new Color(0.30f, 0.74f, 0.42f);
         public static readonly Color Amber = new Color(0.94f, 0.66f, 0.18f);
+        public static readonly Color Yellow = new Color(0.98f, 0.86f, 0.22f);         // bright enough for a dark label
         public static readonly Color Red = new Color(0.86f, 0.28f, 0.32f);
         public static readonly Color Grey = new Color(0.36f, 0.42f, 0.50f);           // neutral
         public static readonly Color Blue = new Color(0.30f, 0.56f, 0.90f);

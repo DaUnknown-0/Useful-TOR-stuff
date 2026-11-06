@@ -42,6 +42,9 @@ internal static class FeedbackPanel
 
     private static GameObject root, panel, textBox, micButton;
     private static TMPro.TextMeshProUGUI whereLabel, textLabel, counterLabel, micText, hintLabel;
+    // title row (2026-11-05): replies, hitbox view, and for the author the skin vote
+    private static GameObject doneButton, hitboxButton, doneView;
+    private static TMPro.TextMeshProUGUI doneButtonText, hitboxText, doneText, donePage;
     private static readonly List<GameObject> categoryButtons = new();
     private static readonly List<GameObject> placeButtons = new();
     private static readonly StringBuilder buffer = new();
@@ -77,6 +80,12 @@ internal static class FeedbackPanel
         }
         if (PlayerControl.LocalPlayer == null) { Close(); return; }
         if (FeedbackPick.Active) { FeedbackPick.Tick(); return; }
+        if (doneView != null && doneView.activeSelf) {
+            if (Input.GetKeyDown(KeyCode.Escape)) { ShowDone(false); return; }
+            if (Input.GetKeyDown(KeyCode.PageDown) || Input.GetKeyDown(KeyCode.DownArrow)) FlipDone(1);
+            if (Input.GetKeyDown(KeyCode.PageUp) || Input.GetKeyDown(KeyCode.UpArrow)) FlipDone(-1);
+            return;
+        }
         if (Input.GetKeyDown(KeyCode.Escape)) { Close(); closeMenuFrames = 3; return; }
         string heard = FeedbackSpeech.Drain();
         if (!string.IsNullOrEmpty(heard)) AppendWords(heard);
@@ -302,6 +311,7 @@ internal static class FeedbackPanel
         FeedbackPick.End();
         IsOpen = false;
         draft = null;
+        if (doneView != null) { doneView.SetActive(false); panel.SetActive(true); }
         if (root != null) root.SetActive(false);
         UnlockMovement();
         FeedbackInputLock.Release();
@@ -397,6 +407,7 @@ internal static class FeedbackPanel
     internal static void TestType(string s) { buffer.Clear(); Append(s); Refresh(); }
     internal static void TestCategory(byte c) { category = c; Refresh(); }
     internal static void TestPick(bool area) => StartPick(area);
+    internal static void TestShowDone(bool show) => ShowDone(show);
     internal static string TestBuffer => buffer.ToString();
     internal static FeedbackNote Draft => draft;
     internal static string LastDraftId => draft?.Id;
@@ -451,8 +462,15 @@ internal static class FeedbackPanel
                 if (caret < ti.characterCount) textLabel.pageToDisplay = ti.characterInfo[caret].pageNumber + 1;
             } catch { }
         }
-        counterLabel.text = (editIndex >= 0 ? FeedbackText.Get("editing", editIndex + 1, FeedbackStore.Mine.Count) + "   " : "")
+        counterLabel.text = (editIndex >= 0 ? FeedbackText.Get("editing", editIndex + 1, FeedbackStore.Mine.Count)
+                                + (FeedbackReplies.Has(draft.Id) ? " · " + FeedbackText.Get("editing.done") : "") + "   " : "")
                             + $"{buffer.Length}/{FeedbackNet.MaxText}";
+
+        int replies = FeedbackReplies.Replies.Count;
+        if (doneButton.activeSelf != replies > 0) doneButton.SetActive(replies > 0);
+        if (replies > 0) VanillaUI.SetText(doneButtonText, FeedbackText.Get("done", replies));
+        VanillaUI.SetText(hitboxText, FeedbackText.Get(FeedbackHitboxes.On ? "hitbox.on" : "hitbox.off"));
+        VanillaUI.Recolor(hitboxButton, FeedbackHitboxes.On ? VanillaUI.Pink : VanillaUI.Grey);
 
         for (int i = 0; i < categoryButtons.Count; i++)
             VanillaUI.Recolor(categoryButtons[i], i == category ? VanillaUI.TealBright : VanillaUI.Grey);
@@ -474,11 +492,24 @@ internal static class FeedbackPanel
         float y = VanillaUI.Title(panel, FeedbackText.Get("title"), 14f, 28f);
 
         float inset = VanillaUI.FrameW + 26f;
+        // title row, right to left: hitbox view, replies (only once there are any), the author's skin vote
+        float tx = -inset, ty = -VanillaUI.FrameW - 16f;
+        hitboxButton = VanillaUI.Button(panel, "", new Vector2(tx, ty), new Vector2(200f, 42f), VanillaUI.Grey,
+                                        () => { FeedbackHitboxes.Toggle(); Refresh(); }, out hitboxText,
+                                        new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+        tx -= 212f;
+        doneButton = VanillaUI.Button(panel, "", new Vector2(tx, ty), new Vector2(200f, 42f), VanillaUI.Green,
+                                      () => ShowDone(true), out doneButtonText, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+        tx -= 212f;
+        if (FeedbackOwner.LocalIsOwner)
+            VanillaUI.Button(panel, FeedbackText.Get("vote.start"), new Vector2(tx, ty), new Vector2(220f, 42f), VanillaUI.Pink,
+                             FeedbackSkinVote.Start, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+
         whereLabel = VanillaUI.Text(panel, "", 19f, VanillaUI.Muted, new Vector2(inset, y - 4f), new Vector2(W - 2 * inset, 28f));
         y -= 40f;
 
-        // categories
-        float bw = 176f, gap = 14f, x = inset;
+        // categories (six since the skin wish, 2026-11-05)
+        float bw = 158f, gap = 14f, x = inset;
         for (byte i = 0; i < FeedbackCategories.Keys.Length; i++) {
             byte c = i;
             categoryButtons.Add(VanillaUI.Button(panel, FeedbackText.Category(c), new Vector2(x, y), new Vector2(bw, 46f), VanillaUI.Grey,
@@ -528,7 +559,53 @@ internal static class FeedbackPanel
                          VanillaUI.Green, Save, new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0));
         VanillaUI.Button(panel, FeedbackText.Get("cancel"), new Vector2(-inset, by), new Vector2(170f, 50f),
                          VanillaUI.Red, Close, new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0));
+
+        BuildDoneView(W, H);
         root.SetActive(false);
+    }
+
+    // ---- "Done": the notes the author put into the game (FeedbackReplies) ----
+
+    private static void BuildDoneView(float W, float H)
+    {
+        doneView = VanillaUI.Panel(root, new Vector2(W, H), new Vector2(0.5f, 0f), new Vector2(0.5f, 0f), new Vector2(0f, 24f));
+        float y = VanillaUI.Title(doneView, FeedbackText.Get("done.title"), 14f, 28f);
+        float inset = VanillaUI.FrameW + 26f, by = VanillaUI.FrameW + 18f;
+        var box = VanillaUI.Box(doneView, new Vector2(inset, y), new Vector2(W - 2 * inset, H + y - by - 64f), VanillaUI.Field);
+        doneText = VanillaUI.Label(box, "", 19f, VanillaUI.TextColor, Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f),
+                                   Vector2.zero, new Vector2(-32f, -24f), TMPro.TextAlignmentOptions.TopLeft);
+        doneText.richText = true;
+        doneText.enableWordWrapping = true;
+        doneText.overflowMode = TMPro.TextOverflowModes.Page;
+        VanillaUI.Button(doneView, FeedbackText.Get("done.prev"), new Vector2(inset, by), new Vector2(220f, 50f), VanillaUI.Blue,
+                         () => FlipDone(-1), new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0));
+        VanillaUI.Button(doneView, FeedbackText.Get("done.next"), new Vector2(inset + 234f, by), new Vector2(220f, 50f), VanillaUI.Blue,
+                         () => FlipDone(1), new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0));
+        donePage = VanillaUI.Label(doneView, "", 16f, VanillaUI.Muted, new Vector2(0, 0), new Vector2(0, 0), new Vector2(0, 0),
+                                   new Vector2(inset + 474f, by), new Vector2(200f, 50f), TMPro.TextAlignmentOptions.MidlineLeft);
+        VanillaUI.Button(doneView, FeedbackText.Get("done.back"), new Vector2(-inset, by), new Vector2(200f, 50f), VanillaUI.Grey,
+                         () => ShowDone(false), new Vector2(1, 0), new Vector2(1, 0), new Vector2(1, 0));
+        doneView.SetActive(false);
+    }
+
+    private static void ShowDone(bool show)
+    {
+        if (doneView == null) return;
+        doneView.SetActive(show);
+        panel.SetActive(!show);
+        if (!show) return;
+        VanillaUI.SetText(doneText, FeedbackReplies.ListText());
+        doneText.pageToDisplay = 1;
+        FlipDone(0);
+    }
+
+    private static void FlipDone(int dir)
+    {
+        if (doneText == null) return;
+        try { doneText.ForceMeshUpdate(); } catch { }
+        int pages = Mathf.Max(1, doneText.textInfo.pageCount);
+        doneText.pageToDisplay = Mathf.Clamp(doneText.pageToDisplay + dir, 1, pages);
+        VanillaUI.SetText(donePage, FeedbackText.Get("done.page", doneText.pageToDisplay, pages));
     }
 
     // ---- hooks ----
@@ -546,6 +623,7 @@ internal static class FeedbackPanel
                 Tick();
                 if (!IsOpen && FeedbackInputLock.Engaged) FeedbackInputLock.Release();   // closed by something else
                 FeedbackNet.Tick();
+                FeedbackHitboxes.Tick();
                 FeedbackToast.Tick();
                 FeedbackButton.Tick();
                 FeedbackSelfTest.Tick();

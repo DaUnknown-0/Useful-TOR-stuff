@@ -15,6 +15,12 @@
  *   [233][2][id][index][total][chunk]
  *        the rest of a long note (up to 1000 chars) in parts of 300 chars, sent one per send slot BEFORE the note
  *        itself; the author assembles them when the note arrives and acks only a complete note
+ *   [233][3][id][version][reply][snippet]
+ *        author -> the note's sender only: the note went into the game (FeedbackReplies, 2026-11-05)
+ *   [233][4][id]
+ *        ack of 3, player -> author; the author marks it delivered in done.json
+ *   [233][5..7]
+ *        the lobby skin vote, see FeedbackSkinVote
  *
  * Rules that keep this harmless:
  *  - Sending happens only in the lobby (no ShipStatus), so a position never travels during a round.
@@ -36,7 +42,7 @@ namespace UsefulTORStuff;
 internal static class FeedbackNet
 {
     internal const byte CallId = 233;
-    private const byte SubNote = 0, SubAck = 1, SubPart = 2;
+    private const byte SubNote = 0, SubAck = 1, SubPart = 2, SubDone = 3, SubDoneAck = 4, SubVote = 5, SubVoteChoice = 6, SubVoteResult = 7;
 
     internal const int MaxText = FeedbackMultipart.MaxText;
     private const int Chunk = FeedbackMultipart.Chunk, MaxParts = FeedbackMultipart.MaxParts;
@@ -73,7 +79,10 @@ internal static class FeedbackNet
             ackedThisLobby = 0;
         }
 
-        if (FeedbackStore.Outbox.Count == 0 || !InLobby()) return;
+        FeedbackReplies.Tick();
+        FeedbackSkinVote.Tick();
+
+        if (!InLobby()) return;
         if (FeedbackOwner.LocalIsOwner) {
             // notes written on this machine under another account end up here; the author keeps them
             foreach (var n in new List<FeedbackNote>(FeedbackStore.Outbox)) {
@@ -82,8 +91,10 @@ internal static class FeedbackNet
                 FeedbackStore.AddToInbox(n);
                 FeedbackStore.RemoveFromOutbox(n.Id);
             }
+            DeliverReplies();
             return;
         }
+        if (FeedbackStore.Outbox.Count == 0) return;
         float now = Time.realtimeSinceStartup;
         if (now < nextSend) return;
         var owner = FeedbackOwner.Find();
@@ -109,6 +120,165 @@ internal static class FeedbackNet
             nextSend = now + SendGap;
             return;
         }
+    }
+
+    // ---- replies (author -> player) ----
+
+    private static readonly Dictionary<string, float> replySent = new();
+    private static readonly Dictionary<string, int> replyUnacked = new();      // per player: sends without any ack
+    private static readonly Dictionary<string, float> replyPausedUntil = new();
+    private const int UnackedBeforePause = 5;
+    private const float PauseFor = 120f;
+
+    /// <summary>The author's client in the lobby: one undelivered reply per send slot to the player it belongs to.
+    /// A player whose client never acks (no UTS) is left alone for two minutes after a few tries.</summary>
+    private static void DeliverReplies()
+    {
+        float now = Time.realtimeSinceStartup;
+        if (now < nextSend) return;
+        FeedbackReplies.ReloadDoneIfChanged();
+        foreach (var p in PlayerControl.AllPlayerControls) {
+            if (p == null || p == PlayerControl.LocalPlayer || p.Data == null || p.Data.Disconnected) continue;
+            string key = FeedbackOwner.KeyOf(p);
+            if (replyPausedUntil.TryGetValue(key, out float until) && now < until) continue;
+            foreach (var r in FeedbackReplies.PendingFor(key)) {
+                if (replySent.TryGetValue(r.Id, out float t) && now - t < RetryAfter) continue;
+                if (SendReply(p, r)) {
+                    replySent[r.Id] = now;
+                    replyUnacked.TryGetValue(key, out int miss);
+                    replyUnacked[key] = ++miss;
+                    if (miss >= UnackedBeforePause) { replyPausedUntil[key] = now + PauseFor; replyUnacked[key] = 0; }
+                }
+                nextSend = now + SendGap;
+                return;
+            }
+        }
+    }
+
+    private static bool SendReply(PlayerControl to, FeedbackReply r)
+    {
+        try {
+            var client = AmongUsClient.Instance;
+            var w = client.StartRpcImmediately(PlayerControl.LocalPlayer.NetId, CallId, SendOption.Reliable, to.OwnerId);
+            w.Write(SubDone);
+            w.Write(r.Id);
+            w.Write(Cut(r.Version, FeedbackReplies.MaxVersion));
+            w.Write(Cut(r.Reply, FeedbackReplies.MaxReply));
+            w.Write(Cut(r.Snippet, FeedbackReplies.MaxSnippet));
+            client.FinishRpcImmediately(w);
+            return true;
+        } catch (Exception e) {
+            UsefulTORStuffPlugin.Logger.LogError($"[Feedback] reply send failed: {e.Message}");
+            return false;
+        }
+    }
+
+    private static void ReceiveReply(PlayerControl sender, MessageReader r)
+    {
+        var reply = new FeedbackReply {
+            Id = Cut(r.ReadString(), 16),
+            Version = Cut(r.ReadString(), FeedbackReplies.MaxVersion),
+            Reply = Cut(r.ReadString(), FeedbackReplies.MaxReply),
+            Snippet = Cut(r.ReadString(), FeedbackReplies.MaxSnippet),
+        };
+        if (sender == null || !FeedbackOwner.IsOwner(sender) || string.IsNullOrEmpty(reply.Id)) return;
+        if (FeedbackReplies.Store(reply, sender.Data?.PlayerName))
+            UsefulTORStuffPlugin.Logger.LogInfo($"[Feedback] note {reply.Id} done ({reply.Version})");
+        try {
+            var client = AmongUsClient.Instance;
+            var w = client.StartRpcImmediately(PlayerControl.LocalPlayer.NetId, CallId, SendOption.Reliable, sender.OwnerId);
+            w.Write(SubDoneAck);
+            w.Write(reply.Id);
+            client.FinishRpcImmediately(w);
+        } catch (Exception e) {
+            UsefulTORStuffPlugin.Logger.LogError($"[Feedback] reply ack failed: {e.Message}");
+        }
+    }
+
+    private static void ReceiveReplyAck(PlayerControl sender, MessageReader r)
+    {
+        string id = Cut(r.ReadString(), 16);
+        if (sender == null || !FeedbackOwner.LocalIsOwner) return;
+        string key = FeedbackOwner.KeyOf(sender);
+        FeedbackReplies.MarkDelivered(key, id);
+        replySent.Remove(id);
+        replyUnacked[key] = 0;
+    }
+
+    // ---- skin vote ----
+
+    internal static void SendVoteStart(string voteId, int seconds, string[] options)
+    {
+        try {
+            var client = AmongUsClient.Instance;
+            var w = client.StartRpcImmediately(PlayerControl.LocalPlayer.NetId, CallId, SendOption.Reliable, -1);
+            w.Write(SubVote);
+            w.Write(voteId);
+            w.Write((byte)seconds);
+            w.Write((byte)options.Length);
+            foreach (var o in options) w.Write(Cut(o, FeedbackSkinVote.MaxOption));
+            client.FinishRpcImmediately(w);
+        } catch (Exception e) { UsefulTORStuffPlugin.Logger.LogError($"[Feedback] vote start failed: {e.Message}"); }
+    }
+
+    internal static void SendVoteChoice(string voteId, byte choice)
+    {
+        var owner = FeedbackOwner.Find();
+        if (owner == null) return;
+        try {
+            var client = AmongUsClient.Instance;
+            var w = client.StartRpcImmediately(PlayerControl.LocalPlayer.NetId, CallId, SendOption.Reliable, owner.OwnerId);
+            w.Write(SubVoteChoice);
+            w.Write(voteId);
+            w.Write(choice);
+            client.FinishRpcImmediately(w);
+        } catch (Exception e) { UsefulTORStuffPlugin.Logger.LogError($"[Feedback] vote choice failed: {e.Message}"); }
+    }
+
+    internal static void SendVoteResult(string voteId, byte winner, int[] counts)
+    {
+        try {
+            var client = AmongUsClient.Instance;
+            var w = client.StartRpcImmediately(PlayerControl.LocalPlayer.NetId, CallId, SendOption.Reliable, -1);
+            w.Write(SubVoteResult);
+            w.Write(voteId);
+            w.Write(winner);
+            w.Write((byte)counts.Length);
+            foreach (var c in counts) w.Write((byte)Mathf.Clamp(c, 0, 255));
+            client.FinishRpcImmediately(w);
+        } catch (Exception e) { UsefulTORStuffPlugin.Logger.LogError($"[Feedback] vote result failed: {e.Message}"); }
+    }
+
+    private static void ReceiveVote(PlayerControl sender, MessageReader r)
+    {
+        string voteId = Cut(r.ReadString(), 16);
+        int seconds = r.ReadByte();
+        int n = r.ReadByte();
+        if (n > FeedbackSkinVote.MaxOptions) return;
+        var options = new string[n];
+        for (int i = 0; i < n; i++) options[i] = Cut(r.ReadString(), FeedbackSkinVote.MaxOption);
+        if (sender == null || !FeedbackOwner.IsOwner(sender) || FeedbackOwner.LocalIsOwner || !InLobby()) return;
+        FeedbackSkinVote.Show(voteId, seconds, options);
+    }
+
+    private static void ReceiveVoteChoice(PlayerControl sender, MessageReader r)
+    {
+        string voteId = Cut(r.ReadString(), 16);
+        byte choice = r.ReadByte();
+        if (sender == null || !FeedbackOwner.LocalIsOwner) return;
+        FeedbackSkinVote.ReceiveChoice(FeedbackOwner.KeyOf(sender), voteId, choice);
+    }
+
+    private static void ReceiveVoteResult(PlayerControl sender, MessageReader r)
+    {
+        string voteId = Cut(r.ReadString(), 16);
+        int winner = r.ReadByte();
+        int n = r.ReadByte();
+        if (n > FeedbackSkinVote.MaxOptions) return;
+        var counts = new int[n];
+        for (int i = 0; i < n; i++) counts[i] = r.ReadByte();
+        if (sender == null || !FeedbackOwner.IsOwner(sender) || FeedbackOwner.LocalIsOwner) return;
+        FeedbackSkinVote.ShowResult(voteId, winner == 255 ? -1 : winner, counts);
     }
 
     private static bool Send(PlayerControl owner, FeedbackNote n)
@@ -196,6 +366,11 @@ internal static class FeedbackNet
         if (sub == SubNote) ReceiveNote(sender, r);
         else if (sub == SubAck) ReceiveAck(sender, r);
         else if (sub == SubPart) ReceivePart(sender, r);
+        else if (sub == SubDone) ReceiveReply(sender, r);
+        else if (sub == SubDoneAck) ReceiveReplyAck(sender, r);
+        else if (sub == SubVote) ReceiveVote(sender, r);
+        else if (sub == SubVoteChoice) ReceiveVoteChoice(sender, r);
+        else if (sub == SubVoteResult) ReceiveVoteResult(sender, r);
     }
 
     private static void ReceiveNote(PlayerControl sender, MessageReader r)

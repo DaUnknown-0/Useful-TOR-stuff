@@ -18,6 +18,8 @@
  *      while the crewmate does not move, no meeting starts and the map stays shut (input lock)
  *   0  (UTS, 2026-10-30) the bug button stands in the round; the native input lock engages on open,
  *      answers "nothing pressed" outside the panel and is gone again after close
+ *   7  (2026-11-05, runs after 4) replies: stored once, summary line, "Done" list; hitbox view draws outlines;
+ *      skin vote panel and result line. Ends with "selftest: replies done".
  * Every step logs "[Feedback] selftest: ..."; the run ends with "selftest: all done (n failed)".
  * The RPC path needs two clients and is not covered here.
  */
@@ -152,6 +154,46 @@ internal static class FeedbackSelfTest
             FeedbackPick.End();
             FeedbackPanel.Close();
         }
+
+        // 7 (2026-11-05): a reply, the summary line, the "Done" list, the hitbox view and the skin vote panel
+        var reply = new FeedbackReply { Id = "selftest01", Version = "Halloween 1.0.4", Reply = "Sperre auf die Karosserie verkleinert",
+                                        Snippet = "hitbox of camper is far too big" };
+        Check(FeedbackReplies.Store(reply, "Mo"), "reply stored");
+        Check(!FeedbackReplies.Store(new FeedbackReply { Id = "selftest01", Version = "x" }, "Mo"), "the same reply twice is ignored");
+        for (int i = 0; i < 24; i++)
+            FeedbackReplies.Store(new FeedbackReply { Id = "selftest" + (10 + i), Version = "Halloween 0.1.3." + (31 + i % 6),
+                                                      Snippet = "Notiz Nummer " + i + ": remove shadow of object, keep hitbox" }, "Mo");
+        for (float t0 = Time.time; Time.time - t0 < 3.2f;) yield return null;
+        Shot("selftest_reply_toast.png");
+        yield return null;
+        FeedbackPanel.Open();
+        for (float t0 = Time.time; Time.time - t0 < 0.5f;) yield return null;
+        Shot("selftest_panel_titlerow.png");
+        yield return null;
+        FeedbackPanel.TestShowDone(true);
+        for (float t0 = Time.time; Time.time - t0 < 1f;) yield return null;
+        Shot("selftest_done_list.png");
+        yield return null;
+        FeedbackPanel.TestShowDone(false);
+        Check(FeedbackPanel.IsOpen, "back from the list into the editor");
+        FeedbackPanel.Close();
+        FeedbackHitboxes.Toggle();
+        for (float t0 = Time.time; Time.time - t0 < 2.5f;) yield return null;
+        Check(FeedbackHitboxes.On && FeedbackHitboxes.Drawn > 0, $"hitbox view draws {FeedbackHitboxes.Drawn} outlines");
+        Shot("selftest_hitboxes.png");
+        yield return null;
+        FeedbackHitboxes.Toggle();
+        FeedbackSkinVote.TestOutsideLobby = true;
+        FeedbackSkinVote.Show("selftestvote", 20, new[] { "Krampus", "Schneemann", "Pestdoktor", "Hexe" });
+        for (float t0 = Time.time; Time.time - t0 < 1f;) yield return null;
+        Shot("selftest_skinvote.png");
+        yield return null;
+        FeedbackSkinVote.ShowResult("selftestvote", 2, new[] { 1, 0, 3, 1 });
+        FeedbackSkinVote.TestOutsideLobby = false;
+        for (float t0 = Time.time; Time.time - t0 < 1f;) yield return null;
+        Shot("selftest_skinvote_result.png");
+        yield return null;
+        Log("replies done");
 
         // 5: dictation from a WAV, in this process
         string wav = Environment.GetEnvironmentVariable("UF_SPEECH_WAV");

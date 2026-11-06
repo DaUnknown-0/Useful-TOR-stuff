@@ -217,6 +217,18 @@ namespace UsefulTORStuff
         }
 
         /// <summary>Autotest (UIGallery): switch to a tab by index while the panel is open.</summary>
+        // UI gallery: the delete confirmation of the first mod that has a DELETE button (nothing is deleted)
+        public void DiagDeleteConfirm(bool show)
+        {
+            if (!show) { HideConfirm(); return; }
+            var mod = ModManagerRegistry.GetAllMods().FirstOrDefault(ModManagerDelete.CanDelete);
+            if (mod == null) return;
+            string msg = UTSLocalization.Tr("uts.modmanagerui.delete_msg", mod.Name, MusicLibrary.Mb(ModManagerDelete.Bytes(ModManagerDelete.Targets(mod))));
+            var deps = ModManagerDelete.Dependents(mod.Guid);
+            if (deps.Count > 0) msg += "\n\n" + UTSLocalization.Tr("uts.modmanagerui.delete_deps", string.Join(", ", deps));
+            ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.delete_title"), msg, null, destructive: true);
+        }
+
         public void DiagShowTab(int index)
         {
             _tab = (Tab)Mathf.Clamp(index, 0, 3);
@@ -445,7 +457,7 @@ namespace UsefulTORStuff
         // ====================================================================
         // Confirmation dialog
         // ====================================================================
-        private void ShowConfirm(string title, string message, Action onYes)
+        private void ShowConfirm(string title, string message, Action onYes, bool destructive = false)
         {
             HideConfirm();
             if (_popup == null) { onYes?.Invoke(); return; }
@@ -457,7 +469,7 @@ namespace UsefulTORStuff
                 new Vector2(-2 * (VanillaUI.FrameW + 24f), -(VanillaUI.FrameW + 70f + 76f) - 10f), TMPro.TextAlignmentOptions.Top)
                 .rectTransform.offsetMax = new Vector2(-(VanillaUI.FrameW + 24f), y);
             VanillaUI.Button(box, UTSLocalization.Tr("uts.modmanagerui.confirm_yes"), new Vector2(-100, VanillaUI.FrameW + 16), new Vector2(180, 46),
-                VanillaUI.Green, () => { HideConfirm(); onYes?.Invoke(); });
+                destructive ? VanillaUI.Red : VanillaUI.Green, () => { HideConfirm(); onYes?.Invoke(); });
             VanillaUI.Button(box, UTSLocalization.Tr("uts.modmanagerui.confirm_cancel"), new Vector2(100, VanillaUI.FrameW + 16), new Vector2(180, 46),
                 VanillaUI.Grey, HideConfirm);
         }
@@ -635,10 +647,16 @@ namespace UsefulTORStuff
             var statusText = VanillaUI.Text(entry, "", 15, VanillaUI.Muted, new Vector2(20, -40), new Vector2(700, 22));
             var refs = new ModEntryRefs { Mod = mod, StatusText = statusText, RuntimeEnabled = runtimeEnabled };
 
-            // buttons, right: on/off and update in the first row, extra toggle and GitHub in the second
-            CreateToggleButton(entry, mod, runtimeEnabled, configEnabled);
-            CreateUpdateButton(entry, mod, refs);
-            if (mod.ExtraToggle != null) CreateExtraToggleButton(entry, mod);
+            // buttons, right: on/off and update in the first row, extra toggle, delete and GitHub in the second.
+            // A mod deleted this session keeps its card (it still runs until the restart), without buttons.
+            bool deleted = ModManagerDelete.WasDeleted(mod.Guid);
+            if (!deleted)
+            {
+                CreateToggleButton(entry, mod, runtimeEnabled, configEnabled);
+                CreateUpdateButton(entry, mod, refs);
+                if (mod.ExtraToggle != null) CreateExtraToggleButton(entry, mod);
+                if (ModManagerDelete.CanDelete(mod)) CreateDeleteButton(entry, mod, mod.ExtraToggle != null ? -354 : -184);
+            }
             if (HasRepository(mod))
                 VanillaUI.Button(entry, UTSLocalization.Tr("uts.modmanagerui.github_button"), new Vector2(-14, -50), new Vector2(160, 34), VanillaUI.Grey,
                     () => {
@@ -697,7 +715,7 @@ namespace UsefulTORStuff
                 bool pending = cfg != runtimeEnabled;
                 VanillaUI.SetText(btnText, pending ? UTSLocalization.Tr("uts.modmanagerui.restart_required")
                     : cfg ? UTSLocalization.Tr("uts.modmanagerui.disable_button") : UTSLocalization.Tr("uts.modmanagerui.enable_button"));
-                VanillaUI.Recolor(button, pending ? VanillaUI.Amber : cfg ? VanillaUI.Red : VanillaUI.Green);
+                VanillaUI.Recolor(button, pending ? VanillaUI.Amber : cfg ? VanillaUI.Yellow : VanillaUI.Green);
             }
 
             button = VanillaUI.Button(parent, "", new Vector2(-184, -10), new Vector2(160, 34), VanillaUI.Grey, () => {
@@ -748,6 +766,29 @@ namespace UsefulTORStuff
             Apply(mod.ExtraToggle.Value);
         }
 
+        // Removes the mod with its DLL, config files and asset folders (ModManagerDelete), after a confirmation
+        // that names the size and the mods that hard-depend on it.
+        private void CreateDeleteButton(GameObject parent, ModInfo mod, float x)
+        {
+            VanillaUI.Button(parent, UTSLocalization.Tr("uts.modmanagerui.delete_button"), new Vector2(x, -50), new Vector2(160, 34), VanillaUI.Red, () => {
+                try
+                {
+                    var targets = ModManagerDelete.Targets(mod);
+                    string msg = UTSLocalization.Tr("uts.modmanagerui.delete_msg", mod.Name, MusicLibrary.Mb(ModManagerDelete.Bytes(targets)));
+                    var deps = ModManagerDelete.Dependents(mod.Guid);
+                    if (deps.Count > 0) msg += "\n\n" + UTSLocalization.Tr("uts.modmanagerui.delete_deps", string.Join(", ", deps));
+                    ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.delete_title"), msg, () => {
+                        ModManagerDelete.Delete(mod, out _, out _);
+                        Rebuild();
+                    }, destructive: true);
+                }
+                catch (Exception ex)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogError($"Failed to delete {mod.Name}: {ex}");
+                }
+            }, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1));
+        }
+
         private void CreateUpdateButton(GameObject parent, ModInfo mod, ModEntryRefs refs)
         {
             TMPro.TextMeshProUGUI btnText = null;
@@ -775,6 +816,13 @@ namespace UsefulTORStuff
             if (r == null || r.Mod == null || r.StatusText == null) return;
             bool runtime = r.RuntimeEnabled;
             bool config = r.Mod.Enabled?.Value ?? true;
+
+            if (ModManagerDelete.WasDeleted(r.Mod.Guid))
+            {
+                Status(r, UTSLocalization.Tr("uts.modmanagerui.status_deleted_restart"), VanillaUI.Warn);
+                SetUpdateButton(r, false, null, false);
+                return;
+            }
 
             int state = 0;
             float progress = 0f;

@@ -49,6 +49,9 @@ namespace UsefulTORStuff
         // der jeweilige Mod liest den Wert zur Laufzeit, daher kein Neustart nötig.
         public ConfigEntry<bool> ExtraToggle;
         public string ExtraToggleLabel;
+        // Optional: Ordner/Dateien des Mods relativ zum BepInEx-Ordner, die der Löschen-Knopf mit entfernt
+        // (Asset-Caches usw.). Fehlt der Schlüssel, greift die Tabelle in ModManagerDelete.
+        public string[] DeletePaths;
     }
 
     // Zentrale Registry für alle Mods. Liest Mod-Daten aus AppDomain (keine Compile-Zeit-Referenzen).
@@ -231,7 +234,8 @@ namespace UsefulTORStuff
                     RuntimeEnabled = !dict.TryGetValue("RuntimeEnabled", out var re) || !(re is bool reb) || reb,
                     // Optionaler Live-Toggle (per Referenz vom jeweiligen Mod geteilt).
                     ExtraToggle = dict.TryGetValue("ExtraToggle", out var et) ? et as ConfigEntry<bool> : null,
-                    ExtraToggleLabel = dict.TryGetValue("ExtraToggleLabel", out var etl) ? etl as string : null
+                    ExtraToggleLabel = dict.TryGetValue("ExtraToggleLabel", out var etl) ? etl as string : null,
+                    DeletePaths = dict.TryGetValue("DeletePaths", out var dp) ? dp as string[] : null
                 };
 
                 // Callbacks für HasUpdate und TriggerUpdate (reflection-basiert auf Updater-Instanzen)

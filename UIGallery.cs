@@ -86,6 +86,16 @@ namespace UsefulTORStuff {
                 mm.Show();
                 yield return new WaitForSeconds(1.5f);
                 yield return Shot("modmanager_installed");
+                mm.DiagDeleteConfirm(true);
+                yield return new WaitForSeconds(0.8f);
+                yield return Shot("modmanager_delete_confirm");
+                mm.DiagDeleteConfirm(false);
+                Log("delete test: " + ModManagerDelete.DiagSelfTest());
+                foreach (var m in ModManagerRegistry.GetAllMods())
+                    if (ModManagerDelete.CanDelete(m)) {
+                        var targets = ModManagerDelete.Targets(m);
+                        Log($"delete targets {m.Guid}: {MusicLibrary.Mb(ModManagerDelete.Bytes(targets))} MB, " + string.Join(" | ", targets));
+                    }
                 mm.DiagShowTab(1);
                 yield return new WaitForSeconds(1f);
                 yield return Shot("modmanager_allmods");

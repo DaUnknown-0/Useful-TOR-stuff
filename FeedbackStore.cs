@@ -47,8 +47,9 @@ public sealed class FeedbackNote
 
 internal static class FeedbackCategories
 {
-    // index = wire value, never reorder; only append
-    internal static readonly string[] Keys = { "bug", "look", "balance", "idea", "other" };
+    // index = wire value, never reorder; only append ("skin" 2026-11-05; older authors file it under "other")
+    internal static readonly string[] Keys = { "bug", "look", "balance", "idea", "other", "skin" };
+    internal const byte Skin = 5;
     internal static string Key(byte c) => c < Keys.Length ? Keys[c] : "other";
 }
 
@@ -189,6 +190,25 @@ internal static class FeedbackStore
     // ---- inbox (author) ----
 
     internal static bool InInbox(string id) => inboxIds.ContainsKey(id);
+
+    /// <summary>All notes in the inbox (author only; read from disk, so not for every frame).</summary>
+    internal static List<FeedbackNote> ReadInbox()
+    {
+        var list = new List<FeedbackNote>();
+        lock (fileLock) {
+            try {
+                if (!File.Exists(InboxPath)) return list;
+                foreach (var line in File.ReadAllLines(InboxPath, Encoding.UTF8)) {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    try {
+                        var n = JsonSerializer.Deserialize<FeedbackNote>(line, Json);
+                        if (n != null) list.Add(n);
+                    } catch { }
+                }
+            } catch (Exception e) { UsefulTORStuffPlugin.Logger.LogWarning($"[Feedback] inbox unreadable: {e.Message}"); }
+        }
+        return list;
+    }
 
     /// <summary>Appends a note to the inbox. False when its id is already there (resent after a lost ack), unless the note is
     /// a newer edit of it: then its line is replaced.</summary>
