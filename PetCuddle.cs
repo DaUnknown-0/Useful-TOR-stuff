@@ -9,24 +9,48 @@
  * CoPet; PlayerControl.petting, PetBehaviour.beingPet), so every client with this version plays it for every player and
  * older versions simply see the normal petting.
  *
- * The pictures (GPT, Assets/Branding/gpt_pets/cut_cuddle.py, Resources/pets/cuddle_*) cover the body sprite's rectangle
- * 1:1 and use the game's colour key (red = body, blue = shadow, green = visor), so the player's own body material colours
- * them (Morphling and Camouflage included). Two layers: the body, and the hands in front of the pet. Body, skin and visor
- * cosmetic are hidden (scale 0, like the Halloween whole-figure costumes) and so is the game's petting hand; the hat stays
- * and follows the head. The pet is drawn as a copy of its current picture: on the ground, then between the hands. Any
- * other movement of the player ends it at once and puts everything back.
+ * The pictures (GPT, Assets/Branding/gpt_pets/cut_cuddle.py, Resources/pets/cuddle_*) live in the hat canvas (600 x 750,
+ * the real crewmate measured in game, HalloweenCostumeArt/pipeline/realbean) and are placed like a hat: pivot (0.53, 0.575),
+ * pixelsPerUnit = width * 0.375, at the hat's own spot. They use the game's colour key (red = body, blue = shadow,
+ * green = visor), so the player's own body material colours them (Morphling and Camouflage included). Two layers: the body,
+ * and the hands in front of the pet. Body, skin and visor cosmetic are hidden (scale 0, like the Halloween whole-figure
+ * costumes) and so is the game's petting hand; the hat stays and follows the head. The pet is drawn as a copy of its
+ * current picture: on the ground, then between the hands, at most PetHeldShare of the crewmate's height (the online pets
+ * are nearly as tall as a crewmate and hid him completely). Any other movement of the player ends it at once and puts
+ * everything back.
+ *
+ * 2026-11-06 (1.7.4, User screenshot "Groesse viel zu klein"): the pictures were laid over the BODY sprite's rectangle,
+ * which is much tighter than the hat canvas they were drawn in, so the crewmate shrank behind the pet.
+ *
+ * Local choice (User 2026-11-06: "gewaehlt zwischen normalem Petten und Cuddle"): [Pets] PetCuddle in the config, or the
+ * "Pet Cuddle" switch on the Unknown's Collection page of TOR's Mod Options. Off = the game's normal petting, for every
+ * player on this screen.
  */
 
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using BepInEx.Configuration;
 using UnityEngine;
 
 namespace UsefulTORStuff;
 
 internal static class PetCuddle {
+    internal static ConfigEntry<bool> Enabled;
+
+    internal static void Bind(ConfigFile config) {
+        Enabled = config.Bind("Pets", "PetCuddle", true,
+            "While somebody pets their pet, their crewmate kneels down and cuddles it. Off = the game's normal petting. "
+            + "Only affects your own game.");
+        ExternalToggles.Register(() => UTSLocalization.Tr("uts.options.pet_cuddle_toggle"),
+            () => Enabled.Value, v => Enabled.Value = v);
+    }
+
     private const string Res = "UsefulTORStuff.Resources.pets.";
     private const float PetAboveHands = 0.30f;       // the pet's centre sits this share of its height above the hands
+    private const float PetHeldShare = 0.42f;        // a held pet is at most this share of the standing crewmate's height
+    private const float BeanShare = 433f / 750f;     // the standing crewmate's height in the hat canvas (realbean cut_idle)
+    private const float BlendSeconds = 0.18f;        // picking up and putting down glide instead of jumping
 
     // ---------------------------------------------------------------- pictures
 
@@ -92,11 +116,11 @@ internal static class PetCuddle {
         return t;
     }
 
-    /// <summary>Sprites on the body sprite's own pivot and scale, made once from the first body seen.</summary>
-    private static void MakeSprites(Sprite body) {
+    /// <summary>Sprites with the hat calibration (TOR's CreateHatSprite, Halloween's LoadHatSprite).</summary>
+    private static void MakeSprites() {
         if (bodySprites != null) return;
-        spritePivot = new Vector2(body.pivot.x / body.rect.width, body.pivot.y / body.rect.height);
-        spritePpu = body.pixelsPerUnit * cellW / body.rect.width;
+        spritePivot = new Vector2(0.53f, 0.575f);
+        spritePpu = cellW * 0.375f;
         Sprite[] Cut(Texture2D tex, string name) {
             var list = new Sprite[frameCount];
             for (int i = 0; i < frameCount; i++) {
@@ -128,6 +152,11 @@ internal static class PetCuddle {
         public SpriteRenderer Body, Hands, Pet, PetAccent, BodySrc;
         public Transform BodyT, SkinT, VisorT, HatT;
         public Vector3 BodyScale, SkinScale, VisorScale, HatPos;
+        public bool Held;                       // pet between the hands (last frame)
+        public float HeldSince = -1f;           // when Held last changed (for the glide)
+        public Vector3 FromPos;                 // the pet's position and size when Held last changed
+        public float FromSize = 1f;
+        public float Size = 1f;
         public readonly List<Renderer> PetHidden = new();
         public readonly List<Renderer> HandHidden = new();
     }
@@ -137,7 +166,8 @@ internal static class PetCuddle {
 
     internal static void Tick() {
         if (loadFailed) return;
-        if (MeetingHud.Instance != null || ExileController.Instance != null || PlayerControl.AllPlayerControls == null) { StopAll(); return; }
+        if ((Enabled != null && !Enabled.Value) || MeetingHud.Instance != null || ExileController.Instance != null
+            || PlayerControl.AllPlayerControls == null) { StopAll(); return; }
         foreach (var p in PlayerControl.AllPlayerControls) {
             if (p == null) continue;
             if (plays.TryGetValue(p.PlayerId, out var pl)) {
@@ -167,15 +197,19 @@ internal static class PetCuddle {
         var co = p.cosmetics;
         var body = co.currentBodySprite != null ? co.currentBodySprite.BodySprite : null;
         if (body == null || body.sprite == null || body.transform.localScale == Vector3.zero) return;   // somebody else hides the body
-        MakeSprites(body.sprite);
+        Transform hatT = null;
+        try { if (co.hat != null) hatT = co.hat.transform; } catch { }
+        if (hatT == null || hatT.parent == null) return;                       // the pictures are placed like a hat
+        MakeSprites();
         var pl = new Play { P = p, Start = Time.time, StartPos = p.GetTruePosition(), BodySrc = body };
         pl.BodyT = body.transform; pl.BodyScale = pl.BodyT.localScale;
         try { if (co.skin != null) { pl.SkinT = co.skin.transform; pl.SkinScale = pl.SkinT.localScale; } } catch { }
         try { if (co.visor != null) { pl.VisorT = co.visor.transform; pl.VisorScale = pl.VisorT.localScale; } } catch { }
-        try { if (co.hat != null) { pl.HatT = co.hat.transform; pl.HatPos = pl.HatT.localPosition; } } catch { }
+        pl.HatT = hatT; pl.HatPos = hatT.localPosition;
 
+        // at the hat's own spot, which stays put: the hat itself moves with the head below
         pl.Root = new GameObject("UTSPetCuddle") { layer = body.gameObject.layer };
-        pl.Root.transform.SetParent(pl.BodyT.parent, false);
+        pl.Root.transform.SetParent(hatT.parent, false);
         pl.Body = Layer(pl, "body", body, 0);
         pl.Hands = Layer(pl, "hands", body, 2);
         int colorId = 0;
@@ -241,9 +275,9 @@ internal static class PetCuddle {
         foreach (var r in pl.HandHidden) if (r != null && r.enabled) r.enabled = false;
 
         var rt = pl.Root.transform;
-        rt.localPosition = pl.BodyT.localPosition;
-        rt.localRotation = pl.BodyT.localRotation;
-        rt.localScale = pl.BodyScale;
+        rt.localPosition = pl.HatPos + new Vector3(0f, 0f, 0.0005f);           // a hair behind the hat
+        rt.localRotation = pl.HatT.localRotation;
+        rt.localScale = pl.HatT.localScale;
         bool flip = pl.BodySrc.flipX;
         pl.Body.sprite = bodySprites[f]; pl.Body.flipX = flip;
         pl.Hands.sprite = handSprites[f]; pl.Hands.flipX = flip;
@@ -262,7 +296,6 @@ internal static class PetCuddle {
             pl.Pet.sprite = r0.sprite;
             pl.Pet.flipX = r0.flipX;
             pl.Pet.color = r0.color;
-            pl.PetGo.transform.localScale = r0.transform.lossyScale;
             if (pl.PetAccent != null) {
                 var acc = r0.transform.Find("uts_pet_accent");
                 var accSr = acc != null ? acc.GetComponent<SpriteRenderer>() : null;
@@ -270,13 +303,30 @@ internal static class PetCuddle {
             }
             bool held = f > pickup && f < putdown && f < hands.Length && hands[f].HasValue;
             Vector3 pos;
+            float size = 1f;
             if (held) {
-                var size = r0.bounds.size;
-                var centre = r0.bounds.center - r0.transform.position;
+                var bounds = r0.bounds;
+                float beanH = BeanShare * cellH / spritePpu * Mathf.Abs(rt.lossyScale.y);
+                if (bounds.size.y > 0.0001f) size = Mathf.Min(1f, PetHeldShare * beanH / bounds.size.y);
+                var centre = (bounds.center - r0.transform.position) * size;
                 var at = rt.TransformPoint(Local(hands[f].Value, flip));
-                pos = at - centre + new Vector3(0f, size.y * PetAboveHands, 0f);
+                pos = at - centre + new Vector3(0f, bounds.size.y * size * PetAboveHands, 0f);
                 pos.z = rt.position.z - 0.001f;
             } else pos = r0.transform.position;
+            if (held != pl.Held) {
+                pl.Held = held;
+                pl.HeldSince = Time.time;
+                pl.FromPos = pl.PetGo.transform.position;
+                pl.FromSize = pl.Size;
+            }
+            if (pl.HeldSince >= 0f) {
+                float t = Mathf.Clamp01((Time.time - pl.HeldSince) / BlendSeconds);
+                t = t * t * (3f - 2f * t);
+                pos = Vector3.Lerp(pl.FromPos, pos, t);
+                size = Mathf.Lerp(pl.FromSize, size, t);
+            }
+            pl.Size = size;
+            pl.PetGo.transform.localScale = r0.transform.lossyScale * size;
             pl.PetGo.transform.position = pos;
         }
         return true;
