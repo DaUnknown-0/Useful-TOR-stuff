@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.7.5";
+    public const string PluginVersion = "1.7.5.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -152,7 +152,6 @@ public class UsefulTORStuffPlugin : BasePlugin
         IntroFilm.Bind(Config);
         VipDeathScream.Bind(Config);
         OwnFailSound.Bind(Config);
-        PetCuddle.Bind(Config);
         PacedOptionSync.Bind(Config);
         DraftEndPacing.Bind(Config);
         DraftMusic.Bind(Config);

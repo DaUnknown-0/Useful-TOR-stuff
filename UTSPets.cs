@@ -952,6 +952,6 @@ namespace UsefulTORStuff {
     /// <summary>Pump for UTSPets (downloads onto the main thread, pending registrations, diagnostics).</summary>
     public class UTSPetsDriver : MonoBehaviour {
         public UTSPetsDriver(IntPtr ptr) : base(ptr) { }
-        private void Update() { try { UTSPets.Tick(); } catch { } try { PetCuddle.Tick(); } catch { } }
+        private void Update() { try { UTSPets.Tick(); } catch { } }
     }
 }
