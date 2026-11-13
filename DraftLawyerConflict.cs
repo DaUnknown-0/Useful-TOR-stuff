@@ -178,6 +178,15 @@ namespace UsefulTORStuff {
             o.selection = value;
         }
 
+        /// <summary>The value an option sync must send: the real prosecutor chance while it is held, never the
+        /// local 0/10 (a sync during the draft would otherwise hand the held value to clients without UTS).</summary>
+        internal static int SelectionForSync(CustomOption o) {
+            try {
+                if (o != null && heldOriginal >= 0 && o == CustomOptionHolder.lawyerIsProsecutorChance) return heldOriginal;
+            } catch { }
+            return o != null ? o.selection : 0;
+        }
+
         private static void Release() {
             if (heldOriginal < 0) return;
             var o = CustomOptionHolder.lawyerIsProsecutorChance;
@@ -246,6 +255,12 @@ namespace UsefulTORStuff {
             var sender = UTSRpc.Sender;
             if (sender == null || AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
             if (!DraftRunning() || EffectiveMode() != ModeCrewGuesser) return;
+            // Only plausible while Lawyer or Prosecutor is already taken; that the sender really ended up a
+            // Crewmate is checked when the grant is handed out (the claim arrives before his pick).
+            if (!Taken().HasValue) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[DraftLawyer] player {sender.PlayerId} claimed a Guesser, but neither Lawyer nor Prosecutor is taken - ignored.");
+                return;
+            }
             guesserGrants.Add(sender.PlayerId);
             UsefulTORStuffPlugin.Logger?.LogInfo($"[DraftLawyer] player {sender.PlayerId} is owed a Guesser.");
         }
@@ -262,6 +277,12 @@ namespace UsefulTORStuff {
                     foreach (byte id in guesserGrants) {
                         var p = Helpers.playerById(id);
                         if (p == null || p.Data == null || p.Data.Disconnected || HandleGuesser.isGuesser(id)) continue;
+                        // The grant replaces the swapped pick: only a player who really is a Crewmate gets it.
+                        if (p.Data.Role == null || p.Data.Role.IsImpostor
+                            || !RoleInfo.getRoleInfoForPlayer(p, false).Any(r => r.roleId == TheOtherRoles.RoleId.Crewmate)) {
+                            UsefulTORStuffPlugin.Logger?.LogWarning($"[DraftLawyer] player {id} claimed a Guesser but is no Crewmate - not granted.");
+                            continue;
+                        }
                         MessageWriter w = AmongUsClient.Instance.StartRpcImmediately(PlayerControl.LocalPlayer.NetId,
                             rpc, SendOption.Reliable, -1);
                         w.Write(id);

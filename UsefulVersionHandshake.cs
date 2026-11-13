@@ -161,7 +161,7 @@ namespace UsefulTORStuff {
         private static void HandleModuleRpc(MessageReader reader) {
             // No subtype byte (there never was one) - the payload starts straight at the version
             // bytes, exactly as it did when 253 was a standalone callId.
-            try { ReceiveRpc(reader); } catch { }
+            try { ReceiveRpc(reader, UTSRpc.Sender); } catch { }
         }
 
         public static void ShareVersion() {
@@ -195,12 +195,20 @@ namespace UsefulTORStuff {
                 Assembly.GetExecutingAssembly().ManifestModule.ModuleVersionId, AmongUsClient.Instance.ClientId);
         }
 
-        // Reads the RPC 253 payload (called from UsefulHandleRpcPatch).
-        public static void ReceiveRpc(MessageReader reader) {
+        // Reads the RPC 253 payload (called from UsefulHandleRpcPatch). The entry is filed under the client
+        // the message actually came from (the transport, like UTSModInventory), never under the clientId in the
+        // payload: otherwise any client could enter versions for others (EveryoneHasMod, UTSGate) and switch
+        // features on or off for the whole lobby. The payload field stays for the wire format.
+        public static void ReceiveRpc(MessageReader reader, PlayerControl sender) {
             byte major = reader.ReadByte();
             byte minor = reader.ReadByte();
             byte build = reader.ReadByte();
-            int clientId = reader.ReadPackedInt32();
+            int claimedClientId = reader.ReadPackedInt32();
+            if (sender == null) return;
+            int clientId = sender.OwnerId;
+            if (claimedClientId != clientId)
+                UsefulTORStuffPlugin.Logger?.LogWarning(
+                    $"[Handshake] player {sender.PlayerId} (client {clientId}) sent a version for client {claimedClientId} - filed under the sender.");
             byte revision = 0xFF;
             Guid guid;
             if (reader.Length - reader.Position >= 17) {
@@ -489,7 +497,8 @@ namespace UsefulTORStuff {
                 string red = "#" + UnityEngine.ColorUtility.ToHtmlStringRGBA(Palette.ImpostorRed);
                 var sbNew = new StringBuilder(UTSLocalization.Tr("uts.modcheck.summary", issues.Count, checkedPlayers));
                 foreach (var p in issues) {
-                    sbNew.Append($"<color={red}>{p.Name}</color>  ");
+                    // Names go into rich text: strip < > so a name cannot inject tags (like GhostKillFeed).
+                    sbNew.Append($"<color={red}>{(p.Name ?? "").Replace("<", "").Replace(">", "")}</color>  ");
                     sbNew.Append(string.Join(" <color=#888888FF>|</color> ", p.Issues));
                     string hint = p.Fix switch {
                         ModCheckFix.Sync => "uts.modcheck.hint_sync",
@@ -522,7 +531,7 @@ namespace UsefulTORStuff {
             var sb = new StringBuilder();
             foreach (InnerNet.ClientData client in AmongUsClient.Instance.allClients.ToArray()) {
                 if (client == null || client.Character == null || client.Character.Data == null) continue;
-                string name = client.Character.Data.PlayerName;
+                string name = (client.Character.Data.PlayerName ?? "").Replace("<", "").Replace(">", "");
                 var segments = new List<string>();
                 bool playerMismatch = false;
                 foreach (var g in guids) {
@@ -817,9 +826,9 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.HandleRpc))]
         static class UsefulHandleRpcPatch {
             [HarmonyPriority(Priority.High)]
-            public static bool Prefix(byte callId, MessageReader reader) {
+            public static bool Prefix(PlayerControl __instance, byte callId, MessageReader reader) {
                 if (callId == UsefulTORStuffPlugin.VersionHandshakeRpcId) {
-                    try { ReceiveRpc(reader); } catch { }
+                    try { ReceiveRpc(reader, __instance); } catch { }
                     return false;
                 }
                 return true;

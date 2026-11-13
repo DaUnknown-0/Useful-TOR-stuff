@@ -431,10 +431,11 @@ namespace UsefulTORStuff {
         // for Mini.mini in its MurderPlayer handling).
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.MurderPlayer))]
         static class MurderCooldownPatch {
-            public static void Postfix(PlayerControl __instance) {
+            public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target) {
                 try {
                     var me = PlayerControl.LocalPlayer;
                     if (me == null || __instance != me) return;
+                    if (target == null || target.Data == null || !target.Data.IsDead) return;   // blocked kill (a prefix returned false)
                     if (!IsExtraMini(me) || me.Data == null || !me.Data.Role.IsImpostor) return;
                     var multiplier = Mini.isGrownUp() ? 0.66f : 2f;
                     me.SetKillTimer(GameOptionsManager.Instance.currentNormalGameOptions.KillCooldown * multiplier);

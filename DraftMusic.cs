@@ -380,7 +380,7 @@ namespace UsefulTORStuff {
             try {
                 var clip = AudioClip.Create(d.Name, d.Samples.Length / d.Channels, d.Channels, d.Rate, false);
                 clip.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontSaveInEditor;
-                clip.SetData(d.Samples, 0);
+                ClipFill.SetData(clip, d.Samples, d.Channels);   // not SetData(float[]): one il2cpp array per track (ClipFill)
                 clips[d.Key] = clip;
                 Touch(d.Key);
                 Evict();

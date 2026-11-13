@@ -259,7 +259,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(HatParent), nameof(HatParent.LateUpdate))]
         private static class WalkPatch {
             public static void Postfix(HatParent __instance) {
-                if (!registered || walkFailed || __instance == null) return;
+                if (!registered || walkFailed || ReferenceEquals(__instance, null)) return;   // no Unity ==: it boxes per call
                 try { Animate(__instance); }
                 catch (Exception ex) {
                     walkFailed = true;
@@ -268,9 +268,26 @@ namespace UsefulTORStuff {
             }
         }
 
+        // HatData pointer -> ours? Reading ProductId every frame for every hat allocated a managed string each time
+        // just to say "not ours". Emptied every 10 s, so a pointer that a later HatData (TOR builds ours after the
+        // registration above) takes over is looked up again.
+        private static readonly Dictionary<IntPtr, bool> hatOursByPtr = new Dictionary<IntPtr, bool>();
+        private static float hatCacheClearAt;
+
         private static void Animate(HatParent hp) {
             var hat = hp.Hat;
-            if (hat == null || !IsOurs(hat.ProductId)) return;
+            if (ReferenceEquals(hat, null) || hat.m_CachedPtr == IntPtr.Zero) return;   // every hat of every player, every frame
+            var ptr = hat.Pointer;
+            // .NET clock instead of Time.time: every Unity float getter boxes on the il2cpp heap through Il2CppInterop,
+            // and this runs for every hat of every player each frame, ours or not (multi-client test 2026-11-12).
+            float now = Environment.TickCount64 * 0.001f;
+            if (now >= hatCacheClearAt) { hatOursByPtr.Clear(); hatCacheClearAt = now + 10f; }
+            if (!hatOursByPtr.TryGetValue(ptr, out bool ours)) {
+                if (hatOursByPtr.Count > 2048) hatOursByPtr.Clear();
+                ours = IsOurs(hat.ProductId);
+                hatOursByPtr[ptr] = ours;
+            }
+            if (!ours) return;
             var front = hp.FrontLayer;
             var back = hp.BackLayer;
             if (front == null || !front.enabled || front.sprite == null) return;

@@ -229,7 +229,7 @@ namespace UsefulTORStuff {
                     DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture),
                     sessionHadRound ? "1" : "0"
                 };
-                lines.AddRange(seenFriendCodes);
+                foreach (var code in seenFriendCodes) lines.Add(PlayerIdentity.NoControl(code));   // one key per line
                 System.IO.File.WriteAllLines(StatePath, lines);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[NewcomerShield] state save failed: {e.Message}");
@@ -340,7 +340,8 @@ namespace UsefulTORStuff {
 
         private static void ApplySetShields(List<byte> ids) {
             shielded.Clear();
-            foreach (byte id in ids) shielded.Add(id);
+            foreach (byte id in ids) { shielded.Add(id); SessionStats.CountShield(id); }
+            ShieldNotice.Arrived(ShieldNotice.Kind.Newcomer, ids);
             if (shielded.Count > 0)
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[NewcomerShield] {shielded.Count} player(s) shielded until the first meeting.");

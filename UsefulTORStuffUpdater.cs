@@ -117,6 +117,7 @@ namespace UsefulTORStuff {
 
             // First the Atom feed: not counted against the API's 60 requests per hour (ReleaseFeed).
             var feed = new UnityWebRequest();
+            feed.timeout = UnknownsNet.RequestTimeout;   // a hanging request must not keep the updater busy for the session
             feed.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
             feed.SetUrl(ReleaseFeed.Url(RepositoryOwner, RepositoryName));
             feed.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
@@ -154,6 +155,7 @@ namespace UsefulTORStuff {
             }
 
             var www = new UnityWebRequest();
+            www.timeout = UnknownsNet.RequestTimeout;   // a hanging request must not keep the updater busy for the session
             www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
             www.SetUrl($"https://api.github.com/repos/{RepositoryOwner}/{RepositoryName}/releases");
             // GitHub weist UA-lose Clients ab (P2.8) — eindeutigen User-Agent setzen.
@@ -225,9 +227,22 @@ namespace UsefulTORStuff {
                 _busy = false;
                 yield break;
             }
+            // Only our own repository's release download (or GitHub's storage it redirects to), as UTSModDownloader.
+            if (!UTSModCatalog.IsTrustedAssetUrl(RepositoryOwner, RepositoryName, asset.DownloadUrl)) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[Updater] update failed: refusing untrusted download url '{asset.DownloadUrl}'.");
+                _updateState = 3;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_failed");
+                    button.SetActive(true);
+                }
+                _busy = false;
+                yield break;
+            }
             var www = new UnityWebRequest();
+            www.timeout = UnknownsNet.DownloadTimeout;   // a hanging request must not keep the updater busy for the session
             www.SetMethod(UnityWebRequest.UnityWebRequestMethod.Get);
             www.SetUrl(asset.DownloadUrl);
+            www.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
             www.downloadHandler = new DownloadHandlerBuffer();
             var operation = www.SendWebRequest();
 
@@ -242,6 +257,23 @@ namespace UsefulTORStuff {
             }
 
             if (www.isNetworkError || www.isHttpError) {
+                www.downloadHandler.Dispose();
+                www.Dispose();
+                _updateState = 3;
+                if (!managerMode) {
+                    popup.TextAreaTMP.text = UTSLocalization.Tr("uts.updater.update_failed");
+                    button.SetActive(true);
+                }
+                _busy = false;
+                yield break;
+            }
+            // Nothing replaces the working DLL before the download is shown to be whole: the size GitHub announced
+            // and a PE header ("MZ"), as in UTSModDownloader (audit 04.10.).
+            byte[] downloaded = www.downloadHandler.data;
+            if (!UnknownsNet.IsPluginImage(downloaded)
+                || (asset.Size > 0 && downloaded.Length != asset.Size)) {
+                UsefulTORStuffPlugin.Logger?.LogError(
+                    $"[Updater] update failed: download incomplete or not a DLL ({downloaded?.Length ?? 0} of {asset.Size} bytes).");
                 www.downloadHandler.Dispose();
                 www.Dispose();
                 _updateState = 3;
@@ -285,7 +317,7 @@ namespace UsefulTORStuff {
             System.Threading.Tasks.Task persistTask = null;
             var hasError = false;
             try {
-                persistTask = File.WriteAllBytesAsync(filePath, www.downloadHandler.data);
+                persistTask = File.WriteAllBytesAsync(filePath, downloaded);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[Updater] update failed: could not start writing the new plugin file ({e.Message}).");
                 hasError = true;

@@ -97,7 +97,15 @@ namespace UsefulTORStuff {
         /// One-shot, at load. Each step is independent and failure-tolerant: a locked config file
         /// or a registry policy must never stop the plugin from loading.
         public static void Install() {
-            if (appendLog?.Value == true) EnsureAppendLog(!LogTooLarge());
+            if (appendLog?.Value == true) {
+                EnsureAppendLog(!LogTooLarge());
+                try { File.WriteAllText(AppendMarker, "AppendLog in BepInEx.cfg is managed by KeepBepInExLogAcrossSessions."); } catch { }
+            } else if (File.Exists(AppendMarker)) {
+                // Switched off again: AppendLog = true (set by us) would stay and the log would grow without the
+                // MaxLogMB cap. Only undone when we set it, never a value the user chose himself.
+                EnsureAppendLog(false);
+                try { File.Delete(AppendMarker); } catch { }
+            }
             if (werDumps?.Value == true) EnsureLocalDumps();
             LogAddressSpace();
         }
@@ -108,6 +116,9 @@ namespace UsefulTORStuff {
         // The size limit (audit 04.10.: the appended log grew without end). BepInEx holds the file
         // open while the game runs, so it cannot be cut here; instead the NEXT launch is told not to
         // append (it then starts a fresh file), and the launch after that appends again.
+        // Present while AppendLog was set by KeepBepInExLogAcrossSessions.
+        private static string AppendMarker => Path.Combine(Paths.ConfigPath, "UTS-AppendLog.flag");
+
         private static bool LogTooLarge() {
             try {
                 string log = Path.Combine(Paths.BepInExRootPath, "LogOutput.log");
@@ -155,11 +166,10 @@ namespace UsefulTORStuff {
                 if (!changed) return;
 
                 // Atomic replace: write beside, then swap, so a crash mid-write cannot leave BepInEx
-                // with half a config.
+                // with half a config (File.Replace, not File.Copy: a copy can stop halfway).
                 string tmp = path + ".uts-tmp";
                 File.WriteAllLines(tmp, lines, new UTF8Encoding(false));
-                File.Copy(tmp, path, true);
-                File.Delete(tmp);
+                File.Replace(tmp, path, null);
                 UsefulTORStuffPlugin.Logger?.LogInfo(append
                     ? "[CrashDiagnostics] BepInEx.cfg: AppendLog set to true - from the next launch on, " +
                       "LogOutput.log keeps earlier sessions (including the one that crashed)."

@@ -277,6 +277,7 @@ namespace UsefulTORStuff {
             dl.SetUrl(asset.DownloadUrl);
             dl.SetRequestHeader("User-Agent", $"UsefulTORStuff/{UsefulTORStuffPlugin.PluginVersion}");
             dl.downloadHandler = new DownloadHandlerBuffer();
+            dl.timeout = 300;   // the whole download: a stalled transfer kept the pump busy for good
             var dop = dl.SendWebRequest();
             while (!dop.isDone) {
                 job.Progress = dl.downloadProgress;
@@ -296,7 +297,7 @@ namespace UsefulTORStuff {
 
             // Nothing replaces a working DLL before the download is shown to be whole: the size GitHub
             // announced and a PE header ("MZ") (audit 04.10.).
-            if (data == null || data.Length < 2 || data[0] != (byte)'M' || data[1] != (byte)'Z'
+            if (!UnknownsNet.IsPluginImage(data)
                 || (asset.Size > 0 && data.Length != asset.Size)) {
                 UsefulTORStuffPlugin.Logger?.LogError(
                     $"[ModSync] {job.Catalog.DisplayName}: download incomplete or not a DLL ({data?.Length ?? 0} of {asset.Size} bytes).");

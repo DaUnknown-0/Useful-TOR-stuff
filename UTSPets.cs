@@ -286,17 +286,22 @@ namespace UsefulTORStuff {
 
         // ---------------------------------------------------------------- registration (main thread)
 
+        // Start time (2026-11-13, User: start plus login under 20 s): registering all pets at once took ~0,5 s in the frame
+        // before the main menu showed. Now Tick registers one pet every few frames; whoever needs a pet right now asks
+        // for it (GetPetById: just that one, the wardrobe and the lobby: all).
         private static void Enqueue(Def d) {
             pending[d.ProductId] = d;
-            TryRegister();
         }
 
-        /// <summary>Create waiting pets or swap changed sheets, once the HatManager has its list.</summary>
-        internal static void TryRegister() {
+        /// <summary>Create waiting pets or swap changed sheets, once the HatManager has its list.
+        /// <paramref name="onlyId"/>: just that pet (when it is waiting); <paramref name="max"/>: at most that many.</summary>
+        internal static void TryRegister(string onlyId = null, int max = int.MaxValue) {
             if (pending.Count == 0) return;
+            if (onlyId != null && !pending.ContainsKey(onlyId)) return;
             var hm = HatManager.Instance;
             if (hm == null || hm.allPets == null || hm.allPets.Length == 0) return;
-            foreach (var d in pending.Values.ToList()) {
+            var todo = onlyId != null ? new List<Def> { pending[onlyId] } : pending.Values.Take(max).ToList();
+            foreach (var d in todo) {
                 try {
                     if (live.TryGetValue(d.ProductId, out var l)) {
                         if (l.Signature != d.Signature) { BuildSprites(l, d); Log($"'{d.Name}' updated live"); }
@@ -318,6 +323,7 @@ namespace UsefulTORStuff {
                         all.Add(data);
                         hm.allPets = new Il2CppReferenceArray<PetData>(all.ToArray());
                         live[d.ProductId] = nl;
+                        petByPtr.Clear();
                         Log($"registered '{d.Name}' as {d.ProductId} (carrier {carrier.ProductId}, {(d.Locks == null || d.Locks.Count == 0 ? "everyone" : d.Locks.Count + " lock(s)")})");
                     }
                 } catch (Exception e) {
@@ -441,7 +447,7 @@ namespace UsefulTORStuff {
 
         [HarmonyPatch(typeof(HatManager), nameof(HatManager.GetPetById))]
         private static class GetByIdPatch {
-            public static void Prefix() { try { TryRegister(); } catch { } }
+            public static void Prefix([HarmonyArgument(0)] string id) { try { TryRegister(id); } catch { } }
         }
 
         [HarmonyPatch(typeof(HatManager), nameof(HatManager.GetUnlockedPets))]
@@ -629,14 +635,25 @@ namespace UsefulTORStuff {
         }
 
         private static readonly Dictionary<IntPtr, float> petStart = new();
+        // PetData pointer -> our pet (null = not ours). Reading ProductId every frame for every pet allocated a managed
+        // string each time just to say "not ours"; our PetData objects live for the whole session. Cleared when a pet
+        // is registered (a new object could take a freed pointer).
+        private static readonly Dictionary<IntPtr, Live> petByPtr = new();
 
         [HarmonyPatch(typeof(PetBehaviour), nameof(PetBehaviour.LateUpdate))]
         private static class AnimPatch {
             public static void Postfix(PetBehaviour __instance) {
-                if (animFailed || __instance == null || live.Count == 0) return;
+                if (animFailed || live.Count == 0 || ReferenceEquals(__instance, null)) return;   // no Unity ==: it boxes per call
                 try {
                     var data = __instance.data;
-                    if (data == null || !IsOurs(data.ProductId, out var l)) return;
+                    if (ReferenceEquals(data, null) || data.m_CachedPtr == IntPtr.Zero) return;   // every pet, every frame
+                    var ptr = data.Pointer;
+                    if (!petByPtr.TryGetValue(ptr, out var l)) {
+                        if (petByPtr.Count > 1024) petByPtr.Clear();
+                        IsOurs(data.ProductId, out l);
+                        petByPtr[ptr] = l;
+                    }
+                    if (l == null) return;
                     var rends = __instance.renderers;
                     if (rends == null || rends.Length == 0 || rends[0] == null) return;
                     bool moving = false;
@@ -762,7 +779,7 @@ namespace UsefulTORStuff {
             if (Time.realtimeSinceStartup - externalAt > 3f) { externalAt = Time.realtimeSinceStartup; ScanExternal(); }
             int n = 0;
             while (n++ < 16 && mainQueue.TryDequeue(out var a)) { try { a(); } catch (Exception e) { Warn($"queued action: {e.Message}"); } }
-            if (pending.Count > 0 && Time.frameCount % 30 == 0) TryRegister();
+            if (pending.Count > 0 && Time.frameCount % 10 == 0) TryRegister(max: 1);
             DiagTick();
         }
 

@@ -35,6 +35,9 @@ namespace UsefulTORStuff {
                     reported = true;
                     UsefulTORStuffPlugin.Logger?.LogWarning("[HudUpdateGuard] HudManager.Update threw (" + __exception.GetType().Name
                         + "), contained from now on. Null parts: " + Describe(__instance) + " | " + First(__exception));
+                    // The finalizer also catches what a mod's Update postfix throws (every later postfix then stops
+                    // running each frame): the full trace once per round names the culprit.
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[HudUpdateGuard] full exception: " + __exception);
                 } else if (Time.realtimeSinceStartup >= nextSummary) {
                     nextSummary = Time.realtimeSinceStartup + 30f;
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[HudUpdateGuard] still throwing: {count} time(s) so far. Null parts now: {Describe(__instance)}");

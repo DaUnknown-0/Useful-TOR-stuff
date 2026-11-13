@@ -86,10 +86,14 @@ internal static class FeedbackInputLock
         public void Dispose() { if (own > 0) own--; }
     }
 
-    internal static void Engage()
+    /// <summary>Who engaged the lock ("feedback", "settingssearch"); only that owner's checks release it.</summary>
+    internal static string Owner { get; private set; }
+
+    internal static void Engage(string owner = "feedback")
     {
         if (Engaged || FeedbackModule.HardInputLock?.Value == false) return;
         Engaged = true;
+        Owner = owner;
         Hook("UnityEngine.Input::GetKeyInt(UnityEngine.KeyCode)", keyHook, out keyOrig);
         Hook("UnityEngine.Input::GetKeyDownInt(UnityEngine.KeyCode)", keyDownHook, out keyDownOrig);
         Hook("UnityEngine.Input::GetKeyUpInt(UnityEngine.KeyCode)", keyUpHook, out keyUpOrig);
@@ -107,6 +111,7 @@ internal static class FeedbackInputLock
     {
         if (!Engaged) return;
         Engaged = false;
+        Owner = null;
         foreach (var d in detours) {
             try { d.Dispose(); }
             catch (Exception e) { UsefulTORStuffPlugin.Logger.LogError($"[Feedback] input lock release failed: {e.Message}"); }

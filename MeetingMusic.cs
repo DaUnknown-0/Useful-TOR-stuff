@@ -54,6 +54,9 @@ namespace UsefulTORStuff {
         private static AudioSource source;
         private static float fade;                 // 0..1
         private static bool ending;
+        // The selection that resolved to nothing in this meeting: not resolved again every frame (each try logged a
+        // warning and scanned the track sources). Reset when the meeting ends or the selection changes.
+        private static string noneFor;
 
         /// Track key of the meeting music in use or prepared (DraftMusic keeps its clip in the cache).
         internal static string CurrentKey => playing?.Key ?? next?.Key;
@@ -72,6 +75,7 @@ namespace UsefulTORStuff {
             bool meeting = MeetingOn();
 
             if (!meeting) {
+                noneFor = null;
                 if (playing != null) FadeOut();
                 // during the round: pick and decode the next meeting's track ahead of time
                 if (sel != Off && InRound() && nextFor != sel) { next = Slot.Resolve(); nextFor = sel; }
@@ -81,9 +85,10 @@ namespace UsefulTORStuff {
 
             if (sel == Off) { if (playing != null) FadeOut(); return; }
             if (playing == null && !ending) {
+                if (noneFor != null && noneFor == sel) return;
                 playing = nextFor == sel ? next : Slot.Resolve();
                 next = null; nextFor = null;
-                if (playing == null) return;
+                if (playing == null) { noneFor = sel ?? ""; return; }
                 fade = 0f;
                 Log($"meeting music: {playing.Title}");
             }

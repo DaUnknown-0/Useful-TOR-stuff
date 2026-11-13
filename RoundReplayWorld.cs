@@ -166,6 +166,21 @@ namespace UsefulTORStuff {
             }
         }
 
+        // The copy (and the Skeld bundle it keeps loaded) only serves the replay of the round that just ended, which
+        // can only be opened in the lobby and is replaced at the next round end. Kept through the whole next round it
+        // held ~1900 ship objects plus the Skeld textures and sounds (over 100 MB on the host of an Atlas evening,
+        // multi-client test 2026-11-12); it goes as soon as the next round's ship exists.
+        [HarmonyLib.HarmonyPatch(typeof(ShipStatus), nameof(ShipStatus.Start))]
+        static class ReleaseLiveOnRoundStart {
+            public static void Postfix() {
+                try {
+                    if (liveHolder == null && !keepHandleSet) return;
+                    ReleaseLive();
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[RoundReplay] previous round's ship copy released (new round started).");
+                } catch { }
+            }
+        }
+
         private static void ReleaseLive() {
             if (liveHolder != null) UnityEngine.Object.Destroy(liveHolder);
             liveHolder = null; liveClone = null; liveStripped = false;

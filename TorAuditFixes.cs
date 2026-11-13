@@ -550,6 +550,7 @@ namespace UsefulTORStuff {
             // Rebuilt per frame anyway, so a plain local buffer with no round reset (single-frame
             // data, the TorPerfFixes item-2 precedent).
             private static readonly Dictionary<byte, (string name, Color color)> tagDict = new();
+            private static bool Gone(UnityEngine.Object o) => ReferenceEquals(o, null) || o.m_CachedPtr == IntPtr.Zero;
 
             // Faithful rebuild of UpdatePatch.cs:18-62 with two hardening changes: the dictionary
             // write uses the indexer (a duplicated PlayerId cannot throw) and the meeting loop uses
@@ -557,25 +558,29 @@ namespace UsefulTORStuff {
             [HarmonyPrefix]
             public static bool Prefix() {
                 try {
+                    // Runs every frame for every player: the null tests are the managed reference plus the native
+                    // pointer (Unity's == boxes its bool on the il2cpp heap through Il2CppInterop), and an unchanged
+                    // name is not written again (every write makes a new il2cpp string), 2026-11-13.
                     var localPlayer = PlayerControl.LocalPlayer;
-                    if (localPlayer == null || localPlayer.Data == null || GameData.Instance == null)
+                    if (Gone(localPlayer) || Gone(localPlayer.Data) || Gone(GameData.Instance))
                         return false; // original would NRE on the same state
-                    bool amImpostor = localPlayer.Data.Role != null && localPlayer.Data.Role.IsImpostor;
-                    bool morphActive = Morphling.morphTimer > 0f && Morphling.morphTarget != null;
+                    bool amImpostor = !ReferenceEquals(localPlayer.Data.Role, null) && localPlayer.Data.Role.IsImpostor;
+                    bool morphActive = Morphling.morphTimer > 0f && !Gone(Morphling.morphTarget);
 
                     tagDict.Clear();
                     foreach (var data in GameData.Instance.AllPlayers) {
-                        if (data == null) continue;
+                        if (Gone(data)) continue;
                         var player = data.Object;
                         string text = data.PlayerName;
                         Color color = Color.white;
-                        if (player) {
+                        if (!Gone(player)) {
                             string playerName = text;
-                            if (morphActive && Morphling.morphling == player && Morphling.morphTarget.Data != null)
+                            if (morphActive && !Gone(Morphling.morphling) && Morphling.morphling.Pointer == player.Pointer && !Gone(Morphling.morphTarget.Data))
                                 playerName = Morphling.morphTarget.Data.PlayerName;
-                            var nameText = player.cosmetics != null ? player.cosmetics.nameText : null;
-                            if (nameText != null) {
-                                nameText.text = Helpers.hidePlayerName(localPlayer, player) ? "" : playerName;
+                            var nameText = !Gone(player.cosmetics) ? player.cosmetics.nameText : null;
+                            if (!Gone(nameText)) {
+                                string want = Helpers.hidePlayerName(localPlayer, player) ? "" : playerName;
+                                if (!string.Equals(nameText.text, want, StringComparison.Ordinal)) nameText.text = want;
                                 color = amImpostor && data.Role != null && data.Role.IsImpostor ? Palette.ImpostorRed : Color.white;
                                 nameText.color = new Color(color.r, color.g, color.b, Chameleon.visibility(data.PlayerId));
                             }
@@ -583,11 +588,11 @@ namespace UsefulTORStuff {
                         tagDict[data.PlayerId] = (text, color);
                     }
 
-                    if (MeetingHud.Instance != null) {
+                    if (!Gone(MeetingHud.Instance)) {
                         foreach (PlayerVoteArea pva in MeetingHud.Instance.playerStates) {
-                            if (pva == null || pva.NameText == null) continue;
+                            if (Gone(pva) || Gone(pva.NameText)) continue;
                             if (!tagDict.TryGetValue(pva.TargetPlayerId, out var entry)) continue; // the disconnected player
-                            pva.NameText.text = entry.name;
+                            if (!string.Equals(pva.NameText.text, entry.name, StringComparison.Ordinal)) pva.NameText.text = entry.name;
                             pva.NameText.color = entry.color;
                         }
                     }

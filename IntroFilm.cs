@@ -167,6 +167,9 @@ namespace UsefulTORStuff {
         // Same way the rejoin and update buttons are built: clone ExitGameButton, move it via AspectPosition. The column
         // x = 0.458 is full (updaters, rejoin at 0.34); the film button sits under the Mod Manager button.
         private static void BuildButton(MainMenuManager menu) {
+            // A LoadThenPlay that ran on the previous menu died with it (leaving the main menu while loading), and its
+            // finally never ran: the new menu starts free, otherwise the button stayed dead until a restart.
+            clickBusy = false;
             var template = GameObject.Find("ExitGameButton");
             if (!template) return;
             var button = Object.Instantiate(template, null);

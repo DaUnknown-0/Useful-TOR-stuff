@@ -185,7 +185,7 @@ namespace UsefulTORStuff {
                 entries[code] = e;
             }
             // Keep the last seen name: on friend-code servers it is the only human-readable part.
-            if (!string.IsNullOrEmpty(name)) e.Name = name.Replace('\t', ' ');
+            if (!string.IsNullOrEmpty(name)) e.Name = PlayerIdentity.NoControl(name);   // no tab or line break in the file
             return e;
         }
 
@@ -248,7 +248,7 @@ namespace UsefulTORStuff {
                     string shares = string.Join(",",
                         kv.Value.Shares.Select(r => r.Share.ToString("0.###", CultureInfo.InvariantCulture) + "@"
                             + new DateTimeOffset(r.EndUtc).ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
-                    lines.Add($"{kv.Key}\t{kv.Value.Name}\t{kv.Value.Override.ToString(CultureInfo.InvariantCulture)}\t{shares}"
+                    lines.Add($"{PlayerIdentity.NoControl(kv.Key)}\t{kv.Value.Name}\t{kv.Value.Override.ToString(CultureInfo.InvariantCulture)}\t{shares}"
                               + $"\t{kv.Value.ForcedMeetings.ToString(CultureInfo.InvariantCulture)}");
                 }
                 // tmp + move: a crash mid-write must not cost the whole history.
@@ -496,6 +496,26 @@ namespace UsefulTORStuff {
                 + $"{survived} survived, {skipped} left out.");
         }
 
+        // The map from the ship (the options name the lobby's map, which a random-map setting overrides).
+        // Atlas/Submerged ships: id -1, the ship object's name.
+        private static (int, string) MapNow() {
+            try {
+                var ship = ShipStatus.Instance;
+                if (ship == null) return (-1, "");
+                string cls = "";
+                try { cls = ship.GetIl2CppType().Name; } catch { }
+                switch (cls) {
+                    case "SkeldShipStatus": return ship.transform.localScale.x < 0f ? (3, "dlekS") : (0, "The Skeld");
+                    case "MiraShipStatus": return (1, "MIRA HQ");
+                    case "PolusShipStatus": return (2, "Polus");
+                    case "AirshipStatus": return (4, "Airship");
+                    case "FungleShipStatus": return (5, "The Fungle");
+                }
+                string n = ship.gameObject.name.Replace("(Clone)", "").Trim();
+                return (-1, n.Length > 0 ? n : cls);
+            } catch { return (-1, ""); }
+        }
+
         // The wider round record for SessionStats: every participant, self-inflicted deaths included,
         // plus role, team and kills. Read here because this prefix is the last moment TOR's role statics
         // and GameHistory are intact; the winners are only known later (SessionStats finishes the round
@@ -525,13 +545,16 @@ namespace UsefulTORStuff {
                         }
                         e.Share = mine.deathReason == DeadPlayer.CustomDeathReason.Disconnect
                             ? -1f : (float)Math.Clamp(GameplayAt(mine.timeOfDeath) / length, 0.0, 1.0);
+                        if (mine.deathReason != DeadPlayer.CustomDeathReason.Disconnect)
+                            e.DeathSeconds = (float)Math.Clamp(GameplayAt(mine.timeOfDeath), 0.0, length);
                     } else if (p.Data.Disconnected) {
                         e.Reason = (int)DeadPlayer.CustomDeathReason.Disconnect;
                         e.Share = -1f;
                     }
                     entries.Add(e);
                 }
-                SessionStats.RoundCaptured(entries, roundStart ?? end, end);
+                var (mapId, mapName) = MapNow();
+                SessionStats.RoundCaptured(entries, roundStart ?? end, end, (float)length, mapId, mapName);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] round capture failed: {e.Message}");
             }

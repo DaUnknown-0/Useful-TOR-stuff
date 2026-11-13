@@ -109,6 +109,7 @@ namespace UsefulTORStuff {
                 try {
                     if (OptionDeathFlash == null || !UTSGate.Bool(OptionDeathFlash)) return;
                     if (target == null || target != Spy.spy) return;
+                    if (target.Data == null || !target.Data.IsDead) return;   // blocked kill (a prefix returned false)
 
                     // Only when the dying Spy also has the VIP modifier
                     bool spyHasVip = false;

@@ -140,12 +140,33 @@ namespace UsefulTORStuff {
 
         private static IEnumerator GameRun() {
             yield return new WaitForSeconds(6f);
+            yield return Tour();
+        }
+
+        /// <summary>
+        /// Every panel in turn, photographed (UTSShots/gallery_NN_*.png). Public for the DuoTest "uidump" plan, which
+        /// runs it in a real lobby: the game's menu sprites (GameUI) are loaded there, in freeplay they are not.
+        /// </summary>
+        public static IEnumerator Tour() {
             Log("game run begins");
 
             // the corner tile and its menu
             var menu = LobbyMenuUI.Instance;
             yield return new WaitForSeconds(1f);
             if (menu != null) { menu.Toggle(); yield return new WaitForSeconds(1f); yield return Shot("lobby_menu"); menu.Close(); }
+
+            // settings search: the view pane's search tab (everybody), then the host's edit menu tab
+            var search = SettingsSearchUI.Instance;
+            if (search != null) {
+                search.DiagQuery("");
+                SettingsSearchView.Open(); yield return new WaitForSeconds(1.5f); yield return Shot("settings_search_view_empty");
+                search.DiagQuery("sheriff"); yield return new WaitForSeconds(1f); yield return Shot("settings_search_view_sheriff");
+                search.Close(); yield return new WaitForSeconds(1f);
+                search.DiagOpenEdit(); yield return new WaitForSeconds(1.5f);
+                SettingsSearchEdit.Show(); yield return new WaitForSeconds(1f); yield return Shot("settings_search_edit_sheriff");
+                search.DiagQuery("cooldown"); yield return new WaitForSeconds(1f); yield return Shot("settings_search_edit_cooldown");
+                search.DiagQuery(""); search.Close(); yield return new WaitForSeconds(1f);
+            }
 
             var nc = NewcomerShieldUI.Instance;
             if (nc != null) { nc.Toggle(); yield return new WaitForSeconds(1f); yield return Shot("newcomer_shield"); nc.Close(); }

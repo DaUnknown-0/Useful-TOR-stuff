@@ -133,9 +133,7 @@ namespace UsefulTORStuff {
         // below) and the legacy callId, whose per-feature HandleRpc prefix has its own __instance.
         // Gating only one of them would leave the other wide open, so the overload taking an explicit
         // sender exists for the legacy receivers.
-        public static bool IsHost(PlayerControl sender) =>
-            sender != null && AmongUsClient.Instance != null
-            && sender.OwnerId == AmongUsClient.Instance.HostId;
+        public static bool IsHost(PlayerControl sender) => UnknownsNet.SenderIsHost(sender);
 
         public static bool SenderIsHost => IsHost(Sender);
 

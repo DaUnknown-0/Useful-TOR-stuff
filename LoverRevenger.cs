@@ -1242,6 +1242,7 @@ namespace UsefulTORStuff {
                     if (!revengerOwnKill) return;                  // non-killers use the Revenger button
                     if (target == null || target.PlayerId != killerId) return; // only the Lover's killer wins
                     if ((resultFlags & MurderResultFlags.Succeeded) == 0) return; // a blocked kill is no revenge
+                    if (target.Data == null || !target.Data.IsDead) return;      // also not one a prefix stopped
                     SendWin(revenger.PlayerId);
                 } catch (Exception e) {
                     UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] killer-revenger win failed: {e}");

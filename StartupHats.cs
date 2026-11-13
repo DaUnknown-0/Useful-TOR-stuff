@@ -149,11 +149,31 @@ namespace UsefulTORStuff {
             [HarmonyPriority(Priority.First)]
             private static void Prefix(HatManager __instance, string __0) {
                 if (!active || busy || __0 == null || !__0.StartsWith("hat_")) return;
-                var hat = Pending?.FirstOrDefault(h => "hat_" + h.Name.Replace(' ', '_') == __0);
-                if (hat == null) return;
-                busy = true;
-                try { var data = Register(hat); if (data != null) Publish(__instance, new List<HatData> { data }); }
-                finally { busy = false; }
+                // A prefix on GetHatById must never throw (a pending hat without a name did), and it runs for every
+                // lookup while the hats load: a plain loop without building a string per pending hat.
+                try {
+                    var pending = Pending;
+                    if (pending == null) return;
+                    CustomHat hat = null;
+                    foreach (var h in pending)
+                        if (h != null && MatchesId(h.Name, __0)) { hat = h; break; }
+                    if (hat == null) return;
+                    busy = true;
+                    try { var data = Register(hat); if (data != null) Publish(__instance, new List<HatData> { data }); }
+                    finally { busy = false; }
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[StartupHats] requested hat {__0} not registered early: {e.Message}");
+                }
+            }
+
+            // "hat_" + name with spaces as underscores == id, without allocating
+            private static bool MatchesId(string name, string id) {
+                if (name == null || id.Length != name.Length + 4) return false;
+                for (int i = 0; i < name.Length; i++) {
+                    char c = name[i] == ' ' ? '_' : name[i];
+                    if (id[i + 4] != c) return false;
+                }
+                return true;
             }
         }
 
@@ -168,9 +188,20 @@ namespace UsefulTORStuff {
             }
         }
 
+        // Start time (2026-11-13, User: start plus login under 20 s): the hats used to load from the main menu on, frame
+        // by frame during the login. Now they wait until the login is done (at most 20 s; a hat the game asks for in the
+        // meantime is registered at once, RequestedHat) and then load over ~6 s instead of ~10 s.
+        private const float SpreadSeconds = 6f;
+
+        private static bool LoginDone() {
+            try { return EOSManager.InstanceExists && EOSManager.Instance.HasFinishedLoginFlow(); } catch { return true; }
+        }
+
         private static IEnumerator Run() {
             float next = 0f, spacing = 0f;
             bool batch = false;
+            float waitUntil = Time.realtimeSinceStartup + 20f;
+            while (!LoginDone() && Time.realtimeSinceStartup < waitUntil) yield return null;
             while (true) {
                 yield return null;
                 if (!active || busy || !HatManager.InstanceExists) continue;
@@ -181,7 +212,7 @@ namespace UsefulTORStuff {
                     continue;
                 }
                 float now = Time.realtimeSinceStartup;
-                if (!batch) { batch = true; spacing = 10f / pending.Count; next = now; }
+                if (!batch) { batch = true; spacing = SpreadSeconds / pending.Count; next = now; }
                 if (now < next) continue;
                 var timer = System.Diagnostics.Stopwatch.StartNew();
                 var added = new List<HatData>();

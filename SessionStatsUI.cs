@@ -131,7 +131,9 @@ namespace UsefulTORStuff {
             if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; }
             titlesView = true;
             ceremony = true;
-            SessionStats.RequestTable();
+            // Guests do not ask: the host's SendCeremony already sends a fresh table right behind the ceremony,
+            // and every guest asking at once made the host send it once per guest.
+            if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) SessionStats.RequestTable();
             Open();
             UsefulTORStuffPlugin.Logger?.LogInfo("[SessionStats] end-of-evening titles opened.");
         }
@@ -258,13 +260,16 @@ namespace UsefulTORStuff {
         private static readonly Color ColLeft = new Color(0.5f, 0.5f, 0.55f);
         private static SessionStats.Table currentTable;   // the table the panel shows (names of those who left)
 
+        // Names go into rich text: < > stripped so a name cannot inject tags (like GhostKillFeed).
+        private static string Plain(string s) => (s ?? "?").Replace("<", "").Replace(">", "");
+
         [HideFromIl2Cpp]
         private static Who WhoOf(byte id, SessionStats.Table t) {
             if (t != null && t.Rows.TryGetValue(id, out var row) && row.LeftName != null)
-                return new Who { Name = row.LeftName, Col = ColLeft, Here = false };
+                return new Who { Name = Plain(row.LeftName), Col = ColLeft, Here = false };
             var pc = id < SessionStats.LeftIdBase ? TheOtherRoles.Helpers.playerById(id) : null;
             if (pc != null && pc.Data != null && !pc.Data.Disconnected)
-                return new Who { Name = pc.Data.PlayerName ?? "?", Col = PlayerColor(pc), Here = true };
+                return new Who { Name = Plain(pc.Data.PlayerName), Col = PlayerColor(pc), Here = true };
             return new Who { Name = "?", Col = ColOthers, Here = false };
         }
 

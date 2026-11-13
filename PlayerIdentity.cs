@@ -50,12 +50,25 @@ namespace UsefulTORStuff {
 
         /// <summary>The key this player is stored under; "" when nothing identifies him.</summary>
         public static string KeyOf(PlayerControl p) {
+            // Keys are written one per line into the stores (UTSDeathTimes.txt, UTSNewcomerShield.state): a line
+            // break or tab in a client-reported PUID, code or name would inject a line of its own.
             string puid = PuidOf(p);
-            if (!string.IsNullOrEmpty(puid)) return PuidPrefix + puid;
+            if (!string.IsNullOrEmpty(puid)) return PuidPrefix + NoControl(puid);
             string code = FriendCodeOf(p);
-            if (!string.IsNullOrEmpty(code)) return code;
+            if (!string.IsNullOrEmpty(code)) return NoControl(code);
             string name = NameOf(p);
-            return string.IsNullOrEmpty(name) ? "" : NamePrefix + name;
+            return string.IsNullOrEmpty(name) ? "" : NamePrefix + NoControl(name);
+        }
+
+        /// <summary>Control characters (line breaks, tabs, ...) replaced by spaces, for line-based files.</summary>
+        internal static string NoControl(string s) {
+            if (string.IsNullOrEmpty(s)) return s ?? "";
+            bool any = false;
+            foreach (char c in s) if (char.IsControl(c)) { any = true; break; }
+            if (!any) return s;
+            var chars = s.ToCharArray();
+            for (int i = 0; i < chars.Length; i++) if (char.IsControl(chars[i])) chars[i] = ' ';
+            return new string(chars);
         }
 
         public static Kind KindOf(PlayerControl p) {

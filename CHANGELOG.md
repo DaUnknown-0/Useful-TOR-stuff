@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Host tools moved out (2026-11-11)
+- **The lobby size above 15 (option 1378, `/size`) moved to TOR - Host Tools** as well; the meeting grid for more
+  than 15 players stays here, every client lays out its own meeting.
+- **Settings presets, settings export/import and the web settings page moved to TOR - Host Tools** (the former
+  Hostfix, host-only). This mod is the one every player installs; those three only ever mattered to the host.
+  A host who wants them installs or updates TOR - Host Tools. Existing presets (`BepInEx/config/UTS-Presets`) and
+  exports keep working; the `[WebConfig]` config section is read from the Host Tools config from now on.
+- **Public building blocks for Host Tools**: `LobbyPanelGuard`, `PacedOptionSync.SendPaced` and `ConnectionLight`.
+- **New: shield notice** (`ShieldNotice.cs`): the carrier of a newcomer or early death shield is told once why he
+  has it and until which meeting it lasts.
+- **New: connection ping** (`ConnectionLight.cs`, module byte 229): every client answers the host's ping; the
+  host's panel is part of Host Tools.
+- **New title "Sharpshooter"** in the session statistics (correct guesses of the evening).
+
 ### Revenger kill button (playtest 2026-09-18)
 - **The Revenger button no longer hides under another ability button** (`LoverRevenger.cs`): it
   always sat at `upperRowRight`, the slot TOR also uses for the Engineer's repair and the Hacker's

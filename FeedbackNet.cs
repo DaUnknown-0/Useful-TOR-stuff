@@ -49,6 +49,7 @@ internal static class FeedbackNet
     private static readonly Dictionary<string, int> partProgress = new();                 // sender: next part to send
     private static readonly Dictionary<(string Key, string Id), string[]> partsIn = new();  // author: received parts
     private const int MaxName = 32, MaxMap = 32, MaxPerSender = 200;
+    private const int MaxPendingPerSender = 8, MaxPendingTotal = 256;   // unfinished multipart notes (partsIn)
     private const float SendGap = 0.5f, RetryAfter = 20f;
 
     private static readonly Dictionary<string, float> lastSent = new();
@@ -278,6 +279,7 @@ internal static class FeedbackNet
         var counts = new int[n];
         for (int i = 0; i < n; i++) counts[i] = r.ReadByte();
         if (sender == null || !FeedbackOwner.IsOwner(sender) || FeedbackOwner.LocalIsOwner) return;
+        if (!InLobby() && !FeedbackSkinVote.TestOutsideLobby) return;   // like the vote itself: lobby only
         FeedbackSkinVote.ShowResult(voteId, winner == 255 ? -1 : winner, counts);
     }
 
@@ -343,6 +345,18 @@ internal static class FeedbackNet
         string chunk = Cut(r.ReadString(), Chunk);
         if (sender == null || !FeedbackOwner.LocalIsOwner || total < 2 || total > MaxParts || index < 1 || index >= total) return;
         var key = (FeedbackOwner.KeyOf(sender), id);
+        if (!partsIn.ContainsKey(key)) {
+            // Bounded: at most MaxPendingPerSender unfinished notes per sender (his older ones are dropped, a
+            // lost note is resent) and MaxPendingTotal overall, so random ids cannot grow this for the session.
+            int mineCount = 0;
+            foreach (var k in partsIn.Keys) if (k.Key == key.Item1) mineCount++;
+            if (mineCount >= MaxPendingPerSender) {
+                var drop = new List<(string Key, string Id)>();
+                foreach (var k in partsIn.Keys) if (k.Key == key.Item1) drop.Add(k);
+                foreach (var k in drop) partsIn.Remove(k);
+            }
+            if (partsIn.Count >= MaxPendingTotal) partsIn.Clear();
+        }
         if (!partsIn.TryGetValue(key, out var arr) || arr.Length != total) partsIn[key] = arr = new string[total];
         arr[index] = chunk;
     }
@@ -413,7 +427,14 @@ internal static class FeedbackNet
         string key = FeedbackOwner.KeyOf(sender);
         bool known = FeedbackStore.InInbox(n.Id);
         if (known && n.Edited > FeedbackStore.InboxEdited(n.Id)) {
-            // an edited note: replaces the old line (same sender only, the id is the sender's)
+            // an edited note: replaces the old line (same sender only, the id is the sender's; checked in
+            // FeedbackStore). Edits count towards MaxPerSender too: each one rewrites the whole inbox file.
+            receivedFrom.TryGetValue(key, out int edits);
+            if (edits >= MaxPerSender) {
+                UsefulTORStuffPlugin.Logger.LogWarning($"[Feedback] {key} sent more than {MaxPerSender} notes this session - edit ignored");
+                return;
+            }
+            receivedFrom[key] = edits + 1;
             n.Author = Cut(sender.Data?.PlayerName ?? "", MaxName);
             n.FromKey = key;
             n.Received = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

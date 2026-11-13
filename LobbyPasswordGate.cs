@@ -582,7 +582,7 @@ namespace UsefulTORStuff
             SetSubmitResult("checking");
             if (_statusLabel != null)
             {
-                _statusLabel.text = "Checking password...";
+                _statusLabel.text = UTSLocalization.Tr("uts.lobbypasswordgate.checking");
                 _statusLabel.color = new Color(1f, 0.85f, 0.4f);
             }
         }
@@ -601,7 +601,7 @@ namespace UsefulTORStuff
             if (check.IsFaulted)
             {
                 _ = check.Exception;
-                ShowError("Password check unavailable. Try again."); SetSubmitResult("notready");
+                ShowError(UTSLocalization.Tr("uts.lobbypasswordgate.check_unavailable")); SetSubmitResult("notready");
                 return;
             }
             if (check.IsCompletedSuccessfully && check.Result)
@@ -639,7 +639,8 @@ namespace UsefulTORStuff
 
             var box = VanillaUI.CenterPanel(_panel, new Vector2(600, 340));
             float ty = VanillaUI.Title(box, UTSLocalization.Tr("uts.lobbypasswordgate.title"), 16f, 30f);
-            _titleLabel = null;
+            // the title's label, so a language switch reaches it too (OnLanguageApplied)
+            try { _titleLabel = box.transform.Find("TitleTab")?.GetComponentInChildren<TextMeshProUGUI>(true); } catch { _titleLabel = null; }
 
             _hintLabel = MakeLabel(box, "Hint", new Vector2(0, ty - 8), new Vector2(-60, 30),
                 "", 17, FontStyles.Normal, VanillaUI.Muted);

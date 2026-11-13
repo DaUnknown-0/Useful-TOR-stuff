@@ -3,7 +3,7 @@
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
 /*
- * TorPerfFixes - four performance patches against TOR's own code (AUDIT-2026-08-16). None of these
+ * TorPerfFixes - performance patches against TOR's own code (AUDIT-2026-08-16; 5/6 leak fixes 2026-11-12). None of these
  * change what the player sees; they only make TOR rebuild the same output less often. All four are
  * option-less and NOT behind UTSGate: a purely local reduction in per-frame work can never hand
  * anyone an advantage, so there is nothing to gate.
@@ -92,6 +92,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
 using TheOtherRoles;
+using TheOtherRoles.Objects;
 using UnityEngine;
 
 namespace UsefulTORStuff {
@@ -293,6 +294,212 @@ namespace UsefulTORStuff {
             public static void Clear() => lastHostId = byte.MaxValue;
         }
 
+        // ── 5) Dead CustomButtons must not keep the old HUD alive ─────────────────────────────
+        // TOR registers every CustomButton's onClickEvent on its PassiveButton (OnClick.AddListener). Il2CppInterop
+        // bridges that .NET delegate with an Il2CppToMonoDelegateReference: the il2cpp object holds the .NET
+        // delegate (and with it the CustomButton) through a GC handle, and the CustomButton's wrappers hold the
+        // il2cpp side again. Neither garbage collector can see the cycle as a whole, so a destroyed button never
+        // went away - and through CustomButton.hudManager it kept the whole previous HudManager graph with it
+        // (multi-client test 2026-11-12: one more HudManager, 64 more delegate bridges and ~2.5 MB of live il2cpp
+        // objects per round, which also fragmented the 32-bit il2cpp heap). Right before TOR drops a dead button
+        // from its list (HudUpdate / MeetingEndedUpdate both start with RemoveAll(actionButton == null)), its
+        // references into the game are cut. Callbacks become empty stubs instead of null, so code that still holds
+        // an old button (another mod's cached reference) gets false/no-op instead of a NullReferenceException.
+        [HarmonyPatch]
+        static class DeadCustomButtonRelease {
+            private static readonly Func<bool> No = () => false;
+            private static readonly Action Nothing = () => { };
+            private static readonly AccessTools.FieldRef<CustomButton, Action> fOnClick = AccessTools.FieldRefAccess<CustomButton, Action>("OnClick");
+            private static readonly AccessTools.FieldRef<CustomButton, Action> fInitialOnClick = AccessTools.FieldRefAccess<CustomButton, Action>("InitialOnClick");
+            private static readonly AccessTools.FieldRef<CustomButton, Action> fOnMeetingEnds = AccessTools.FieldRefAccess<CustomButton, Action>("OnMeetingEnds");
+            private static readonly AccessTools.FieldRef<CustomButton, Action> fOnEffectEnds = AccessTools.FieldRefAccess<CustomButton, Action>("OnEffectEnds");
+            private static int released;
+
+            public static IEnumerable<MethodBase> TargetMethods() {
+                yield return AccessTools.Method(typeof(CustomButton), nameof(CustomButton.HudUpdate));
+                yield return AccessTools.Method(typeof(CustomButton), nameof(CustomButton.MeetingEndedUpdate));
+            }
+
+            [HarmonyPriority(Priority.First)]
+            public static void Prefix() {
+                var list = CustomButton.buttons;
+                if (list == null) return;
+                for (int i = 0; i < list.Count; i++) {
+                    var b = list[i];
+                    if (b == null || ReferenceEquals(b.hudManager, null) && ReferenceEquals(b.actionButtonGameObject, null)) continue;
+                    // Destroyed? m_CachedPtr is read straight from the object; Unity's "!= null" would box its result on
+                    // the il2cpp heap for every button twice per frame.
+                    var ab = b.actionButton;
+                    if (!ReferenceEquals(ab, null) && ab.m_CachedPtr != IntPtr.Zero) continue;
+                    try {
+                        b.actionButton = null;
+                        b.actionButtonGameObject = null;
+                        b.actionButtonRenderer = null;
+                        b.actionButtonMat = null;
+                        b.actionButtonLabelText = null;
+                        b.Sprite = null;
+                        b.hudManager = null;
+                        b.HasButton = No;
+                        b.CouldUse = No;
+                        fOnClick(b) = Nothing;
+                        fInitialOnClick(b) = Nothing;
+                        fOnMeetingEnds(b) = Nothing;
+                        fOnEffectEnds(b) = Nothing;
+                        released++;
+                    } catch (Exception e) {
+                        UsefulTORStuffPlugin.Logger?.LogWarning($"[TorPerfFixes] releasing a dead CustomButton failed: {e.Message}");
+                    }
+                }
+            }
+
+            internal static int Released => released;
+        }
+
+        // ── 6) Lambdas on HUD buttons must not keep the old HUD alive ─────────────────────────
+        // Same cycle as 5) for every other runtime listener on a HUD or meeting button: TOR's settings, zoom and
+        // summary toggles capture the HudManager in their lambda (HudManagerUpdate.Postfix/Postfix2), the meeting
+        // buttons capture the MeetingHud. The buttons die with the HUD at the end of the game, the bridges did not.
+        // At the end of the game every runtime listener on the HUD's and the meeting's PassiveButtons is removed:
+        // nothing can click them any more, and RemoveAllListeners leaves the prefab's own persistent listeners alone.
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
+        static class HudListenerSweep {
+            [HarmonyPriority(Priority.Last)]
+            public static void Prefix() {
+                int n = 0;
+                try {
+                    if (HudManager.InstanceExists) n += Sweep(HudManager.Instance.gameObject);
+                    if (MeetingHud.Instance != null) n += Sweep(MeetingHud.Instance.gameObject);
+                } catch (Exception e) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[TorPerfFixes] HUD listener sweep failed: {e.Message}");
+                }
+                if (n > 0) UsefulTORStuffPlugin.Logger?.LogInfo($"[TorPerfFixes] released the runtime listeners of {n} HUD button(s) at the end of the game.");
+            }
+
+            private static int Sweep(GameObject root) {
+                int n = 0;
+                foreach (var pb in root.GetComponentsInChildren<PassiveButton>(true)) {
+                    if (pb == null) continue;
+                    try {
+                        pb.OnClick?.RemoveAllListeners();
+                        pb.OnMouseOver?.RemoveAllListeners();
+                        pb.OnMouseOut?.RemoveAllListeners();
+                        n++;
+                    } catch { }
+                }
+                return n;
+            }
+        }
+
+        // ── 7) Delegate bridges whose lambda only holds destroyed game objects are cut ───────────
+        // Every .NET lambda handed to the game (button listeners, Effects.Lerp callbacks, ...) goes through an
+        // Il2CppInterop Il2CppToMonoDelegateReference. That bridge and its .NET side keep each other alive across
+        // the two garbage collectors, so it is never freed, and neither is the lambda's closure: TOR's settings and
+        // summary toggles (HudManagerUpdate.Postfix/Postfix2) and its intro role text (SetUpRoleTextPatch) captured
+        // the HudManager / IntroCutscene, which kept one complete old HUD per round alive (multi-client test
+        // 2026-11-12). The bridges are recorded when they are created; on every lobby join, a bridge whose target
+        // holds Unity objects that are ALL destroyed drops its reference to the .NET delegate. The bridge itself
+        // stays (a few bytes), the closure and the old HUD behind it can go. A dropped bridge can only be invoked by
+        // something that belonged to the destroyed objects as well; Il2CppInterop then logs a caught exception.
+        [HarmonyPatch]
+        static class DelegateBridgeRelease {
+            private static readonly Type bridgeType = AccessTools.TypeByName("Il2CppInterop.Runtime.DelegateSupport+Il2CppToMonoDelegateReference");
+            private static readonly FieldInfo fDelegate = bridgeType != null ? AccessTools.Field(bridgeType, "ReferencedDelegate") : null;
+            private static readonly PropertyInfo pDelegate = bridgeType != null && fDelegate == null ? AccessTools.Property(bridgeType, "ReferencedDelegate") : null;
+            private static readonly List<WeakReference> bridges = new();
+            // Coroutines started with WrapToIl2Cpp() have the same cycle (Il2CppManagedEnumerator holds the .NET
+            // state machine): Atlas' eject scene kept its ExileController and the HUD it touched (+1 per round).
+            private static readonly Type enumType = AccessTools.TypeByName("BepInEx.Unity.IL2CPP.Utils.Collections.Il2CppManagedEnumerator");
+            private static readonly FieldInfo fEnumerator = enumType != null ? AccessTools.Field(enumType, "enumerator") : null;
+            private static readonly List<WeakReference> coroutines = new();
+            private static readonly System.Collections.IEnumerator EmptyEnumerator = new object[0].GetEnumerator();
+            private static readonly object gate = new();
+
+            public static bool Prepare() {
+                bool ok = bridgeType != null && (fDelegate != null || (pDelegate != null && pDelegate.CanWrite));
+                if (!ok) UsefulTORStuffPlugin.Logger?.LogWarning("[TorPerfFixes] Il2CppToMonoDelegateReference.ReferencedDelegate not found - delegate bridges are not released.");
+                return ok;
+            }
+
+            public static IEnumerable<MethodBase> TargetMethods() {
+                foreach (var c in AccessTools.GetDeclaredConstructors(bridgeType)) yield return c;
+                if (fEnumerator != null)
+                    foreach (var c in AccessTools.GetDeclaredConstructors(enumType))
+                        if (c.GetParameters().Length == 1 && c.GetParameters()[0].ParameterType == typeof(System.Collections.IEnumerator)) yield return c;
+            }
+
+            public static void Postfix(object __instance) {
+                lock (gate) {
+                    var list = bridgeType.IsInstanceOfType(__instance) ? bridges : coroutines;
+                    if (list.Count >= 4000) list.RemoveRange(0, 1000);     // bound the bookkeeping, oldest first
+                    list.Add(new WeakReference(__instance));
+                }
+            }
+
+            private static Delegate Get(object b) => (fDelegate != null ? fDelegate.GetValue(b) : pDelegate.GetValue(b)) as Delegate;
+            private static void Drop(object b) { if (fDelegate != null) fDelegate.SetValue(b, null); else pDelegate.SetValue(b, null); }
+
+            // true when the delegate's target references Unity objects and every one of them is destroyed
+            private static bool Dead(Delegate d) => DeadTarget(d?.Target);
+
+            // A compiler-generated iterator that ran to its end (or was disposed) has a negative "<>1__state". The sweep
+            // runs between frames, so no MoveNext is on the stack: such a coroutine can never continue, but its captured
+            // parameters and locals stayed alive through the bridge.
+            private static bool RanToEnd(object it) {
+                var f = it.GetType().GetField("<>1__state", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                return f != null && f.FieldType == typeof(int) && (int)f.GetValue(it) < 0;
+            }
+
+            private static bool DeadTarget(object t) {
+                if (t == null) return false;                                    // static lambda: captures nothing
+                if (t is CustomButton cb) return ReferenceEquals(cb.actionButton, null) && ReferenceEquals(cb.hudManager, null);   // released by 5)
+                if (t is UnityEngine.Object own) return !ReferenceEquals(own, null) && own == null
+                    && (own is HudManager || own is MeetingHud || own is IntroCutscene || own is ExileController || own is ShipStatus);
+                // Only closures/coroutines that belong to a torn-down scene object: every Unity object they hold is
+                // destroyed AND one of them is a per-round singleton (HUD, meeting, intro, exile, ship). Something that
+                // only holds old PlayerControls may legitimately still run across a lobby change (players are
+                // re-spawned there), so it is never touched (found by the multi-client harness 2026-11-12).
+                int unity = 0, alive = 0, scene = 0;
+                foreach (var f in t.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
+                    if (!typeof(UnityEngine.Object).IsAssignableFrom(f.FieldType)) continue;
+                    var v = f.GetValue(t) as UnityEngine.Object;
+                    if (ReferenceEquals(v, null)) continue;
+                    unity++;
+                    if (v != null) alive++;
+                    else if (v is HudManager || v is MeetingHud || v is IntroCutscene || v is ExileController || v is ShipStatus) scene++;
+                }
+                return unity > 0 && alive == 0 && scene > 0;
+            }
+
+            internal static void Sweep() {
+                int dropped = 0, kept = 0;
+                lock (gate) {
+                    for (int i = bridges.Count - 1; i >= 0; i--) {
+                        object b = bridges[i].Target;
+                        if (b == null) { bridges.RemoveAt(i); continue; }
+                        try {
+                            var d = Get(b);
+                            if (d == null) { bridges.RemoveAt(i); continue; }
+                            if (Dead(d)) { Drop(b); bridges.RemoveAt(i); dropped++; }
+                            else kept++;
+                        } catch { }
+                    }
+                }
+                int stopped = 0;
+                lock (gate) {
+                    for (int i = coroutines.Count - 1; i >= 0; i--) {
+                        object e = coroutines[i].Target;
+                        if (e == null) { coroutines.RemoveAt(i); continue; }
+                        try {
+                            var inner = fEnumerator.GetValue(e);
+                            if (inner == null || ReferenceEquals(inner, EmptyEnumerator)) { coroutines.RemoveAt(i); continue; }
+                            if (RanToEnd(inner) || DeadTarget(inner)) { fEnumerator.SetValue(e, EmptyEnumerator); coroutines.RemoveAt(i); stopped++; }
+                        } catch { }
+                    }
+                }
+                if (dropped > 0 || stopped > 0) UsefulTORStuffPlugin.Logger?.LogInfo($"[TorPerfFixes] released {dropped} delegate bridge(s) and {stopped} coroutine(s) of destroyed objects ({kept} bridges still in use).");
+            }
+        }
+
         // ── Reset hooks (REGEL 2: every cache above that carries round/lobby state clears here) ─
         [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
         static class RoundResetPatch {
@@ -308,6 +515,7 @@ namespace UsefulTORStuff {
                 MushroomSabotageActiveCachePatch.ResetOnLobbyJoin();
                 GetRolesStringCachePatch.Clear();
                 ShowHostThrottle.Clear();
+                DelegateBridgeRelease.Sweep();   // the previous HUD is gone by now (see 7)
                 // resetVariables is only ever sent by a same-version TOR host; a vanilla/mismatched
                 // host would never clear ShowHostThrottle's lastHostId, so OnGameJoined (fires on
                 // every lobby (re-)entry, host or not) is the one reset that always runs.

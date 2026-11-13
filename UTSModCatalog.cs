@@ -114,8 +114,8 @@ namespace UsefulTORStuff {
                              "DaUnknown-0", "TOR-Chance", "TOR-ChanceModifier.dll", "Chaos"),
             new CatalogEntry(3, "com.tormod.unknownscollection", "Unknown's Collection",
                              "DaUnknown-0", "UnknownsCollection", "UnknownsCollection.dll", "Unknown's"),
-            new CatalogEntry(4, "com.trackerteam.hostfix", "TOR - Hostfix",
-                             "DaUnknown-0", "TOR-Host-Fix", "HostFixPlugin.dll", "Hostfix", hostOnly: true),
+            new CatalogEntry(4, "com.trackerteam.hostfix", "TOR - Host Tools",
+                             "DaUnknown-0", "TOR-Host-Fix", "HostFixPlugin.dll", "Host Tools", hostOnly: true),
             // Pulled from distribution for a few hours on 2026-08-29 while its memory was under
             // suspicion, and put back the same evening once measured: a Mira world build costs the
             // process +38 MB and is released at round end (919 MB peak in a round that started at
@@ -133,7 +133,7 @@ namespace UsefulTORStuff {
             new CatalogEntry(7, "Submerged", "Submerged",
                              "SubmergedAmongUs", "Submerged", "Submerged.dll", "Submerged",
                              external: true, pinnedVersion: new Version(2025, 1, 30), requiresGuid: "gg.reactor.api"),
-            // Add-on for Unknown's Collection (Halloween costumes + Xenomorph role, added 2026-10-05).
+            // Add-on for Unknown's Collection (added 2026-10-05).
             new CatalogEntry(8, "com.daunknown.unknownshalloween", "Unknown's Halloween",
                              "DaUnknown-0", "UnknownsHalloween", "UnknownsHalloween.dll", "Halloween"),
         };
@@ -276,6 +276,7 @@ namespace UsefulTORStuff {
                 case "com.tormod.bypasstest":           // Bypass test mod
                 case "com.tormod.debugunlock":
                 case "com.tormod.credits":
+                case FastStartPlugin.Guid:              // part of the Forgotten Fixes DLL, not a mod of its own
                     return true;
             }
             return guid.StartsWith("com.bepinex", StringComparison.OrdinalIgnoreCase)
@@ -312,8 +313,12 @@ namespace UsefulTORStuff {
         // for github.com itself - points into THIS catalog entry's own release download path. The
         // check parses the URL instead of doing StartsWith on a string, so neither
         // "https://github.com.evil.tld/..." nor "https://evil.tld/?x=https://github.com/..." passes.
-        public static bool IsTrustedAssetUrl(CatalogEntry entry, string url) {
-            if (entry == null || string.IsNullOrEmpty(url)) return false;
+        public static bool IsTrustedAssetUrl(CatalogEntry entry, string url) =>
+            entry != null && IsTrustedAssetUrl(entry.RepositoryOwner, entry.RepositoryName, url);
+
+        /// <summary>Same check for a repository given by name (the self-updater).</summary>
+        public static bool IsTrustedAssetUrl(string owner, string repo, string url) {
+            if (string.IsNullOrEmpty(owner) || string.IsNullOrEmpty(repo) || string.IsNullOrEmpty(url)) return false;
             Uri uri;
             try { uri = new Uri(url); } catch { return false; }
 
@@ -322,7 +327,7 @@ namespace UsefulTORStuff {
             string host = uri.Host.ToLowerInvariant();
             if (host == "github.com") {
                 // Expected shape: /{owner}/{repo}/releases/download/{tag}/{asset}
-                string expected = $"/{entry.RepositoryOwner}/{entry.RepositoryName}/releases/download/";
+                string expected = $"/{owner}/{repo}/releases/download/";
                 return uri.AbsolutePath.StartsWith(expected, StringComparison.OrdinalIgnoreCase);
             }
 

@@ -142,5 +142,12 @@ internal static class FeedbackText
     }
 
     /// <summary>Player text shown in TMP: tags stay text.</summary>
-    internal static string Plain(string s) => "<noparse>" + (s ?? "").Replace("</noparse>", "") + "</noparse>";
+    internal static string Plain(string s) {
+        // Every closing noparse goes, in any case and until none is left: a single Replace turned
+        // "</nopa</noparse>rse>" back into a working "</noparse>".
+        s = s ?? "";
+        int i;
+        while ((i = s.IndexOf("</noparse", System.StringComparison.OrdinalIgnoreCase)) >= 0) s = s.Remove(i, 9);
+        return "<noparse>" + s + "</noparse>";
+    }
 }

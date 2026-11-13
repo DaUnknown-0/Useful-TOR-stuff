@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.7.5.1";
+    public const string PluginVersion = "1.7.5.2";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -87,8 +87,6 @@ public class UsefulTORStuffPlugin : BasePlugin
     // here; the live state lives in a process-wide AppDomain flag (VersionDisplay) read by every mod.
     public static ConfigEntry<bool> ShowTestVersionsConfig;
     internal static ConfigEntry<float> MinDropDistance;
-    internal static ConfigEntry<bool> WebConfigEnabled;
-    internal static ConfigEntry<int> WebConfigPort;
     internal static ConfigEntry<float> ModManagerButtonX;
     internal static ConfigEntry<float> ModManagerButtonY;
     // Mod sync (UTSModInventory/UTSModSync/UTSModDownloader). Client-side by nature - which mods
@@ -104,6 +102,13 @@ public class UsefulTORStuffPlugin : BasePlugin
     public override void Load()
     {
         Logger = Log;
+        ErrorToast.Install(Config);   // log listener first, so errors during the load are kept too
+        RestartShortcuts.SkipCloudSaveAlways = Config.Bind("Startup", "Skip Login Cloud Save", true,
+            "During the login the game writes player.prefs to the cloud and waits ~5 s for it. On: that write is skipped until the login is done (later saves go to the cloud as usual). Off: only after a restart through the Mod Manager.");
+        // Before any patch (does nothing when Unknown's Collection loaded first and installed it already).
+        HarmonyBatch.Install(Config.Bind("Performance", "Batch Harmony Patches At Start", true,
+            "Build every patched game method once after all plugins have loaded instead of once per patch (faster start).").Value,
+            s => Logger.LogInfo("[HarmonyBatch] " + s));
         Logger.LogInfo($"{PluginName} v{PluginVersion} loading...");
         // files of mods deleted in the Mod Manager that were still in use last session
         ModManagerDelete.ProcessPending();
@@ -166,14 +171,8 @@ public class UsefulTORStuffPlugin : BasePlugin
             "Minimum distance (in world units) a bloody player must travel before a new blood " +
             "trail drop is spawned. Higher = fewer blood objects = less lag. 0 disables throttling.");
 
-        // Local host-only web settings editor (WebConfig): serves a browser page on 127.0.0.1
-        // that edits every mod option + the vanilla Among Us options. Loopback-only; writes are
-        // gated on AmHost. Disabled or re-ported here.
-        WebConfigEnabled = Config.Bind("WebConfig", "Enabled", true,
-            "Serve a local browser page (http://127.0.0.1:<port>/) for editing all lobby settings. "
-            + "Loopback-only (never exposed to the network); only the host can change values.");
-        WebConfigPort = Config.Bind("WebConfig", "Port", 32200,
-            "TCP port for the local settings web page. If busy, the next few ports are tried.");
+        // The local web settings editor, the settings presets and the settings export moved to TOR - Host Tools
+        // on 2026-11-11 (host-only tools; this mod is the one every player installs).
 
         // Read-only tracer for the decon-door / emergency-meeting reports; see DeconDiag.cs for
         // what each log line proves. The patch is attribute-based (PatchAll below).
@@ -396,6 +395,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // The map language toggle (MapLanguageToggle) is patch-only - nothing to create.
         MeetingMapPing.CreateOptions();
 
+        // Vote history in meetings (option 1352): what the earlier meetings' results showed, names only
+        // where the viewer could see the vote colours. BloopAVoteIcon / meeting patches are attribute-based.
+        VoteHistory.CreateOptions();
+
         // Random impostor count (host rolls min..max at game start, stays secret), Spy unlock
         // at max >= 2, and the Jackal sidekick gating (refill / per-game chance, RPC 244).
         // SelectRoles / GetAdjustedNumImpostors / intro / HandleRpc patches are attribute-based
@@ -403,10 +406,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         ImpostorCountRange.CreateOptions();
         ImpostorCountRange.TryPatch(harmony);
 
-        // Maximum Lobby Size (option 1378, General tab, default 15 = off): lets the host raise the
-        // lobby above 15 (up to 25) with TOR's /size command. The patches are attribute-based
-        // (PatchAll); only the option needs explicit creation here.
-        LobbySizeLimit.CreateOptions();
+        // Maximum Lobby Size (option 1378, /size above 15) moved to TOR - Host Tools on 2026-11-11 (host only).
 
         // True Modifier Chances (option 1375, Modifier tab, default OFF): the modifier percentages
         // become real independent spawn chances instead of TOR's lottery tickets. TryPatch adds the
@@ -508,13 +508,6 @@ public class UsefulTORStuffPlugin : BasePlugin
         // once the line above ran, and the surface scan it logs wants the full patch set in place.
         DetourWatchdog.Initialize();
 
-        // Local host-only web settings editor. Started after PatchAll so its HudManager.Update
-        // pump patch is already installed. Loopback-only listener; host-gated writes.
-        if (WebConfigEnabled.Value) {
-            try { WebConfig.Start(WebConfigPort.Value); }
-            catch (Exception ex) { Logger.LogError($"WebConfig start failed: {ex}"); }
-        }
-
         // Self-updater: checks GitHub releases and offers an in-game update button.
         AddComponent<UsefulTORStuffUpdater>();
 
@@ -553,8 +546,23 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Lobby panel of the session statistics (host and guests); also drives the host's sending.
         AddComponent<SessionStatsUI>();
 
-        // Host-only lobby panel for named settings presets (all mod options + the game's settings).
-        AddComponent<SettingsPresetsUI>();
+        // Search over every modded option (lobby menu entry, Ctrl+F); the host changes values right there.
+        AddComponent<SettingsSearchUI>();
+        AddComponent<ModalGuardTicker>();
+
+        // A card when a mod logs an error, with a copyable report (BepInEx/ErrorReports).
+        AddComponent<ErrorToast>();
+
+        // After an update: the release notes of every updated mod in the main menu.
+        WhatsNew.Bind(Config);
+
+        // TOR's per-frame HUD code from tier-safe copies without il2cpp garbage (installs at the first lobby join).
+        TorFrameDiet.Bind(Config);
+        AddComponent<WhatsNew>();
+
+
+        // Connection traffic light: every client answers the host's ping (the host's panel is in TOR - Host Tools).
+        ConnectionLight.RegisterRpc();
 
         // Draft music: every player's own pick for TOR's Role Draft (driver + lobby panel).
         AddComponent<DraftMusicDriver>();
@@ -941,7 +949,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         [HarmonyPriority(Priority.Low)]  // run after TOR's own PingTracker postfix
         public static void Postfix(PingTracker __instance)
         {
-            if (__instance == null || __instance.text == null) return;
+            if (ReferenceEquals(__instance, null) || ReferenceEquals(__instance.text, null) || __instance.text.m_CachedPtr == System.IntPtr.Zero) return;   // no Unity ==: it boxes a bool per call (il2cpp heap), every frame in every mod
             string text = __instance.text.text;
             if (string.IsNullOrEmpty(text)) return;
 

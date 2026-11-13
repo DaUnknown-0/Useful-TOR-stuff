@@ -5,7 +5,7 @@
  * PresetsSelfTest - autotest only (config "Diagnostics / Presets Test", off by default): settings presets, the
  * music tracks of other plugins and the titles of other plugins, in freeplay on The Skeld.
  *
- *  1. Presets: saves "Diag Base" with every option, changes 60 options and the kill cooldown, saves three more,
+ *  1. (moved to TOR - Host Tools with the presets on 2026-11-11) Presets: saved "Diag Base" with every option, changes 60 options and the kill cooldown, saves three more,
  *     opens the panel (shot), loads "Diag Base" and checks every option and the cooldown against it (shot), renames
  *     and deletes one, then deletes the test presets again.
  *  2. Music: every tab of the music panel on its last page, where the tracks of other plugins stand (shots), one of
@@ -101,74 +101,11 @@ namespace UsefulTORStuff {
             yield return new WaitForSeconds(6f);
             Running = true;
             Log("begin");
-            yield return PresetsPart();
             yield return MusicPart();
             yield return TitlesPart();
             Log("all done");
             yield return new WaitForSeconds(1f);
             Application.Quit();
-        }
-
-        // ---------------------------------------------------------------- presets
-        private static IEnumerator PresetsPart() {
-            SettingsPresetsUI.DiagActive = true;
-            foreach (var old in SettingsPresets.List().Where(p => p.Name.StartsWith("Diag ")).ToList()) SettingsPresets.Delete(old);
-
-            var opts = CustomOption.options.Where(o => o != null && o.id != 0 && o.selections != null).ToList();
-            float cdBefore = -1f;
-            try { cdBefore = Opts().GetFloat(FloatOptionNames.KillCooldown); } catch { }
-            var baseP = SettingsPresets.SaveNew("Diag Base");
-            Log($"saved Diag Base: {baseP?.Options.Count ?? -1} option(s) of {opts.Count}, vanilla {(baseP?.Vanilla != null ? "yes" : "no")}, kill cooldown {cdBefore}");
-
-            // 60 options to a different value, and the kill cooldown
-            var touched = opts.Where(o => o.selections.Length > 1).Take(60).ToList();
-            var before = touched.ToDictionary(o => o.id, o => o.selection);
-            foreach (var o in touched) o.selection = (o.selection + 1) % o.selections.Length;
-            try { Opts().SetFloat(FloatOptionNames.KillCooldown, cdBefore + 7.5f); } catch (Exception e) { Log("cooldown set failed: " + e.Message); }
-            Log($"changed {touched.Count} option(s), kill cooldown now {Opts()?.GetFloat(FloatOptionNames.KillCooldown)}");
-            SettingsPresets.SaveNew("Diag Changed");
-            SettingsPresets.SaveNew("Diag Evening Chaos Mode");
-            SettingsPresets.SaveNew("Diag Rename Me");
-
-            var ui = SettingsPresetsUI.Instance;
-            if (ui != null) {
-                ui.Open();
-                ui.DiagType("Diag Typing Test");
-                yield return new WaitForSeconds(1.2f);
-                yield return Shot("1_list");
-            }
-
-            var target = SettingsPresets.List().FirstOrDefault(p => p.Name == "Diag Base");
-            Log($"Diag Base differs in {SettingsPresets.Differences(target)} option(s) before loading (expected {touched.Count})");
-            var r = SettingsPresets.Load(target);
-            int wrong = touched.Count(o => o.selection != before[o.id]);
-            float cdAfter = -1f;
-            try { cdAfter = Opts().GetFloat(FloatOptionNames.KillCooldown); } catch { }
-            Log($"loaded Diag Base: {r.Changed} changed, {r.Same} same, {r.Unknown} unknown, {r.Packets} packet(s), vanilla {r.VanillaApplied}; "
-                + $"{wrong} option(s) not back, kill cooldown {cdAfter} (expected {cdBefore}) -> {(wrong == 0 && Mathf.Abs(cdAfter - cdBefore) < 0.01f && r.Changed == touched.Count ? "PASS" : "FAIL")}");
-            Log($"differences after loading: {SettingsPresets.Differences(SettingsPresets.List().FirstOrDefault(p => p.Name == "Diag Base"))}");
-            float waitT = Time.realtimeSinceStartup;
-            while (PacedOptionSync.Sending && Time.realtimeSinceStartup - waitT < 5f) yield return null;
-            Log($"paced send finished after {Time.realtimeSinceStartup - waitT:F2} s");
-            if (ui != null) {
-                ui.DiagRefresh();
-                yield return new WaitForSeconds(1f);
-                yield return Shot("2_loaded");
-            }
-
-            var ren = SettingsPresets.List().FirstOrDefault(p => p.Name == "Diag Rename Me");
-            bool renOk = ren != null && SettingsPresets.Rename(ren, "Diag Renamed");
-            bool found = SettingsPresets.List().Any(p => p.Name == "Diag Renamed") && !SettingsPresets.List().Any(p => p.Name == "Diag Rename Me");
-            Log($"rename: {(renOk && found ? "PASS" : "FAIL")}");
-            var del = SettingsPresets.List().FirstOrDefault(p => p.Name == "Diag Renamed");
-            bool delOk = del != null && SettingsPresets.Delete(del) && !SettingsPresets.List().Any(p => p.Name == "Diag Renamed");
-            Log($"delete: {(delOk ? "PASS" : "FAIL")}");
-            if (ui != null) { ui.DiagRefresh(); yield return new WaitForSeconds(0.8f); yield return Shot("3_after_delete"); ui.Close(); }
-
-            foreach (var p in SettingsPresets.List().Where(p => p.Name.StartsWith("Diag ")).ToList()) SettingsPresets.Delete(p);
-            try { if (System.IO.Directory.Exists(SettingsPresets.Folder) && !System.IO.Directory.EnumerateFileSystemEntries(SettingsPresets.Folder).Any()) System.IO.Directory.Delete(SettingsPresets.Folder); } catch { }
-            SettingsPresetsUI.DiagActive = false;
-            yield return new WaitForSeconds(0.5f);
         }
 
         // ---------------------------------------------------------------- music of other plugins

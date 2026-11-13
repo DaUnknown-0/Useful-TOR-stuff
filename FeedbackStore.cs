@@ -238,7 +238,14 @@ internal static class FeedbackStore
                     if (string.IsNullOrWhiteSpace(line)) continue;
                     try {
                         var old = JsonSerializer.Deserialize<FeedbackNote>(line, Json);
-                        if (old != null && old.Id == n.Id) continue;
+                        if (old != null && old.Id == n.Id) {
+                            // only the sender of a note may replace it (someone who learnt its id may not)
+                            if (!string.IsNullOrEmpty(old.FromKey) && !string.IsNullOrEmpty(n.FromKey) && old.FromKey != n.FromKey) {
+                                UsefulTORStuffPlugin.Logger.LogWarning($"[Feedback] edit of note {n.Id} from another sender - ignored");
+                                return false;
+                            }
+                            continue;
+                        }
                     } catch { }
                     outLines.Add(line);
                 }

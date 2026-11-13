@@ -88,6 +88,15 @@ using UnityEngine;
 
 namespace UsefulTORStuff {
     public static class TorLobbyFixes {
+        /// The ceiling for /size: 15, unless TOR - Host Tools is loaded and its host raised "Maximum Lobby Size"
+        /// (the option lives there since 2026-11-11 and publishes its value under this AppDomain key).
+        internal static int LobbySizeMax() {
+            try {
+                if (AppDomain.CurrentDomain.GetData("HostTools.LobbySize.Max") is Func<int> f) return Math.Clamp(f(), 15, 25);
+            } catch { }
+            return 15;
+        }
+
 
         private static float lastLogAt = -100f;
 
@@ -224,7 +233,7 @@ namespace UsefulTORStuff {
             public static void Postfix(int __state) {
                 try {
                     // The ceiling is 15 unless the host raised "Maximum Lobby Size (/size)" (LobbySizeLimit).
-                    int max = LobbySizeLimit.CurrentMax;
+                    int max = LobbySizeMax();
                     if (__state >= 4 && __state <= max && (DynamicLobbies.LobbyLimit < 4 || DynamicLobbies.LobbyLimit > max)) {
                         DynamicLobbies.LobbyLimit = __state;
                         return;

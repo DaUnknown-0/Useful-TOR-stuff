@@ -148,13 +148,24 @@ namespace UsefulTORStuff {
             return block;
         }
 
+        // Unity's "== null" without the boxed bool Il2CppInterop returns for it: no managed object, or its
+        // native side is destroyed (the same test Unity makes).
+        private static bool Gone(UnityEngine.Object o) => ReferenceEquals(o, null) || o.m_CachedPtr == IntPtr.Zero;
+
         /// Handles the click and writes the line(s) into `text`, once per frame across every mod
         /// that calls this. Safe to call unconditionally.
         public static string Render(TMP_Text tmp, string text) {
             try {
-                if (tmp == null || string.IsNullOrEmpty(text)) return text;
+                if (Gone(tmp) || string.IsNullOrEmpty(text)) return text;
                 var members = Members();
                 if (members.Count == 0) return text;
+
+                // PERF (2026-11-13): every later mod's call this frame finds the marker and is done here,
+                // before the click and ShipStatus reads below. Each of those reads boxes a value on the
+                // il2cpp heap through Il2CppInterop, and up to eight mods called them every frame. The
+                // game rewrites the ping text every frame, so the marker always comes from this frame and
+                // the first mod to run has already handled the click and the credit line.
+                if (text.Contains(MarkerPrefix)) return text;
 
                 if (Input.GetMouseButtonDown(0)) {
                     Camera cam = Camera.main;
@@ -174,7 +185,7 @@ namespace UsefulTORStuff {
                             // but only in a round: the lobby always lists every mod and ignores the
                             // state, so a lobby click flipped it unseen and the round started the other
                             // way round (audit 2026-10-04).
-                            if (id == ToggleLinkId && ShipStatus.Instance != null) SetExpanded(!Expanded());
+                            if (id == ToggleLinkId && !Gone(ShipStatus.Instance)) SetExpanded(!Expanded());
                         }
                     }
                 }
@@ -182,7 +193,7 @@ namespace UsefulTORStuff {
                 // Idempotency: whichever mod's patch runs first this frame renders the block: every
                 // later mod's Render() call this same frame sees the marker and leaves `text` alone.
                 if (!text.Contains(MarkerPrefix)) {
-                    string block = BlockFor(members, ShipStatus.Instance == null, Expanded());
+                    string block = BlockFor(members, Gone(ShipStatus.Instance), Expanded());
 
                     int nl = text.IndexOf('\n');
                     text = nl >= 0

@@ -124,7 +124,7 @@ namespace UsefulTORStuff {
                     samples[i] = (float)BitConverter.ToInt32(bytes, i * 4) / int.MaxValue;
                 AudioClip clip = AudioClip.Create(clipName, samples.Length / 2, 2, 48000, false);
                 clip.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontSaveInEditor;
-                clip.SetData(samples, 0);
+                ClipFill.SetData(clip, samples, 2);
                 return clip;
             } catch {
                 return null;

@@ -32,6 +32,10 @@ namespace UsefulTORStuff {
     internal static class RestartShortcuts {
         private static void Log(string s) => UsefulTORStuffPlugin.Logger?.LogInfo("[Restart] " + s);
 
+        /// [Startup] Skip Login Cloud Save: also on a normal start, not only after a restart (User 2026-11-13: start
+        /// plus login under 20 s; the login waited ~5 s for the cloud copy of player.prefs, measured 13.11.).
+        internal static BepInEx.Configuration.ConfigEntry<bool> SkipCloudSaveAlways;
+
         [HarmonyPatch]
         private static class SkipHatHashes {
             private static MethodBase TargetMethod() =>
@@ -52,7 +56,7 @@ namespace UsefulTORStuff {
             private static int skipped;
 
             private static bool Prefix() {
-                if (!UTSRestart.IsRestart) return true;
+                if (!UTSRestart.IsRestart && (SkipCloudSaveAlways == null || !SkipCloudSaveAlways.Value)) return true;
                 try {
                     if (!EOSManager.InstanceExists || EOSManager.Instance.HasFinishedLoginFlow()) return true;
                 } catch { return true; }

@@ -254,6 +254,7 @@ namespace UsefulTORStuff {
         }
 
         private static void HandleRpc(MessageReader reader) {
+            if (reader.Length - reader.Position < 1) return;   // empty or cut-off packet: keep the current mark
             byte target = reader.ReadByte();
             var sender = UTSRpc.Sender;
             if (sender == null || Mayor.mayor == null || sender.PlayerId != Mayor.mayor.PlayerId) return;   // only the Mayor himself

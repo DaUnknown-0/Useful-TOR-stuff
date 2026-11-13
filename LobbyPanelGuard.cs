@@ -22,20 +22,20 @@ using UnityEngine;
 
 namespace UsefulTORStuff {
 
-    internal static class LobbyPanelGuard {
+    public static class LobbyPanelGuard {
         private const float Grace = 0.5f;
         private static readonly List<GameObject> panels = new List<GameObject>();
         private static float closedAt = -10f;
 
         /// <summary>Called where a panel root is created.</summary>
-        internal static void Track(GameObject panel) {
+        public static void Track(GameObject panel) {
             if (panel != null) panels.Add(panel);
         }
 
         /// <summary>Called from every Close; starts the grace window.</summary>
-        internal static void Closed() => closedAt = Time.unscaledTime;
+        public static void Closed() => closedAt = Time.unscaledTime;
 
-        internal static bool Blocking() {
+        public static bool Blocking() {
             if (Time.unscaledTime - closedAt < Grace) return true;
             panels.RemoveAll(p => p == null);   // Unity null: destroyed panels drop out
             return panels.Count > 0;

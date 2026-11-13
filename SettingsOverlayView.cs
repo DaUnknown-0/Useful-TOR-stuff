@@ -221,6 +221,8 @@ namespace UsefulTORStuff {
                 if (page <= 0 || page > 6) return; // page 0 is the vanilla settings block
 
                 string built = BuildPage(page, mode, hideExtras);
+                if (!string.IsNullOrEmpty(built) && SettingsChangeMarks.AnyChanged())
+                    built += "\n\n" + Cs(ChangedInk, UTSLocalization.Tr("uts.changemarks.legend"));
                 if (!string.IsNullOrEmpty(built)) __result = built;
             } catch (Exception e) {
                 if (!loggedFailure) {
@@ -374,7 +376,7 @@ namespace UsefulTORStuff {
                 } else {
                     string name = CleanName(option);
                     Color c = ColorOf(option, NeutralInk);
-                    block.Add(MakeLine(0, name, c, ModTag(option), ValueOf(option), ValueColor(option)));
+                    block.Add(MakeLine(0, name, c, ModTag(option), Shown(option), ValueColor(option)));
                     AppendChildren(block, option, pool, Mix(c, 0.45f), name, 1);
                 }
                 blocks.Add(block);
@@ -414,10 +416,10 @@ namespace UsefulTORStuff {
                 string extra = ModifierExtras(option);
                 string suffix = ModTag(option) + (extra.Length > 0 ? Cs(Dim, extra) : "");
                 int suffixPlain = ModTagPlain(option).Length + extra.Length;
-                lines.Add(MakeLine(1, CleanName(option), c, suffix, ValueOf(option), ValueColor(option), suffixPlain));
+                lines.Add(MakeLine(1, CleanName(option), c, suffix, Shown(option), ValueColor(option), suffixPlain));
 
                 foreach (var sub in SubRolesWithOwnRate(option))
-                    lines.Add(MakeLine(2, CleanName(sub), Mix(c, 0.45f), "", ValueOf(sub), ValueColor(sub)));
+                    lines.Add(MakeLine(2, CleanName(sub), Mix(c, 0.45f), "", Shown(sub), ValueColor(sub)));
             }
 
             AppendOffLines(lines, off, 1);
@@ -440,7 +442,7 @@ namespace UsefulTORStuff {
                 Color c = DisplayColor(option, ref shade);
                 string rootName = CleanName(option);
                 var block = new List<Line> {
-                    MakeLine(0, rootName, c, ModTag(option), ValueOf(option), ValueColor(option), ModTagPlain(option).Length)
+                    MakeLine(0, rootName, c, ModTag(option), Shown(option), ValueColor(option), ModTagPlain(option).Length)
                 };
                 AppendChildren(block, option, pool, Mix(c, 0.45f), rootName, 1);
                 blocks.Add(block);
@@ -463,7 +465,7 @@ namespace UsefulTORStuff {
                 if (option.parent != root) continue;
                 if (!IsVisible(option)) continue;
                 block.Add(MakeLine(indent, StripRolePrefix(CleanName(option), rootName), childColor, "",
-                                   ValueOf(option), ValueColor(option)));
+                                   Shown(option), ValueColor(option)));
                 AppendChildren(block, option, pool, childColor, rootName, indent + 1);
             }
         }
@@ -710,7 +712,7 @@ namespace UsefulTORStuff {
 
         // Like TOR's menu (CustomOptions.cs:725-726): a normal child hides at parent 0, an INVERTED one
         // hides at any other parent value (audit 04.10.: those were listed while they did nothing).
-        private static bool IsVisible(CustomOption option) {
+        internal static bool IsVisible(CustomOption option) {
             for (var child = option; child?.parent != null; child = child.parent) {
                 bool parentOff = child.parent.getSelection() == 0;
                 if (child.invertedParent ? !parentOff : parentOff) return false;
@@ -768,7 +770,7 @@ namespace UsefulTORStuff {
             }
         }
 
-        private static string ValueOf(CustomOption option) {
+        internal static string ValueOf(CustomOption option) {
             object value = option.selections[option.selection];
             // TOR's float options accumulate step error, so the raw ToString() can read "1,6000003"
             // (with a comma, on a German locale). Two decimals, invariant, fixes both.
@@ -776,7 +778,13 @@ namespace UsefulTORStuff {
             return value?.ToString() ?? "";
         }
 
+        // the value as drawn: a "*" behind it when it differs from the last round (SettingsChangeMarks)
+        private static string Shown(CustomOption option) => SettingsChangeMarks.Changed(option) ? ValueOf(option) + "*" : ValueOf(option);
+
+        private static readonly Color ChangedInk = new Color(1f, 0.74f, 0.25f);
+
         private static Color ValueColor(CustomOption option) {
+            if (SettingsChangeMarks.Changed(option)) return ChangedInk;
             string value = ValueOf(option);
             if (value == "On") return ValueOn;
             if (value == "Off" || value == "0%") return Dim;
@@ -839,7 +847,7 @@ namespace UsefulTORStuff {
         // Names, tags and colours
         // ==========================================================================================
 
-        private static string CleanName(CustomOption option) {
+        internal static string CleanName(CustomOption option) {
             string name = StripTags(option.name);
             if (name.StartsWith("- ")) name = name.Substring(2); // added by CustomOption's constructor
             return name.Replace("\n", " ").Trim();
@@ -933,7 +941,7 @@ namespace UsefulTORStuff {
                 $"[SettingsOverlayView] option owners resolved for {map.Count} option(s).");
         }
 
-        private static string ModTagPlain(CustomOption option) {
+        internal static string ModTagPlain(CustomOption option) {
             if (ShowModTags != null && !ShowModTags.Value) return "";
             if (ownerTagById == null) return ""; // scan runs on lobby join; no guessing before that
             string tag;

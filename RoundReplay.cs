@@ -223,8 +223,37 @@ namespace UsefulTORStuff {
             }
         }
 
+        // The lobby the recorded round belongs to: its replay (and the live ship copy, an Addressables handle
+        // included) must not follow the player into another lobby or stay loaded in the main menu.
+        private static int recGameId = int.MinValue;
+
+        private static void Forget(string why) {
+            if (!ready && recGameId == int.MinValue) return;
+            try { CloseView(); } catch { }
+            try { ReleaseLive(); } catch { }
+            ready = false;
+            recGameId = int.MinValue;
+            UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] last round's replay dropped ({why}).");
+        }
+
+        [HarmonyLib.HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        static class JoinPatch {
+            public static void Postfix() {
+                try {
+                    var c = AmongUsClient.Instance;
+                    if (c == null || c.GameId != recGameId) Forget("another lobby");
+                } catch { }
+            }
+        }
+
+        [HarmonyLib.HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.ExitGame))]
+        static class ExitPatch {
+            public static void Postfix() { try { Forget("left the lobby"); } catch { } }
+        }
+
         private static void Finish() {
             if (!recording) return;
+            try { recGameId = AmongUsClient.Instance != null ? AmongUsClient.Instance.GameId : int.MinValue; } catch { }
             PollDeaths();
             recording = false;
             if (hostRec) { RecordShipState(); CaptureLiveShip(); }
@@ -247,6 +276,7 @@ namespace UsefulTORStuff {
             if (ship == null || ship.MapPrefab == null) return false;
             var holder = new GameObject("UTSReplayMapProbe");
             holder.SetActive(false);
+            RenderTexture rt = null, prev = null;
             try {
                 var inst = UnityEngine.Object.Instantiate(ship.MapPrefab, holder.transform);
                 // The visible floor plan: Unknown's Atlas switches the Skeld "Background" off and lays its own
@@ -273,10 +303,10 @@ namespace UsefulTORStuff {
                 var tr = spr.textureRect;
                 int w = Mathf.Clamp((int)tr.width, 64, 1600);
                 int h = Mathf.Clamp((int)(tr.height * w / Mathf.Max(1f, tr.width)), 64, 1600);
-                var rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32);
+                rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32);
                 Graphics.Blit(src, rt, new Vector2(tr.width / src.width, tr.height / src.height),
                               new Vector2(tr.x / src.width, tr.y / src.height));
-                var prev = RenderTexture.active;
+                prev = RenderTexture.active;
                 RenderTexture.active = rt;
                 if (mapTex != null) UnityEngine.Object.Destroy(mapTex);
                 mapTex = new Texture2D(w, h, TextureFormat.RGBA32, false);
@@ -301,13 +331,16 @@ namespace UsefulTORStuff {
                 // DontDestroyOnLoad does not cover assets; this flag does (User 2026-10-02: the replay
                 // silently did not open after a real round).
                 mapTex.hideFlags |= HideFlags.DontUnloadUnusedAsset;
-                RenderTexture.active = prev;
-                RenderTexture.ReleaseTemporary(rt);
                 return true;
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] map capture failed: {e.Message}");
                 return false;
             } finally {
+                // also when something above threw: the temporary RT must not stay active and unreleased
+                if (rt != null) {
+                    try { if (RenderTexture.active == rt) RenderTexture.active = prev; } catch { }
+                    try { RenderTexture.ReleaseTemporary(rt); } catch { }
+                }
                 UnityEngine.Object.Destroy(holder);
             }
         }

@@ -35,7 +35,7 @@ using TheOtherRoles;
 using UnityEngine;
 
 namespace UsefulTORStuff {
-    internal static class PacedOptionSync {
+    public static class PacedOptionSync {
         private const float Quiet = 1.0f, MaxWait = 4.0f, ChunkGap = 0.15f;
         private const int ChunkSize = 200;   // same as TOR: well under the 1200-byte packet limit
 
@@ -107,7 +107,7 @@ namespace UsefulTORStuff {
         }
 
         /// <summary>Host: sends just these options (a loaded preset's changes), 200 per packet, 0.15 s apart.</summary>
-        internal static int SendPaced(IEnumerable<CustomOption> options) {
+        public static int SendPaced(IEnumerable<CustomOption> options) {
             var list = options?.Where(o => o != null && o.id != 0).Distinct().ToList() ?? new List<CustomOption>();
             if (list.Count == 0 || !CanSend()) return 0;
             if (shareOptionsId == 0 && !ResolveRpcId()) {
@@ -116,7 +116,8 @@ namespace UsefulTORStuff {
             }
             if (queue == null) { queue = new List<CustomOption>(); chunksSent = optionsSent = 0; nextChunk = 0f; }
             foreach (var o in list) if (!queue.Contains(o)) queue.Add(o);
-            int packets = (queue.Count + ChunkSize - 1) / ChunkSize;
+            GroupQueue();
+            int packets = CountPackets();
             Log($"{list.Count} changed option(s) queued, {packets} packet(s).");
             return packets;
         }
@@ -156,22 +157,45 @@ namespace UsefulTORStuff {
             pending = false;
             if (!CanSend()) { queue = null; return; }
             try { GameManager.Instance.LogicOptions.SyncOptions(); } catch { }
-            queue = new List<CustomOption>(CustomOption.options);
+            queue = new List<CustomOption>(CustomOption.options.Where(o => o != null));
+            GroupQueue();
             chunksSent = optionsSent = 0;
             nextChunk = 0f;
             Log($"{joins} spawn(s) bundled into one sync of {queue.Count} option(s).");
         }
 
+        // Same order as OptionSyncFix's grouped send: TOR's own options first, then one run per mod. Stable, so the
+        // order within a group stays TOR's.
+        private static void GroupQueue() {
+            if (queue == null || queue.Count < 2) return;
+            queue = queue.OrderBy(o => OptionSyncFix.OwnerGroup(o)).ToList();
+        }
+
+        private static int CountPackets() {
+            int packets = 0, inRun = 0, last = int.MinValue;
+            foreach (var o in queue) {
+                int g = OptionSyncFix.OwnerGroup(o);
+                if (g != last || inRun == ChunkSize) { packets++; inRun = 0; last = g; }
+                inRun++;
+            }
+            return packets;
+        }
+
         private static void SendChunk() {
             if (queue == null) return;
             if (queue.Count == 0 || !CanSend()) { queue = null; return; }
-            int amount = Math.Min(queue.Count, ChunkSize);
+            // A packet never mixes owners (OptionSyncFix): a plain-TOR client aborts a block at the first id it does
+            // not know, so TOR's options must not share a block with a mod's.
+            int group = OptionSyncFix.OwnerGroup(queue[0]);
+            int amount = 1;
+            while (amount < queue.Count && amount < ChunkSize && OptionSyncFix.OwnerGroup(queue[amount]) == group) amount++;
             var writer = AmongUsClient.Instance.StartRpcImmediately(PlayerControl.LocalPlayer.NetId, shareOptionsId, SendOption.Reliable, -1);
             writer.Write((byte)amount);
             for (int i = 0; i < amount; i++) {
                 var option = queue[i];
                 writer.WritePacked((uint)option.id);
-                writer.WritePacked(Convert.ToUInt32(option.selection));   // read now, not when the join happened
+                // read now, not when the join happened; never the draft's locally held Prosecutor chance
+                writer.WritePacked(Convert.ToUInt32(DraftLawyerConflict.SelectionForSync(option)));
             }
             AmongUsClient.Instance.FinishRpcImmediately(writer);
             queue.RemoveRange(0, amount);

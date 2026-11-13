@@ -32,18 +32,19 @@ namespace UsefulTORStuff {
 
     public static class VanillaUI {
 
-        // ---- palette, sampled from the lobby screen ----
-        // Our own look in the game's visual language (2026-10-07): deep space-blue cards with a thick
-        // pale outline (the game draws everything with heavy outlines), slanted tabs like the settings
-        // screen's section headers, capsule buttons with a hard drop shadow, Brook for anything loud.
-        public static readonly Color Frame = new Color(0.72f, 0.78f, 0.84f);         // thick pale outline
-        public static readonly Color Body = new Color(0.09f, 0.11f, 0.15f);
-        public static readonly Color Field = new Color(0.14f, 0.17f, 0.22f);          // section boxes, rows
-        public static readonly Color FieldLight = new Color(0.21f, 0.26f, 0.33f);     // selected / hovered row
+        // ---- palette ----
+        // Since 2026-11-13 the neutral greys of the game's settings window (User: "it has to really look like the
+        // Among Us UI"); the space-blue tint of 2026-10-07 is gone. With the game's sprites loaded (GameUI.Ready,
+        // always in the lobby) Panel, Title, Button, CloseButton, Row and Box draw with those sprites; the drawn
+        // shapes below are the stand-in where they are not loaded.
+        public static readonly Color Frame = new Color(0.71f, 0.71f, 0.71f);         // thick pale outline
+        public static readonly Color Body = new Color(0.07f, 0.07f, 0.07f);
+        public static readonly Color Field = new Color(0.17f, 0.17f, 0.17f);          // section boxes, rows
+        public static readonly Color FieldLight = new Color(0.27f, 0.27f, 0.27f);     // selected / hovered row
         public static readonly Color TitleColor = Color.white;
         public static readonly Color TextColor = Color.white;
-        public static readonly Color Muted = new Color(0.66f, 0.72f, 0.80f);
-        public static readonly Color Rule = new Color(0.30f, 0.36f, 0.44f);
+        public static readonly Color Muted = new Color(0.70f, 0.70f, 0.70f);
+        public static readonly Color Rule = new Color(0.35f, 0.35f, 0.35f);
         public static readonly Color Shadow = new Color(0f, 0f, 0f, 0.55f);
         public static readonly Color BackdropColor = new Color(0f, 0f, 0f, 0.72f);
         // buttons
@@ -53,7 +54,7 @@ namespace UsefulTORStuff {
         public static readonly Color Amber = new Color(0.94f, 0.66f, 0.18f);
         public static readonly Color Yellow = new Color(0.98f, 0.86f, 0.22f);         // bright enough for a dark label
         public static readonly Color Red = new Color(0.86f, 0.28f, 0.32f);
-        public static readonly Color Grey = new Color(0.36f, 0.42f, 0.50f);           // neutral
+        public static readonly Color Grey = new Color(0.40f, 0.40f, 0.42f);           // neutral
         public static readonly Color Blue = new Color(0.30f, 0.56f, 0.90f);
         public static readonly Color Pink = new Color(0.90f, 0.42f, 0.74f);
         // status text
@@ -78,7 +79,10 @@ namespace UsefulTORStuff {
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 0.5f;
             var ray = go.AddComponent<GraphicRaycaster>();
-            if (blocking) ray.blockingObjects = GraphicRaycaster.BlockingObjects.All;
+            if (blocking) {
+                ray.blockingObjects = GraphicRaycaster.BlockingObjects.All;
+                ModalRegistry.Add(go);   // the game's buttons under it stop reacting while it is open (ModalGuard)
+            }
             return go;
         }
 
@@ -104,6 +108,25 @@ namespace UsefulTORStuff {
             var rt = Rect(go, anchor, anchor, pivot);
             rt.sizeDelta = size; rt.anchoredPosition = pos;
 
+            if (GameUI.Ready) {
+                // the game's window: the settings window picture where the shape fits it (about 2:1), else the black
+                // field with the light frame (the CLASSIC / capacity boxes), which stretches to any size
+                float aspect = size.y > 0 ? size.x / size.y : 2f;
+                var img = go.AddComponent<Image>();
+                if (aspect >= 1.55f && aspect <= 2.6f && GameUI.Sprite("IMAGE-PanelBG") != null) {
+                    img.sprite = GameUI.Sprite("IMAGE-PanelBG");
+                    img.type = Image.Type.Simple;
+                    img.color = Color.white;
+                } else {
+                    img.sprite = GameUI.Sprite("IMAGE-FieldCube");
+                    img.type = Image.Type.Sliced;
+                    img.pixelsPerUnitMultiplier = 0.8f;
+                    img.color = Frame;
+                }
+                img.raycastTarget = true;   // swallows clicks so the backdrop behind does not close
+                return go;
+            }
+
             // hard offset shadow, dark body, thick pale outline on top (the game's heavy-outline look)
             Stretch(Named(Rounded(go, Shadow, RadiusPanel), "Shadow")).anchoredPosition = new Vector2(8, -10);
             var body = Rounded(go, Body, RadiusPanel);
@@ -122,8 +145,39 @@ namespace UsefulTORStuff {
         /// left-aligned at the top. Returns the y below it.
         /// </summary>
         public static float Title(GameObject panel, string text, float top = 16f, float size = 34f, Color? color = null) {
-            // a slanted tab in the accent colour hanging from the top-left corner, the title on it
             float h = size * 1.2f + 14f;
+            if (GameUI.Ready) {
+                // the settings window's: the Collective mark, the title in Brook, white, upper case, a divider under it
+                float x = FrameW + 30f;
+                try {
+                    var logo = UTSAssets.LogoIcon;
+                    if (logo != null) {
+                        var mark = new GameObject("CollectiveMark");
+                        mark.transform.SetParent(panel.transform, false);
+                        var mrt = Rect(mark, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 0.5f));
+                        float ms = h - 10f;
+                        mrt.sizeDelta = new Vector2(ms, ms);
+                        mrt.anchoredPosition = new Vector2(x, -FrameW - top - h / 2f + 2f);
+                        var mi = mark.AddComponent<Image>();
+                        mi.sprite = logo; mi.preserveAspect = true; mi.raycastTarget = false;
+                        x += ms + 12f;
+                    }
+                } catch { }
+                var gt = Label(panel, text, size * 1.45f, TitleColor, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, 1),
+                               new Vector2(x, -FrameW - top + 4f), new Vector2(-x - 120f, h), TMPro.TextAlignmentOptions.Left,
+                               TMPro.FontStyles.UpperCase);
+                Heading(gt);
+                gt.enableWordWrapping = false; gt.enableAutoSizing = true; gt.fontSizeMin = 14f; gt.fontSizeMax = size * 1.45f;
+                var div = new GameObject("TitleDivider");
+                div.transform.SetParent(panel.transform, false);
+                var drt = Rect(div, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1));
+                drt.anchoredPosition = new Vector2(0, -FrameW - top - h); drt.sizeDelta = new Vector2(-2 * (FrameW + 26f), 3f);
+                var di = div.AddComponent<Image>();
+                di.sprite = GameUI.Sprite("IMAGE-TitleDivider") ?? Solid(); di.color = GameUI.Sprite("IMAGE-TitleDivider") != null ? Color.white : Rule;
+                di.raycastTarget = false;
+                return -FrameW - top - h - 8f;
+            }
+            // a slanted tab in the accent colour hanging from the top-left corner, the title on it
             float w = Mathf.Clamp(text.Length * size * 0.62f + 90f, 260f, 760f);
             var tab = new GameObject("TitleTab");
             tab.transform.SetParent(panel.transform, false);
@@ -180,7 +234,7 @@ namespace UsefulTORStuff {
         // Boxes: dark rounded fields, positioned by their top-left corner
         // ====================================================================
         public static GameObject Box(GameObject parent, Vector2 topLeft, Vector2 size, Color? color = null, int radius = RadiusBox) {
-            var go = Rounded(parent, color ?? Field, radius);
+            var go = GamePlate(parent, color, radius) ?? Rounded(parent, color ?? Field, radius);
             var rt = Rect(go, new Vector2(0, 1), new Vector2(0, 1), new Vector2(0, 1));
             rt.anchoredPosition = topLeft; rt.sizeDelta = size;
             return go;
@@ -188,9 +242,28 @@ namespace UsefulTORStuff {
 
         /// <summary>A box stretched across the parent's width (inset on both sides), by its top edge.</summary>
         public static GameObject Row(GameObject parent, float y, float height, float inset, Color? color = null) {
-            var go = Rounded(parent, color ?? Field, RadiusBox);
+            var go = GamePlate(parent, color, RadiusBox) ?? Rounded(parent, color ?? Field, RadiusBox);
             var rt = Rect(go, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0.5f, 1));
             rt.anchoredPosition = new Vector2(0, y); rt.sizeDelta = new Vector2(-2 * inset, height);
+            return go;
+        }
+
+        // The game's grey label plate (the CAPACITY / GAME MODE labels) for the plain row and box colours; a coloured
+        // box (a status dot, a highlight) keeps the drawn shape. Null: draw it the old way.
+        private static GameObject GamePlate(GameObject parent, Color? color, int radius) {
+            if (!GameUI.Ready || radius < 8) return null;
+            var c = color ?? Field;
+            bool light = Near(c, FieldLight);
+            if (!light && !Near(c, Field)) return null;
+            var sp = GameUI.Sprite("IMAGE-LabelCube");
+            if (sp == null) return null;
+            var go = new GameObject("Fill");
+            go.transform.SetParent(parent.transform, false);
+            go.AddComponent<RectTransform>();
+            var img = go.AddComponent<Image>();
+            img.sprite = sp; img.type = Image.Type.Sliced; img.pixelsPerUnitMultiplier = 1.6f;
+            img.color = light ? new Color32(0x4A, 0x4A, 0x4A, 0xFF) : new Color32(0x37, 0x36, 0x36, 0xFF);
+            img.raycastTarget = false;
             return go;
         }
 
@@ -207,6 +280,24 @@ namespace UsefulTORStuff {
             go.transform.SetParent(parent.transform, false);
             var rt = Rect(go, anchorMin ?? new Vector2(0.5f, 0), anchorMax ?? new Vector2(0.5f, 0), pivot ?? new Vector2(0.5f, 0));
             rt.anchoredPosition = pos; rt.sizeDelta = size;
+
+            if (GameUI.Ready) {
+                // the settings window's button plate, flat (no gloss, User 13.11.); see Plate()
+                var plate = new GameObject("Fill");
+                plate.transform.SetParent(go.transform, false);
+                Stretch(plate);
+                var pimg = plate.AddComponent<Image>();
+                pimg.raycastTarget = false;
+                Plate(pimg, color);
+                if (fontSize <= 0f) fontSize = Mathf.Clamp(size.y * 0.62f, 15f, 36f);
+                text = Label(go, label, fontSize, PlateText(color), Vector2.zero, Vector2.one, new Vector2(0.5f, 0.5f),
+                             Vector2.zero, new Vector2(-18, -4), TMPro.TextAlignmentOptions.Center, TMPro.FontStyles.UpperCase);
+                Heading(text);
+                text.enableAutoSizing = true; text.fontSizeMin = 11; text.fontSizeMax = fontSize;
+                text.enableWordWrapping = false;
+                Hover(go, Mathf.Clamp(Mathf.RoundToInt(size.y * 0.3f), 6, 18), onClick);
+                return go;
+            }
 
             // a capsule: flat colour, hard drop shadow, a darker outline of the same hue
             int radius = Mathf.Clamp(Mathf.RoundToInt(size.y / 2f) - 1, 4, 30);
@@ -237,6 +328,7 @@ namespace UsefulTORStuff {
         /// corner (the label is kept for callers, the X needs none).
         /// </summary>
         public static GameObject CloseButton(GameObject panel, string label, Action onClose, float width = 240f) {
+            if (GameUI.Ready && GameUI.Sprite("BUTTON-ExitStandard") != null) return GameUI.Close(panel, onClose);
             var go = Button(panel, "X", new Vector2(-FrameW - 10f, -FrameW - 10f), new Vector2(54f, 54f), Red, onClose,
                             out var text, new Vector2(1, 1), new Vector2(1, 1), new Vector2(1, 1), 40f);
             go.name = "Close";
@@ -248,11 +340,33 @@ namespace UsefulTORStuff {
         public static void Recolor(GameObject button, Color color) {
             if (button == null) return;
             var fill = button.transform.Find("Fill");
-            if (fill != null) fill.GetComponent<Image>().color = color;
+            var fimg = fill != null ? fill.GetComponent<Image>() : null;
+            bool plate = fimg != null && fimg.sprite != null && (fimg.sprite.name == "CTAInactive" || fimg.sprite.name == "CTAActive");
+            if (plate) Plate(fimg, color);
+            else if (fimg != null) fimg.color = color;
             var edge = button.transform.Find("Edge");
             if (edge != null) edge.GetComponent<Image>().color = Darker(color);
             var t = button.GetComponentInChildren<TMPro.TextMeshProUGUI>();
-            if (t != null) t.color = LabelColor(color);
+            if (t != null) t.color = plate ? PlateText(color) : LabelColor(color);
+        }
+
+        // ---- the game's button plates ----
+        // Teal is the settings window's own plate (CTAInactive, dark teal label); TealBright its selected one
+        // (CTAActive). Any other colour tints the light plate, so red stays red and grey stays grey.
+        private static bool Near(Color a, Color b) => Mathf.Abs(a.r - b.r) + Mathf.Abs(a.g - b.g) + Mathf.Abs(a.b - b.b) < 0.06f;
+
+        private static void Plate(Image img, Color color) {
+            bool teal = Near(color, Teal), bright = Near(color, TealBright);
+            var sp = GameUI.Sprite(teal ? "CTAInactive" : "CTAActive");
+            img.sprite = sp ?? RoundedSprite(12);
+            img.type = Image.Type.Sliced;
+            img.pixelsPerUnitMultiplier = 0.9f;
+            img.color = teal || bright ? Color.white : color;
+        }
+
+        private static Color PlateText(Color color) {
+            if (Near(color, Teal) || Near(color, TealBright)) return GameUI.TabText;
+            return LabelColor(color);
         }
 
         private static Color Darker(Color c) => new Color(c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, c.a);

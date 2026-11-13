@@ -621,7 +621,8 @@ internal static class FeedbackPanel
             try {
                 FeedbackContext.Tick();
                 Tick();
-                if (!IsOpen && FeedbackInputLock.Engaged) FeedbackInputLock.Release();   // closed by something else
+                // closed by something else; a lock another panel holds (the settings search) is not ours to release
+                if (!IsOpen && FeedbackInputLock.Engaged && FeedbackInputLock.Owner == "feedback") FeedbackInputLock.Release();
                 FeedbackNet.Tick();
                 FeedbackHitboxes.Tick();
                 FeedbackToast.Tick();

@@ -104,6 +104,17 @@ namespace UsefulTORStuff {
             }
         }
 
+        /// <summary>
+        /// Owner group of an option for other senders (PacedOptionSync): -1 = core (TOR / unknown), otherwise one
+        /// index per mod assembly. When the owners cannot be resolved everything counts as core, i.e. no grouping.
+        /// </summary>
+        internal static int OwnerGroup(CustomOption option) {
+            try {
+                if (option == null || !ResolveOwners()) return -1;
+                return GroupOf(option.id);
+            } catch { return -1; }
+        }
+
         // -1 = core (TOR / unknown), otherwise the index into modGroups.
         private static int GroupOf(int optionId) {
             if (torIds.Contains(optionId)) return -1;
@@ -122,7 +133,7 @@ namespace UsefulTORStuff {
                 for (int i = 0; i < amount; i++) {
                     CustomOption option = options[sent + i];
                     writer.WritePacked((uint)option.id);
-                    writer.WritePacked(Convert.ToUInt32(option.selection));
+                    writer.WritePacked(Convert.ToUInt32(DraftLawyerConflict.SelectionForSync(option)));
                 }
                 AmongUsClient.Instance.FinishRpcImmediately(writer);
                 sent += amount;

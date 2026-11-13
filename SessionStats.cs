@@ -89,7 +89,21 @@ namespace UsefulTORStuff {
             public float Share;            // survived share of the gameplay time, -1 unknown (disconnect)
             public bool Won;
             public Dictionary<string, int> Extra;   // counters of other plugins' titles (id -> count), null if none
+            public float DeathSeconds = -1f;        // gameplay seconds (meetings left out) at death, -1 survived/unknown; not saved here
         }
+
+        /// <summary>One finished round, for other mods (TOR - Host Tools keeps a long-term statistic of it).</summary>
+        public sealed class RoundRecord {
+            public DateTime Start, End;             // UTC
+            public float GameplaySeconds;           // meetings left out
+            public int MapId = -1;                  // 0 Skeld, 1 Mira, 2 Polus, 3 dlekS, 4 Airship, 5 Fungle, -1 other
+            public string MapName = "";
+            public bool Hosted;                     // this client was the host when the round ended
+            public List<RoundEntry> Entries;        // winners filled in
+        }
+
+        /// <summary>Fired once per recorded round, on every client, after the winners are known (end screen).</summary>
+        public static event Action<RoundRecord> RoundRecorded;
 
         public static bool IsKillReason(DeadPlayer.CustomDeathReason r) =>
             r == DeadPlayer.CustomDeathReason.Kill || r == DeadPlayer.CustomDeathReason.Guess
@@ -108,6 +122,8 @@ namespace UsefulTORStuff {
         public static void RegisterRpc() {
             UTSRpc.Register(RpcId, HandleModuleRpc);
             PublishContracts();
+            AddShieldTitle();
+            AddSharpshooterTitle();
         }
 
         // PlayerIdentity: a player's older key (friend code, "name:") becomes his PUID key, as killer and as victim.
@@ -243,11 +259,21 @@ namespace UsefulTORStuff {
         // ====================================================================
         // Recording: DeathTimeHistory hands the round over, the end screen adds the winners
         // ====================================================================
-        public static void RoundCaptured(List<RoundEntry> entries, DateTime start, DateTime end) {
+        public static void RoundCaptured(List<RoundEntry> entries, DateTime start, DateTime end) =>
+            RoundCaptured(entries, start, end, 0f, -1, "");
+
+        private static float pendingLength;
+        private static int pendingMap = -1;
+        private static string pendingMapName = "";
+
+        public static void RoundCaptured(List<RoundEntry> entries, DateTime start, DateTime end, float gameplaySeconds, int mapId, string mapName) {
             if (entries == null || entries.Count == 0) return;
             pending = entries;
             pendingStart = start;
             pendingEnd = end;
+            pendingLength = gameplaySeconds;
+            pendingMap = mapId;
+            pendingMapName = mapName ?? "";
         }
 
         [HarmonyPatch(typeof(EndGameManager), nameof(EndGameManager.SetEverythingUp))]
@@ -295,6 +321,17 @@ namespace UsefulTORStuff {
             UsefulTORStuffPlugin.Logger?.LogInfo(
                 $"[SessionStats] round recorded: {entries.Count} player(s), {entries.Count(x => x.Won)} winner(s), "
                 + $"{rounds.Count} round(s) in this session.");
+
+            var handlers = RoundRecorded;
+            if (handlers == null) return;
+            var record = new RoundRecord {
+                Start = pendingStart, End = pendingEnd, GameplaySeconds = pendingLength, MapId = pendingMap, MapName = pendingMapName,
+                Hosted = AmHost(), Entries = entries
+            };
+            foreach (Action<RoundRecord> h in handlers.GetInvocationList()) {
+                try { h(record); }
+                catch (Exception e) { UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] RoundRecorded listener failed: {e.Message}"); }
+            }
         }
 
         // ====================================================================
@@ -505,6 +542,50 @@ namespace UsefulTORStuff {
             } catch { }
         }
 
+        // Built-in title on the same counters: rounds in which a player carried a newcomer or early death shield.
+        internal const string ShieldTitleId = "uts.shielded";
+        private static readonly Dictionary<byte, float> shieldCountedAt = new Dictionary<byte, float>();
+
+        private static void AddShieldTitle() {
+            AddTitle(ShieldTitleId, 50,
+                () => UTSLocalization.Tr("uts.sessionstats.title_shielded_name"),
+                n => UTSLocalization.Tr("uts.sessionstats.title_shielded_value", n));
+        }
+
+        /// <summary>A shield was handed to this player. Only the list of the round start counts (intro end): in the
+        /// lobby the same message is just the preview of who would get one. A repeat within two minutes is the same shield.</summary>
+        internal static void CountShield(byte playerId) {
+            try {
+                if (ShipStatus.Instance == null || LobbyBehaviour.Instance != null) return;
+                float now = UnityEngine.Time.realtimeSinceStartup;
+                if (shieldCountedAt.TryGetValue(playerId, out float at) && now - at < 120f) { shieldCountedAt[playerId] = now; return; }
+                shieldCountedAt[playerId] = now;
+                Count(ShieldTitleId, playerId, 1);
+            } catch { }
+        }
+
+        // Built-in title: correct guesses of the evening (Guesser shots that killed the guessed player).
+        internal const string SharpshooterTitleId = "uts.sharpshooter";
+
+        private static void AddSharpshooterTitle() {
+            AddTitle(SharpshooterTitleId, 51,
+                () => UTSLocalization.Tr("uts.sessionstats.title_sharpshooter_name"),
+                n => UTSLocalization.Tr("uts.sessionstats.title_sharpshooter_value", n));
+        }
+
+        // TOR runs guesserShoot once per shot on every client. A hit is a shot whose victim is the guessed player;
+        // on a wrong guess the guesser dies himself (killerId == dyingTargetId), and that counts nothing.
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.guesserShoot))]
+        private static class SharpshooterPatch {
+            public static void Prefix(byte killerId, byte dyingTargetId, byte guessedTargetId) {
+                try {
+                    if (killerId == dyingTargetId || dyingTargetId != guessedTargetId) return;
+                    if (ShipStatus.Instance == null || LobbyBehaviour.Instance != null) return;
+                    Count(SharpshooterTitleId, killerId, 1);
+                } catch { }
+            }
+        }
+
         private static string CleanId(string id) =>
             new string((id ?? "").Where(c => c != '\t' && c != '\n' && c != '\r' && c != ';' && c != '=').ToArray()).Trim();
 
@@ -711,7 +792,10 @@ namespace UsefulTORStuff {
                 byte sub = reader.ReadByte();
                 switch (sub) {
                     case SubRequest:
-                        if (AmHost()) { requested = true; nextTick = 0f; }
+                        // Only marked: Tick answers every request of the last second with ONE send, and not
+                        // within RequestCooldown of the previous one (a table is ~17 reliable messages, and a
+                        // whole lobby asking at once got the full table once per guest).
+                        if (AmHost()) requested = true;
                         break;
                     case SubCeremony:
                         if (UTSRpc.RequireHost("SessionStats.Ceremony")) SessionStatsUI.Instance?.OpenCeremony();
@@ -782,6 +866,8 @@ namespace UsefulTORStuff {
         private static float nextTick;
         private static bool requested;
         private static string lastKey = "?";
+        private const float RequestCooldown = 2f;
+        private static float lastSentAt = -100f;
 
         public static bool IsEnabled() {
             try { return Enabled != null && Enabled.getBool(); } catch { return false; }
@@ -799,8 +885,11 @@ namespace UsefulTORStuff {
                 ids.Sort(StringComparer.Ordinal);
                 string key = dataVersion + "|" + (SessionOver() ? 0 : 1) + "|" + string.Join(",", ids);
                 if (key == lastKey && !requested) return;
+                // A request alone (data unchanged) waits for the cooldown; it stays marked, so it is answered then.
+                if (key == lastKey && Time.realtimeSinceStartup - lastSentAt < RequestCooldown) return;
                 lastKey = key;
                 requested = false;
+                lastSentAt = Time.realtimeSinceStartup;
                 SendTable(Build());
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[SessionStats] tick failed: {e.Message}");

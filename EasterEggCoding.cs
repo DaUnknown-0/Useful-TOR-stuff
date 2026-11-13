@@ -7,8 +7,8 @@
  *
  * If the author dies in the first round of a game (killed before the first meeting is over, or
  * voted out in that first meeting), his name is replaced by an animated "Coding..." for the rest of
- * the game: over his ghost and on his meeting plate. Voted out in that first meeting, the exile line
- * reads "<name> continues to code the mod." instead of the usual one.
+ * the game: over his ghost and on his meeting plate. Voted out in that first meeting, the exile screen
+ * adds "<name> continues to code the mod." below the usual line (which stays: it is game information).
  *
  * Who the author is: SHA-256 of his account's PUID (or, without one, of his friend code), so the id
  * itself is not in this public source. Every client with this mod recognises him on its own; nothing
@@ -16,8 +16,8 @@
  *
  * "First round" ends when the first meeting's exile screen is gone (MeetingHud and ExileController
  * both gone after having been there). Names are written after TOR's own per-frame name pass
- * (HudManager.Update / MeetingHud.Update postfixes, Priority.Last); the exile line in a
- * TranslationController.GetString postfix (Priority.Last, after TOR's role line) plus completeString.
+ * (HudManager.Update / MeetingHud.Update postfixes, Priority.Last); the exile line is appended to
+ * completeString after TOR's role line.
  *
  * 2026-10-24 (User: "make the animation a bit cooler"):
  *  - Build progress: the ghost's name runs through Coding... -> Compiling [=====-----] 47% -> Fixing bugs... ->
@@ -120,8 +120,20 @@ namespace UsefulTORStuff {
         // PlayerControl), see UnknownHat.cs.
         internal static bool IsOwnerId(string puid, string friendCode) => Matches(puid) || Matches(friendCode);
 
+        // id -> is the author: the lookup runs every 2 s for every player while he is not in the game, and the
+        // ids do not change, so each one is hashed once.
+        private static readonly Dictionary<string, bool> matchCache = new Dictionary<string, bool>(StringComparer.Ordinal);
+
         private static bool Matches(string id) {
             if (string.IsNullOrEmpty(id)) return false;
+            if (matchCache.TryGetValue(id, out bool known)) return known;
+            if (matchCache.Count > 512) matchCache.Clear();
+            bool result = MatchesUncached(id);
+            matchCache[id] = result;
+            return result;
+        }
+
+        private static bool MatchesUncached(string id) {
             using var sha = SHA256.Create();
             var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(id));
             var sb = new StringBuilder(64);
@@ -275,7 +287,10 @@ namespace UsefulTORStuff {
             public static void Postfix(ExileController __instance) {
                 try {
                     if (!exileLine || __instance == null) return;
-                    __instance.completeString = Line();
+                    // Added below the game's own line, never instead of it: "was (not) the Impostor" and TOR's role
+                    // line are game information for everyone (an easter egg must not take any away).
+                    string orig = __instance.completeString;
+                    __instance.completeString = string.IsNullOrEmpty(orig) ? Line() : orig + "\n" + Line();
                     if (__instance.Text != null) __instance.Text.color = new Color(0.29f, 0.87f, 0.5f);   // terminal green
                 } catch { }
             }
@@ -484,18 +499,6 @@ namespace UsefulTORStuff {
         private static void HideGag() {
             if (gagRoot != null) Object.Destroy(gagRoot);
             gagRoot = null; gagText = null;
-        }
-
-        [HarmonyPatch(typeof(TranslationController), nameof(TranslationController.GetString),
-            new Type[] { typeof(StringNames), typeof(Il2CppReferenceArray<Il2CppSystem.Object>) })]
-        static class ExileTextPatch {
-            [HarmonyPriority(Priority.Last)]
-            public static void Postfix(ref string __result, [HarmonyArgument(0)] StringNames id) {
-                if (!exileLine) return;
-                if (id == StringNames.ExileTextPN || id == StringNames.ExileTextSN || id == StringNames.ExileTextPP
-                    || id == StringNames.ExileTextSP || id == StringNames.ExileTextNonConfirm)
-                    __result = Line();
-            }
         }
 
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]

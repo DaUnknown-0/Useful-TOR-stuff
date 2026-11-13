@@ -778,8 +778,13 @@ namespace UsefulTORStuff
                     var deps = ModManagerDelete.Dependents(mod.Guid);
                     if (deps.Count > 0) msg += "\n\n" + UTSLocalization.Tr("uts.modmanagerui.delete_deps", string.Join(", ", deps));
                     ShowConfirm(UTSLocalization.Tr("uts.modmanagerui.delete_title"), msg, () => {
-                        ModManagerDelete.Delete(mod, out _, out _);
+                        ModManagerDelete.Delete(mod, out int removed, out int pending);
                         Rebuild();
+                        // the result in the header, so a file that is still in use (or could not even be queued) is seen
+                        if (ModManagerDelete.LastUnqueued > 0)
+                            SetSummary(UTSLocalization.Tr("uts.modmanagerui.delete_failed", mod.Name, ModManagerDelete.LastUnqueued), VanillaUI.Bad);
+                        else
+                            SetSummary(UTSLocalization.Tr("uts.modmanagerui.delete_result", mod.Name, removed, pending), pending > 0 ? VanillaUI.Warn : VanillaUI.Good);
                     }, destructive: true);
                 }
                 catch (Exception ex)

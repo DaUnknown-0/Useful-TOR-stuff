@@ -89,6 +89,8 @@ namespace UsefulTORStuff {
         private const byte SubMeetings   = 4;
 
         private static int LastsUntil(byte id) => lastsUntil.TryGetValue(id, out int n) ? n : 1;
+        /// The meeting this player's shield lasts to (1 unless the host forced a longer one).
+        internal static int MeetingsFor(byte id) => LastsUntil(id);
 
         public static bool Active => shielded.Count > 0;
         public static bool IsShielded(byte playerId) => shielded.Contains(playerId);
@@ -430,7 +432,9 @@ namespace UsefulTORStuff {
                         break;
                     }
                     case SubRequest:
-                        if (AmHost()) { statsRequested = true; nextTick = 0f; }
+                        // Only marked, answered by the next preview tick and at most once per StatsCooldown while
+                        // the numbers are unchanged: every answer is a broadcast to the whole lobby.
+                        if (AmHost()) statsRequested = true;
                         break;
                 }
             } catch (Exception e) {
@@ -441,7 +445,8 @@ namespace UsefulTORStuff {
         private static void ApplySetShields(List<byte> ids) {
             shielded.Clear();
             lastsUntil.Clear();      // every shield lasts one meeting until SubMeetings says more
-            foreach (byte id in ids) shielded.Add(id);
+            foreach (byte id in ids) { shielded.Add(id); SessionStats.CountShield(id); }
+            ShieldNotice.Arrived(ShieldNotice.Kind.EarlyDeath, ids);
             if (shielded.Count > 0)
                 UsefulTORStuffPlugin.Logger?.LogInfo(
                     $"[EarlyDeathShield] {shielded.Count} player(s) shielded.");
@@ -574,6 +579,8 @@ namespace UsefulTORStuff {
         // Lobby preview: broadcast whenever the list changes (join, leave, option, override).
         // ====================================================================
         private static string lastPreviewKey = "";
+        private const float StatsCooldown = 2f;
+        private static float lastStatsSentAt = -100f;
 
         // Forces the next preview tick to resend even an unchanged list - after an override click
         // the host wants to see the outline change at once, not half a second later.
@@ -588,9 +595,11 @@ namespace UsefulTORStuff {
                         if (r.Shield) ids.Add((r.PlayerId, r.Meetings));
                     // statistics for everyone's viewer: on change, and right away when somebody asks
                     string sk = StatsKey(ev);
-                    if (sk != lastStatsKey || statsRequested) {
+                    bool changed = sk != lastStatsKey;
+                    if (changed || (statsRequested && Time.realtimeSinceStartup - lastStatsSentAt >= StatsCooldown)) {
                         lastStatsKey = sk;
                         statsRequested = false;
+                        lastStatsSentAt = Time.realtimeSinceStartup;
                         SendStats(ev);
                     }
                 }
