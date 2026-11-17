@@ -123,13 +123,16 @@ internal static class FeedbackReplies
     /// <summary>A reply from the author arrived. False for one that is already here (lost ack, resent).</summary>
     internal static bool Store(FeedbackReply r, string author)
     {
+        // Audit 16.11. UTS-1-12: Dubletten sind ausschließlich erfolgreich gespeicherte Antworten.
         if (r == null || string.IsNullOrEmpty(r.Id) || Has(r.Id)) return false;
         r.FromKey = "";
         r.Delivered = false;
         r.Received = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        replies.Add(r);
-        while (replies.Count > MaxKept) replies.RemoveAt(0);
-        Write(RepliesPath, replies);
+        var next = new List<FeedbackReply>(replies) { r };
+        while (next.Count > MaxKept) next.RemoveAt(0);
+        if (!Write(RepliesPath, next)) return false;
+        replies.Clear();
+        replies.AddRange(next);
         arrived++;
         lastArrivedAt = Time.realtimeSinceStartup;
         authorName = author ?? "";

@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>net6.0</TargetFramework><CheckEolTargetFramework>false</CheckEolTargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems></PropertyGroup><ItemGroup><ProjectReference Include="../TorStub/TorStub.csproj" /><Compile Include="Stub.cs" /></ItemGroup></Project>

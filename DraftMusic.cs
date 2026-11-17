@@ -227,10 +227,14 @@ namespace UsefulTORStuff {
             public float[] Samples;
             public int Channels, Rate;
             public string Error;
+            public bool Canceled;
         }
 
         private const int MaxSeconds = 360;   // own files: longer ones are cut, a float buffer of 6 min is ~127 MB already
         private const int CacheSize = 3;
+        private static CancellationTokenSource decodeCancellation;
+        private static string decodeKey;
+        private const long MaxDecodedSamples = (long)MaxSeconds * 48000 * 2; // Audit 16.11. UTS-1-10
 
         private static readonly Dictionary<string, AudioClip> clips = new Dictionary<string, AudioClip>();
         private static readonly List<string> lru = new List<string>();
@@ -252,23 +256,31 @@ namespace UsefulTORStuff {
             if (clips.TryGetValue(t.Key, out var c) && c != null) { Touch(t.Key); return c; }
             if (failed.ContainsKey(t.Key) || decoding.Contains(t.Key)) return null;
             if (!t.IsFile && !MusicLibrary.Ready(t)) return null;   // not downloaded (any more)
+            // Audit 16.11. UTS-1-10: maximal ein Decode samt wartendem Samplepuffer.
+            if (decoding.Count != 0) return null;
             decoding.Add(t.Key);
             Changed();
             var track = t;
-            ThreadPool.QueueUserWorkItem(_ => done.Enqueue(Decode(track)));
+            decodeKey = t.Key;
+            decodeCancellation = new CancellationTokenSource();
+            var token = decodeCancellation.Token;
+            ThreadPool.QueueUserWorkItem(_ => done.Enqueue(Decode(track, token)));
             return null;
         }
 
-        private static Decoded Decode(Track t) {
+        private static Decoded Decode(Track t, CancellationToken token) {
             var d = new Decoded { Key = t.Key, Name = "UTS draft " + t.Title };
             try {
                 using Stream s = File.OpenRead(t.IsFile ? t.FilePath : MusicLibrary.PathOf(t));
                 string ext = t.IsFile ? Path.GetExtension(t.FilePath).ToLowerInvariant() : ".ogg";
-                if (ext == ".wav") DecodeWav(s, d);
-                else if (ext == ".mp3") DecodeMp3(s, d);
-                else DecodeOgg(s, d);
+                if (ext == ".wav") DecodeWav(s, d, token);
+                else if (ext == ".mp3") DecodeMp3(s, d, token);
+                else DecodeOgg(s, d, token);
                 if (d.Error != null) { d.Samples = null; return d; }
                 if (d.Samples == null || d.Samples.Length < d.Channels * d.Rate / 2) { d.Error = "too short"; d.Samples = null; return d; }
+            } catch (OperationCanceledException) {
+                d.Canceled = true;
+                d.Samples = null;
             } catch (Exception e) {
                 d.Error = e.GetType().Name;
                 d.Samples = null;
@@ -276,16 +288,17 @@ namespace UsefulTORStuff {
             return d;
         }
 
-        private static void DecodeOgg(Stream s, Decoded d) {
+        private static void DecodeOgg(Stream s, Decoded d, CancellationToken token) {
             using var vorbis = new NVorbis.VorbisReader(s, false);
             d.Channels = vorbis.Channels;
             d.Rate = vorbis.SampleRate;
-            long frames = Math.Min(vorbis.TotalSamples, (long)MaxSeconds * d.Rate);
-            if (frames <= 0 || d.Channels < 1 || d.Channels > 2) { d.Error = "unsupported"; return; }
+            long frames = Math.Min(vorbis.TotalSamples, Math.Min((long)MaxSeconds * d.Rate, MaxDecodedSamples / Math.Max(1, d.Channels)));
+            if (frames <= 0 || d.Rate < 8000 || d.Rate > 48000 || d.Channels < 1 || d.Channels > 2) { d.Error = "unsupported"; return; }
             var buf = new float[frames * d.Channels];
             int total = 0;
             while (total < buf.Length) {
-                int read = vorbis.ReadSamples(buf, total, buf.Length - total);
+                token.ThrowIfCancellationRequested();
+                int read = vorbis.ReadSamples(buf, total, Math.Min(16384, buf.Length - total));
                 if (read <= 0) break;
                 total += read;
             }
@@ -294,20 +307,21 @@ namespace UsefulTORStuff {
         }
 
         // MP3 has no reliable total length up front (VBR), so it is read in blocks up to the cap.
-        private static void DecodeMp3(Stream s, Decoded d) {
+        private static void DecodeMp3(Stream s, Decoded d, CancellationToken token) {
             using var mp3 = new NLayer.MpegFile(s);
             d.Channels = mp3.Channels;
             d.Rate = mp3.SampleRate;
-            if (d.Rate <= 0 || d.Channels < 1 || d.Channels > 2) { d.Error = "unsupported"; return; }
+            if (d.Rate < 8000 || d.Rate > 48000 || d.Channels < 1 || d.Channels > 2) { d.Error = "unsupported"; return; }
             // NLayer decodes MPEG-2/2.5 (16, 22.05, 24 kHz and below) only halfway (measured 2026-10-13: 4 of 8 s,
             // VBR stops after 0.5 s); refusing beats playing a broken half. Music MP3s are 44.1/48 kHz anyway.
             if (d.Rate < 32000) { d.Error = "MP3 below 32 kHz"; return; }
-            long cap = (long)MaxSeconds * d.Rate * d.Channels;
+            long cap = Math.Min(MaxDecodedSamples, (long)MaxSeconds * d.Rate * d.Channels);
             var buf = new float[Math.Min(cap, (long)d.Rate * d.Channels * 30)];
             int total = 0;
             while (total < cap) {
                 if (total == buf.Length) Array.Resize(ref buf, (int)Math.Min(cap, (long)buf.Length * 2));
-                int read = mp3.ReadSamples(buf, total, buf.Length - total);
+                token.ThrowIfCancellationRequested();
+                int read = mp3.ReadSamples(buf, total, Math.Min(16384, buf.Length - total));
                 if (read <= 0) break;
                 total += read;
             }
@@ -316,7 +330,7 @@ namespace UsefulTORStuff {
         }
 
         // RIFF/WAVE: PCM 8/16/24/32 bit, IEEE float 32/64 bit, also as WAVE_FORMAT_EXTENSIBLE; mono or stereo.
-        private static void DecodeWav(Stream s, Decoded d) {
+        private static void DecodeWav(Stream s, Decoded d, CancellationToken token) {
             using var r = new BinaryReader(s);
             if (new string(r.ReadChars(4)) != "RIFF") { d.Error = "not a wav"; return; }
             r.ReadInt32();
@@ -337,26 +351,33 @@ namespace UsefulTORStuff {
                         format = r.ReadUInt16();
                     }
                 } else if (id == "data") {
-                    if (d.Rate <= 0 || d.Channels < 1 || d.Channels > 2) { d.Error = "unsupported"; return; }
+                    if (d.Rate < 8000 || d.Rate > 48000 || d.Channels < 1 || d.Channels > 2) { d.Error = "unsupported"; return; }
                     bool pcm = format == 1 && (bits == 8 || bits == 16 || bits == 24 || bits == 32);
                     bool flt = format == 3 && (bits == 32 || bits == 64);
                     if (!pcm && !flt) { d.Error = $"unsupported wav ({format}/{bits} bit)"; return; }
                     int bps = bits / 8;
                     long avail = Math.Min(size, s.Length - s.Position) / bps;
-                    long count = Math.Min(avail, (long)MaxSeconds * d.Rate * d.Channels);
+                    long count = Math.Min(avail, Math.Min(MaxDecodedSamples, (long)MaxSeconds * d.Rate * d.Channels));
                     count -= count % d.Channels;
                     var buf = new float[count];
-                    var raw = r.ReadBytes((int)(count * bps));
-                    for (long i = 0; i < count; i++) {
-                        int o = (int)(i * bps);
-                        buf[i] = bits switch {
-                            8 => (raw[o] - 128) / 128f,
-                            16 => BitConverter.ToInt16(raw, o) / 32768f,
-                            24 => ((raw[o] | raw[o + 1] << 8 | raw[o + 2] << 16) << 8 >> 8) / 8388608f,
-                            32 when flt => BitConverter.ToSingle(raw, o),
-                            32 => BitConverter.ToInt32(raw, o) / 2147483648f,
-                            _ => (float)BitConverter.ToDouble(raw, o),
-                        };
+                    // Audit 16.11. UTS-1-10: WAV-Rohdaten blockweise statt zweitem Vollpuffer lesen.
+                    for (int start = 0; start < count;) {
+                        token.ThrowIfCancellationRequested();
+                        int n = (int)Math.Min(16384, count - start);
+                        var raw = r.ReadBytes(n * bps);
+                        if (raw.Length != n * bps) throw new EndOfStreamException();
+                        for (int i = 0; i < n; i++) {
+                            int o = i * bps;
+                            buf[start + i] = bits switch {
+                                8 => (raw[o] - 128) / 128f,
+                                16 => BitConverter.ToInt16(raw, o) / 32768f,
+                                24 => ((raw[o] | raw[o + 1] << 8 | raw[o + 2] << 16) << 8 >> 8) / 8388608f,
+                                32 when flt => BitConverter.ToSingle(raw, o),
+                                32 => BitConverter.ToInt32(raw, o) / 2147483648f,
+                                _ => (float)BitConverter.ToDouble(raw, o),
+                            };
+                        }
+                        start += n;
                     }
                     d.Samples = buf;
                     return;
@@ -371,6 +392,8 @@ namespace UsefulTORStuff {
         private static void Pump() {
             if (!done.TryDequeue(out var d)) return;
             decoding.Remove(d.Key);
+            decodeCancellation?.Dispose(); decodeCancellation = null; decodeKey = null;
+            if (d.Canceled) { Changed(); return; }
             if (d.Samples == null) {
                 failed[d.Key] = d.Error ?? "error";
                 Warn($"{d.Key}: cannot be played ({failed[d.Key]})");
@@ -649,6 +672,11 @@ namespace UsefulTORStuff {
         }
 
         internal static void StopPreview() {
+            // Audit 16.11. UTS-1-10: überholte Vorschau dekodiert nicht bis zum Dateiende weiter.
+            if (decodeKey != null && decodeKey == previewWanted
+                && decodeKey != current?.Key && decodeKey != upcoming?.Key
+                && decodeKey != MenuMusic.CurrentKey && decodeKey != LobbyMusic.CurrentKey
+                && decodeKey != MeetingMusic.CurrentKey && !ReactorTrack.Uses(decodeKey)) decodeCancellation?.Cancel();
             previewWanted = null;
             if (previewClip != null) {
                 try { SoundManager.instance?.StopSound(previewClip); } catch { }

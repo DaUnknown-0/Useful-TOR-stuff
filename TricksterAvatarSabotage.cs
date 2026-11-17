@@ -235,6 +235,10 @@ namespace UsefulTORStuff {
         }
 
         private static void ApplyMixup(Dictionary<byte, byte> map, float duration) {
+            // Audit 16.11. UTS Teil 3: lokale Aufrufe ebenfalls gegen nie endende Looks absichern.
+            if (!float.IsFinite(duration) || duration <= 0f || duration > 30f || map == null || map.Count < 2
+                || map.Any(kv => kv.Key == kv.Value || Helpers.playerById(kv.Key) == null || Helpers.playerById(kv.Value) == null)
+                || map.Values.Distinct().Count() != map.Count || !map.Keys.ToHashSet().SetEquals(map.Values)) return;
             mixupMap.Clear();
             foreach (var kv in map) mixupMap[kv.Key] = kv.Value;
             mixupTimer = duration;

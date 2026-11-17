@@ -479,6 +479,13 @@ namespace UsefulTORStuff {
                 allowed = rnd.Next(1, 101) <= chance;
             }
 
+            // Audit 16.11. UTS-1-08: reine TOR-Gäste behalten sonst ihren Rekrutierungsbutton.
+            if (!UsefulVersionHandshake.EveryoneHasMod()) {
+                if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost)
+                    FeedbackToast.Show("Sidekick-Zusatzregeln inaktiv: Nicht alle Spieler haben dieselbe UTS-Version.");
+                return;
+            }
+
             // LEGACY DUAL-SEND (see UTSRpc.cs): the payload goes out on the legacy callId 244 AND on
             // the consolidated channel 240. Classified IDEMPOTENT: ApplySidekickAllowed does nothing
             // but assign Jackal.canCreateSidekick, so a new build receiving both copies simply writes

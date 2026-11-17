@@ -136,13 +136,17 @@ namespace UsefulTORStuff {
         // LEGACY DUAL-SEND (see UTSRpc.cs): legacy callId 249 + consolidated channel 240. Classified
         // IDEMPOTENT: ApplyReset only nulls Medic.shielded/futureShielded and clears usedShield, so
         // running it twice ends in exactly the same state. The legacy half can go in a breaking release.
+        // Audit 16.11. UTS-1-03: Resets benötigen kompatible Empfänger in der ganzen Lobby.
+        private static bool everyoneHasMod;
         private static void SendReset() {
+            if (!everyoneHasMod) return;
             UTSRpc.SendDual(ReshieldRpcId, ReshieldRpcId, null); // no payload
             ApplyReset();
         }
 
         private static void ApplyReset() {
             try {
+                if (!everyoneHasMod) return;
                 Medic.shielded = null;
                 Medic.futureShielded = null;
                 Medic.usedShield = false;
@@ -191,7 +195,12 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
         static class IntroEndResetPatch {
             [HarmonyPriority(Priority.First)]
-            public static void Prefix() => ResetPatch.Postfix();
+            public static void Prefix() {
+                ResetPatch.Postfix();
+                everyoneHasMod = UsefulVersionHandshake.EveryoneHasMod();
+                if (!everyoneHasMod && Option != null && UTSGate.Bool(Option))
+                    FeedbackToast.Show("Medic-Reshield inaktiv: Nicht alle Spieler haben dieselbe UTS-Version.");
+            }
         }
 
         // AUDIT-2026-08-16: clear the cached shield-button reference and its remembered text on lobby
@@ -201,6 +210,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
         static class OnGameJoinedPatch {
             public static void Postfix() {
+                everyoneHasMod = false;
                 shieldBtn = null;
                 lastChargeText = null;
             }
@@ -220,7 +230,7 @@ namespace UsefulTORStuff {
                         // HasButton: medic, alive, option on, a shield is currently active (something to
                         // remove), and a charge remains to re-give (0 = unlimited).
                         // Clearing usedShield hides this button again and re-shows TOR's shield button.
-                        () => Option != null && UTSGate.Bool(Option)
+                        () => everyoneHasMod && Option != null && UTSGate.Bool(Option)
                               && Medic.medic != null && Medic.medic == PlayerControl.LocalPlayer
                               && PlayerControl.LocalPlayer.Data != null && !PlayerControl.LocalPlayer.Data.IsDead
                               && Medic.usedShield
@@ -252,7 +262,7 @@ namespace UsefulTORStuff {
         static class ChargeTickPatch {
             public static void Postfix() {
                 try {
-                    if (Option == null || !UTSGate.Bool(Option)) return;
+                    if (!everyoneHasMod || Option == null || !UTSGate.Bool(Option)) return;
                     var lp = PlayerControl.LocalPlayer;
                     if (Medic.medic == null || lp == null || Medic.medic != lp
                         || lp.Data == null || lp.Data.IsDead) return;

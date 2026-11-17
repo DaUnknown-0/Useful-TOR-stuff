@@ -61,6 +61,7 @@ namespace UsefulTORStuff {
             new Dictionary<int, ClientInventory>();
 
         private static bool sentThisLobby;
+        private static bool syncWasEnabled; // Audit 16.11. UTS-3-11
         private static bool replyPending;
         private static float nextReplyAt;
         private const int ResharesPerArrival = 5;
@@ -271,6 +272,10 @@ namespace UsefulTORStuff {
             [HarmonyPriority(Priority.Low)]
             public static void Postfix() {
                 if (PlayerControl.LocalPlayer == null) return;
+                bool enabled = UsefulTORStuffPlugin.ModSyncEnabled?.Value != false;
+                if (enabled && !syncWasEnabled) { sentThisLobby = false; ArmReshares(); UTSModCheck.Invalidate(); }
+                syncWasEnabled = enabled;
+                if (!enabled) return;
                 if (!sentThisLobby) { sentThisLobby = true; Share(); return; }
                 float now = UnityEngine.Time.realtimeSinceStartup;
                 if (replyPending && now >= nextReplyAt) {

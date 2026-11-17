@@ -85,9 +85,17 @@ namespace UsefulTORStuff {
                 foreach (var s in live) if (s.Hit(mouse)) { dragging = s; break; }
             }
             if (dragging == null) return;
-            if (dragging.Track == null) { dragging = null; return; }
+            if (dragging.Track == null) { FinishDrag(); return; } // Audit 16.11. UTS-3-10
             if (Input.GetMouseButton(0)) { dragging.Follow(mouse); return; }
             var done = dragging;
+            dragging = null;
+            try { done.OnRelease?.Invoke(done.Value); } catch { }
+        }
+
+        // Audit 16.11. UTS-3-10: vor Panel-Abbau Live-Werte speichern und freigeben.
+        internal static void FinishDrag(GameObject panel = null) {
+            var done = dragging;
+            if (done == null || (panel != null && done.Track != null && !done.Track.IsChildOf(panel.transform))) return;
             dragging = null;
             try { done.OnRelease?.Invoke(done.Value); } catch { }
         }

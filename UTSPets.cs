@@ -106,6 +106,7 @@ namespace UsefulTORStuff {
         private sealed class Live {
             public Def Def;
             public Texture2D Tex;
+            public readonly HashSet<Sprite> OwnedSprites = new(); // Audit 16.11. UTS-3-03
             public Sprite[] Idle, Walk;               // sized for an unscaled parent (chips, previews)
             public Sprite[] AccIdle, AccWalk;         // colour masks to Idle/Walk, null without Def.Accent
             public Sprite[] Pet, AccPet;              // petting frames and their masks, null without Def.Pet
@@ -317,7 +318,8 @@ namespace UsefulTORStuff {
                         data.Free = true;
                         data.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontUnloadUnusedAsset;
                         var nl = new Live { Def = d, Data = data };
-                        BuildSprites(nl, d);
+                        try { BuildSprites(nl, d); }
+                        catch { UnityEngine.Object.Destroy(data); throw; }
                         var all = hm.allPets.ToList();
                         all.RemoveAll(p => p != null && p.ProductId == d.ProductId);
                         all.Add(data);
@@ -348,18 +350,73 @@ namespace UsefulTORStuff {
         }
 
         private static void BuildSprites(Live l, Def d) {
-            var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-            if (!ImageConversion.LoadImage(tex, d.Sheet, false)) throw new FormatException("sheet is no PNG");
-            tex.filterMode = FilterMode.Bilinear;
-            tex.wrapMode = TextureWrapMode.Clamp;
-            tex.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontUnloadUnusedAsset;
-            l.Tex = tex;
-            l.Def = d;
+            // Audit 16.11. UTS-3-03: neuer Satz wird vollständig aufgebaut, alter anschließend freigegeben.
+            var next = new Live { Def = d, Data = l.Data };
+            try {
+                next.Tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                next.Tex.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontUnloadUnusedAsset;
+                if (!ImageConversion.LoadImage(next.Tex, d.Sheet, false)) throw new FormatException("sheet is no PNG");
+                next.Tex.filterMode = FilterMode.Bilinear;
+                next.Tex.wrapMode = TextureWrapMode.Clamp;
+                var cut = Cut(next, 1f);
+                next.Idle = cut[0]; next.Walk = cut[1]; next.AccIdle = cut[2]; next.AccWalk = cut[3]; next.Pet = cut[4]; next.AccPet = cut[5];
+                next.Icon = MakeIcon(next);
+                var replacements = new Dictionary<Sprite, Sprite>();
+                MapSprites(BaseFrames(l), BaseFrames(next), replacements);
+                if (l.Icon != null) replacements[l.Icon] = next.Icon;
+                foreach (var kv in l.Scaled) {
+                    var fresh = Cut(next, kv.Key / 1000f);
+                    next.Scaled[kv.Key] = fresh;
+                    MapSprites(kv.Value, fresh, replacements);
+                }
+                ReplaceRenderers(replacements);
+            } catch {
+                ReleaseSprites(next);
+                throw;
+            }
+            var old = new Live { Tex = l.Tex, Idle = l.Idle, Walk = l.Walk, AccIdle = l.AccIdle, AccWalk = l.AccWalk, Pet = l.Pet, AccPet = l.AccPet, Icon = l.Icon };
+            foreach (var kv in l.Scaled) old.Scaled[kv.Key] = kv.Value;
+            old.OwnedSprites.UnionWith(l.OwnedSprites);
+            l.OwnedSprites.Clear();
+            l.OwnedSprites.UnionWith(next.OwnedSprites);
+            l.Tex = next.Tex; l.Def = d; l.Idle = next.Idle; l.Walk = next.Walk;
+            l.AccIdle = next.AccIdle; l.AccWalk = next.AccWalk; l.Pet = next.Pet; l.AccPet = next.AccPet; l.Icon = next.Icon;
             l.Scaled.Clear();
-            var cut = Cut(l, 1f);
-            l.Idle = cut[0]; l.Walk = cut[1]; l.AccIdle = cut[2]; l.AccWalk = cut[3]; l.Pet = cut[4]; l.AccPet = cut[5];
-            l.Icon = MakeIcon(l);
+            foreach (var kv in next.Scaled) l.Scaled[kv.Key] = kv.Value;
             l.Signature = d.Signature;
+            ReleaseSprites(old);
+        }
+
+        private static Sprite[][] BaseFrames(Live l) => new[] { l.Idle, l.Walk, l.AccIdle, l.AccWalk, l.Pet, l.AccPet };
+
+        private static void MapSprites(Sprite[][] old, Sprite[][] next, Dictionary<Sprite, Sprite> map) {
+            for (int i = 0; i < old.Length; i++) {
+                if (old[i] == null) continue;
+                for (int j = 0; j < old[i].Length; j++) if (old[i][j] != null)
+                    map[old[i][j]] = next[i] != null && next[i].Length > 0 ? next[i][j % next[i].Length] : next[0][0];
+            }
+        }
+
+        private static void ReplaceRenderers(Dictionary<Sprite, Sprite> map) {
+            if (map.Count == 0) return;
+            foreach (var r in Resources.FindObjectsOfTypeAll(Il2CppInterop.Runtime.Il2CppType.Of<SpriteRenderer>()).Select(o => o.TryCast<SpriteRenderer>()).Where(r => r != null))
+                if (r.sprite != null && map.TryGetValue(r.sprite, out var sprite)) r.sprite = sprite;
+            foreach (var r in Resources.FindObjectsOfTypeAll(Il2CppInterop.Runtime.Il2CppType.Of<UnityEngine.UI.Image>()).Select(o => o.TryCast<UnityEngine.UI.Image>()).Where(r => r != null))
+                if (r.sprite != null && map.TryGetValue(r.sprite, out var sprite)) r.sprite = sprite;
+        }
+
+        private static void DestroyFrames(Live l, Sprite[][] frames) {
+            foreach (var set in frames) if (set != null)
+                foreach (var sprite in set) if (sprite != null) {
+                    l.OwnedSprites.Remove(sprite);
+                    UnityEngine.Object.Destroy(sprite);
+                }
+        }
+
+        private static void ReleaseSprites(Live l) {
+            foreach (var sprite in l.OwnedSprites) if (sprite != null) UnityEngine.Object.Destroy(sprite);
+            l.OwnedSprites.Clear();
+            if (l.Tex != null) UnityEngine.Object.Destroy(l.Tex);
         }
 
         /// <summary>The sheet cut into sprites whose world height is Def.Height under a parent of the given scale.</summary>
@@ -373,6 +430,7 @@ namespace UsefulTORStuff {
                 i = Math.Clamp(i, 0, count - 1);
                 int cx = i % d.Cols, cy = i / d.Cols;
                 var s = Sprite.Create(tex, new Rect(cx * d.CellW, tex.height - (cy + 1) * d.CellH, d.CellW, d.CellH), new Vector2(0.5f, d.Drop / d.Height), ppu);
+                l.OwnedSprites.Add(s);
                 s.name = "pet_" + d.Key + "_" + i;
                 s.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontUnloadUnusedAsset;
                 return s;
@@ -390,6 +448,7 @@ namespace UsefulTORStuff {
             int cx = i % d.Cols, cy = i / d.Cols;
             var s = Sprite.Create(l.Tex, new Rect(cx * d.CellW, l.Tex.height - (cy + 1) * d.CellH, d.CellW, d.CellH), new Vector2(0.5f, 0.62f),
                                   d.CellH / (d.Height * 3.8f));
+            l.OwnedSprites.Add(s);
             s.name = "pet_" + d.Key + "_icon";
             s.hideFlags |= HideFlags.HideAndDontSave | HideFlags.DontUnloadUnusedAsset;
             return s;
@@ -399,7 +458,17 @@ namespace UsefulTORStuff {
             int key = Mathf.RoundToInt(Mathf.Abs(scale) * 1000f);
             if (key == 1000) return new[] { l.Idle, l.Walk, l.AccIdle, l.AccWalk, l.Pet, l.AccPet };
             if (!l.Scaled.TryGetValue(key, out var v)) {
-                if (l.Scaled.Count > 16) l.Scaled.Clear();
+                // Audit 16.11. UTS-3-03: nur unbenutzte Skalierungen verdrängen.
+                if (l.Scaled.Count >= 16) {
+                    var used = new HashSet<Sprite>(Resources.FindObjectsOfTypeAll(Il2CppInterop.Runtime.Il2CppType.Of<SpriteRenderer>())
+                        .Select(o => o.TryCast<SpriteRenderer>()).Where(r => r != null && r.sprite != null).Select(r => r.sprite));
+                    foreach (var pair in l.Scaled.ToArray()) {
+                        if (pair.Value.Any(set => set != null && set.Any(sprite => used.Contains(sprite)))) continue;
+                        DestroyFrames(l, pair.Value);
+                        l.Scaled.Remove(pair.Key);
+                        if (l.Scaled.Count < 16) break;
+                    }
+                }
                 v = Cut(l, key / 1000f);
                 l.Scaled[key] = v;
             }

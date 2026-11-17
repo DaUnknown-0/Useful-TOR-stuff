@@ -412,9 +412,11 @@ namespace UsefulTORStuff {
                     if (wasActive) {
                         isActiveField.SetValue(null, false);
                         foreach (PlayerControl pc in PlayerControl.AllPlayerControls) {
+                            // Audit 16.11. TOR-032: Auch unvollstaendige Spawn-/Disconnectdaten auslassen.
+                            if (pc == null || pc.Data == null) continue;
                             if (Camouflager.camouflageTimer > 0) {
                                 pc.setLook("", 6, "", "", "", "", false);
-                            } else if (pc == Morphling.morphling && Morphling.morphTimer > 0) {
+                            } else if (pc == Morphling.morphling && Morphling.morphTimer > 0 && Morphling.morphTarget != null && Morphling.morphTarget.Data != null) {
                                 PlayerControl target = Morphling.morphTarget;
                                 Morphling.morphling.setLook(target.Data.PlayerName, target.Data.DefaultOutfit.ColorId, target.Data.DefaultOutfit.HatId, target.Data.DefaultOutfit.VisorId, target.Data.DefaultOutfit.SkinId, target.Data.DefaultOutfit.PetId, false);
                             } else if (pc == Ninja.ninja && Ninja.invisibleTimer > 0f) {
@@ -422,19 +424,18 @@ namespace UsefulTORStuff {
                             } else {
                                 Helpers.setDefaultLook(pc, false);
                             }
-                            foreach (DeadBody deadBody in GameObject.FindObjectsOfType<DeadBody>()) {
-                                // TOR-M36: GetPlayerById returns null once the body's owner has
-                                // disconnected; TOR's own resetNightVision dereferences
-                                // .Object.Data.DefaultOutfit.ColorId unconditionally here
-                                // (UsablesPatch.cs:697), throwing and aborting this whole
-                                // PlayerControl loop mid-iteration.
-                                var ownerInfo = GameData.Instance.GetPlayerById(deadBody.ParentId);
-                                if (ownerInfo == null || ownerInfo.Object == null) continue;
-                                var colorId = ownerInfo.Object.Data.DefaultOutfit.ColorId;
-                                SpriteRenderer component = deadBody.bodyRenderers.FirstOrDefault();
-                                component.material.SetColor("_BackColor", Palette.ShadowColors[colorId]);
-                                component.material.SetColor("_BodyColor", Palette.PlayerColors[colorId]);
-                            }
+                        }
+                        // Audit 16.11. TOR-032: Leichen einmal restaurieren, ohne PlayerControl vorauszusetzen.
+                        foreach (DeadBody deadBody in GameObject.FindObjectsOfType<DeadBody>()) {
+                            if (deadBody == null || GameData.Instance == null) continue;
+                            var ownerInfo = GameData.Instance.GetPlayerById(deadBody.ParentId);
+                            if (ownerInfo == null) continue;
+                            var colorId = ownerInfo.DefaultOutfit.ColorId;
+                            if (colorId < 0 || colorId >= Palette.PlayerColors.Length || colorId >= Palette.ShadowColors.Length) continue;
+                            var component = deadBody.bodyRenderers?.FirstOrDefault();
+                            if (component == null) continue;
+                            component.material.SetColor("_BackColor", Palette.ShadowColors[colorId]);
+                            component.material.SetColor("_BodyColor", Palette.PlayerColors[colorId]);
                         }
                     }
                     return false;
@@ -484,7 +485,8 @@ namespace UsefulTORStuff {
                     for (int i = list.Count - 1; i >= 0; i--) {
                         object footprint = list[i];
                         if (footprint == null) { list.RemoveAt(i); continue; }
-                        if (dataField.GetValue(footprint) != null) continue; // healthy entry
+                        // Audit 16.11. TOR-056: Unity-Lebendstatus statt geboxtem object != null.
+                        if (dataField.GetValue(footprint) is NetworkedPlayerInfo data && data != null) continue;
 
                         if (gameObjectField?.GetValue(footprint) is GameObject go && go != null) go.SetActive(false);
                         list.RemoveAt(i);

@@ -561,6 +561,10 @@ namespace UsefulTORStuff {
         }
 
         private static void SendWin(byte revengerId) {
+            // Audit 16.11. UTS Teil 1: nur der Host bestätigt einen tatsächlich beendeten Rachekill.
+            if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost || !active
+                || revenger == null || revenger.PlayerId != revengerId || !UnknownsNet.SenderAlive(revenger)
+                || Helpers.playerById(killerId)?.Data?.IsDead != true || revengerWon) return;
             try {
                 var w = BeginRpc(SubWin);
                 w.Write(revengerId);
@@ -677,12 +681,40 @@ namespace UsefulTORStuff {
         }
 
         private static void ApplyWin(byte revengerId) {
+            // Audit 16.11. UTS Teil 1: auch lokale und wiederholte Aufrufe an die aktuelle Rolle binden.
+            if (revenger == null || revenger.PlayerId != revengerId || revengerWon) return;
             triggerRevengerWin = true;
             revengerWon = true;
             // Snapshot BOTH Lovers now (the win is a Lovers win for just the two of them); the fields
             // survive TOR's end-of-game resetVariables (see above).
             loverData1 = Lovers.lover1 != null ? Lovers.lover1.Data : null;
             loverData2 = Lovers.lover2 != null ? Lovers.lover2.Data : null;
+        }
+
+        // Audit 16.11. UTS Teil 1: gemeinsame Prüfung vor dem Legacy-Empfänger, ohne Zustandsänderung.
+        internal static bool ValidateIncoming(PlayerControl sender, AuditFixA_Payload data) {
+            byte subtype = data.Byte();
+            bool host = UTSRpc.IsHost(sender);
+            byte id;
+            switch (subtype) {
+                case SubDecision:
+                    id = data.Byte(); bool become = data.Bool(); byte killer = data.Byte(), mode = data.Byte();
+                    return host && Helpers.playerById(id)?.Data != null && mode <= ModeBlindRage
+                        && (killer == 255 || Helpers.playerById(killer)?.Data != null)
+                        && (!become || revenger == null || revenger.PlayerId != id);
+                case SubRageDeath: case SubDeniedDeath:
+                    id = data.Byte(); byte index = data.Byte();
+                    return host && revenger?.PlayerId == id && index < (subtype == SubRageDeath ? RageDeathTexts.Length : RevengeDeniedTexts.Length);
+                case SubActive: data.Bool(); return host;
+                case SubDesync:
+                    id = data.Byte(); return revenger?.PlayerId == id;
+                case SubWin:
+                    id = data.Byte(); return host && revenger?.PlayerId == id && !revengerWon;
+                case SubRageArmed:
+                    id = data.Byte(); return revenger?.PlayerId == id && revengerMode == ModeBlindRage
+                        && UnknownsNet.SenderAlive(revenger) && (host || sender == revenger) && rageKills < RageKillLimit();
+                default: return false;
+            }
         }
 
         // ====================================================================
@@ -748,25 +780,18 @@ namespace UsefulTORStuff {
                         }
                         case SubDesync: {
                             byte loverId = reader.ReadByte();
-                            // Any client may report (the one where he is dead is arbitrary), but only
-                            // the host acts, only right after a decision, and only for the Revenger
-                            // it just made: he then dies everywhere (exile, no body) and the half-dead
-                            // state is gone. Clients where he is already dead skip the kill.
+                            // Audit 16.11. UTS Teil 1: fremder Todeszustand ist kein Todesnachweis.
                             if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost
                                 && revenger != null && revenger.PlayerId == loverId
-                                && revenger.Data != null && !revenger.Data.IsDead
-                                && Time.time - decisionAt <= DesyncWindow) {
-                                UsefulTORStuffPlugin.Logger?.LogWarning(
-                                    $"[LoverRevenger] desync reported by {__instance?.Data?.PlayerName}: {revenger.Data.PlayerName} dies everywhere.");
-                                SendDeniedDeath(revenger.PlayerId, (byte)rnd.Next(RevengeDeniedTexts.Length));
-                            }
+                                && Time.time - decisionAt <= DesyncWindow)
+                                UsefulTORStuffPlugin.Logger?.LogWarning("[LoverRevenger] Desync-Hinweis empfangen; kein erzwungener Tod.");
                             break;
                         }
                         case SubWin: {
                             byte revId = reader.ReadByte();
                             // Owner-authored: only the Revenger themselves (or the host) may claim
                             // the win - without this any client could end the game as a Lovers win.
-                            if (UTSRpc.RequireOwnerOrHost(__instance, revenger, "LoverRevenger.Win"))
+                            if (UTSRpc.RequireHost(__instance, "LoverRevenger.Win") && revenger?.PlayerId == revId)
                                 ApplyWin(revId);
                             break;
                         }
@@ -1185,11 +1210,7 @@ namespace UsefulTORStuff {
                 bool correct = targetId == killerId;
 
                 if (correct) {
-                    // Right target in either mode -> flag the win BEFORE the kill, then kill. The kill
-                    // may remove the last evil player; flagging first guarantees the host sees
-                    // triggerRevengerWin when that kill's CheckEndCriteria runs, so it ends with our
-                    // reason (17) instead of racing a Crew "No Evil Killers Left" win.
-                    SendWin(revenger.PlayerId);
+                    // Audit 16.11. UTS Teil 1: der Host bestätigt den Sieg erst nach dem Mord.
                     RpcUncheckedMurder(revenger.PlayerId, targetId);
                 } else if (revengerMode == ModeTargeted) {
                     // Wrong target -> misfire, the Revenger dies.
@@ -1214,39 +1235,19 @@ namespace UsefulTORStuff {
         // ====================================================================
         [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.MurderPlayer))]
         static class KillerRevengerWinPatch {
-            // The HOST flags the win before the kill runs (audit 04.10.): the Revenger's own SendWin
-            // below only arrives after the kill, and a kill that removes the last evil player could
-            // end the round as a normal win first. Every client knows revenger/killerId/revengerOwnKill.
-            //
-            // Only for a kill that actually succeeds (audit 08.10.): MurderPlayer is also called for a
-            // blocked kill (Medic shield, armored target: resultFlags without Succeeded) so the animation
-            // plays, and flagging the win there handed the Lovers a victory for a kill that never landed.
-            // The flags are known BEFORE the kill runs, so the race fix above is kept.
+            // Audit 16.11. UTS Teil 1: vor/nach dem Mord prüfen, auch beim eigenen Revenger-Button.
             [HarmonyPriority(Priority.First)]
-            public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target, [HarmonyArgument(1)] MurderResultFlags resultFlags) {
-                try {
-                    if (!active || revengerWon || revenger == null || !revengerOwnKill) return;
-                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
-                    if (__instance != revenger || target == null || target.PlayerId != killerId) return;
-                    if ((resultFlags & MurderResultFlags.Succeeded) == 0) return;
-                    SendWin(revenger.PlayerId);
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] host revenger win failed: {e}");
-                }
+            public static void Prefix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target,
+                                      [HarmonyArgument(1)] MurderResultFlags resultFlags, out bool __state) {
+                __state = active && !revengerWon && revenger != null && __instance == revenger
+                    && UnknownsNet.SenderAlive(revenger) && UnknownsNet.SenderAlive(target)
+                    && target.PlayerId == killerId && (resultFlags & MurderResultFlags.Succeeded) != 0;
             }
 
-            public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target, [HarmonyArgument(1)] MurderResultFlags resultFlags) {
-                try {
-                    if (!active || revengerWon || revenger == null) return;
-                    if (__instance != revenger || __instance != PlayerControl.LocalPlayer) return; // own kill only, once
-                    if (!revengerOwnKill) return;                  // non-killers use the Revenger button
-                    if (target == null || target.PlayerId != killerId) return; // only the Lover's killer wins
-                    if ((resultFlags & MurderResultFlags.Succeeded) == 0) return; // a blocked kill is no revenge
-                    if (target.Data == null || !target.Data.IsDead) return;      // also not one a prefix stopped
-                    SendWin(revenger.PlayerId);
-                } catch (Exception e) {
-                    UsefulTORStuffPlugin.Logger?.LogError($"[LoverRevenger] killer-revenger win failed: {e}");
-                }
+            [HarmonyPriority(Priority.Last)]
+            public static void Postfix(PlayerControl __instance, [HarmonyArgument(0)] PlayerControl target, bool __state) {
+                if (__state && target?.Data?.IsDead == true && AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost)
+                    SendWin(__instance.PlayerId);
             }
         }
 

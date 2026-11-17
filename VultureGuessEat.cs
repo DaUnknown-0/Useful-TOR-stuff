@@ -45,6 +45,12 @@ namespace UsefulTORStuff {
         public static CustomOption Option; // Off/On toggle
         public static CustomOption SoundOption; // Off/On toggle, child of Option — play the eat sound on a counted guess
 
+        private static readonly System.Collections.Generic.HashSet<byte> countedVictims = new();
+        [HarmonyPatch(typeof(RPCProcedure), nameof(RPCProcedure.resetVariables))]
+        private static class CountResetPatch { public static void Postfix() { countedVictims.Clear(); } }
+        [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
+        private static class CountJoinPatch { public static void Postfix() { countedVictims.Clear(); } }
+
         // Create the in-game option (under Vulture). Called from UsefulTORStuffPlugin.Load() after
         // TOR has already run CustomOptionHolder.Load() (guaranteed by the hard dependency).
         public static void CreateOptions() {
@@ -99,7 +105,7 @@ namespace UsefulTORStuff {
                     return;
                 }
 
-                harmony.Patch(guesserShoot, postfix: new HarmonyMethod(typeof(VultureGuessEat), nameof(GuesserShootPostfix)));
+                harmony.Patch(guesserShoot, prefix: new HarmonyMethod(typeof(VultureGuessEat), nameof(GuesserShootPrefix)) { priority = int.MaxValue }, postfix: new HarmonyMethod(typeof(VultureGuessEat), nameof(GuesserShootPostfix)));
                 UsefulTORStuffPlugin.Logger?.LogInfo("[VultureGuessEat] Patched guesserShoot — guessed players count toward the Vulture win.");
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[VultureGuessEat] TryPatch failed: {e}");
@@ -115,7 +121,11 @@ namespace UsefulTORStuff {
         // lover partner or Lawyer suicide is NOT counted. guesserShoot runs exactly once per client
         // per guess (local call + RPC handler), so this never double-counts; the host runs it too,
         // so the host-side increment + host-authoritative VultureWin check fire.
-        public static void GuesserShootPostfix(byte __0, byte __1) {
+        // Audit 16.11. UTS Teil 3: nur ein neuer tatsächlicher Tod zählt, auch bei unterdrückendem Prefix.
+        public static void GuesserShootPrefix(byte __1, out bool __state) {
+            __state = UnknownsNet.SenderAlive(Helpers.playerById(__1));
+        }
+        public static void GuesserShootPostfix(byte __0, byte __1, bool __state) {
             try {
                 if (Option == null || !UTSGate.Bool(Option)) return;        // option off
 
@@ -124,7 +134,7 @@ namespace UsefulTORStuff {
                 if (__0 != vulture.PlayerId) return; // only the Vulture's own guess counts
 
                 var dying = Helpers.playerById(__1);
-                if (dying == null) return; // guesserShoot bailed early (RPC.cs:990) — nobody died
+                if (!__state || dying?.Data?.IsDead != true || !countedVictims.Add(__1)) return; // Audit 16.11. UTS Teil 3: kein neuer Tod, keine Mahlzeit.
 
                 // Mirror cleanBody's win snippet (RPC.cs:540-543); >= instead of == as a defensive
                 // hardening (harmless since each guess adds exactly 1).

@@ -1,4 +1,4 @@
-// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
+﻿// Useful TOR Stuff - Copyright (C) 2026 DaUnknown-0
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
@@ -476,27 +476,11 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Plausibility check before trusting a break-armor message (AUDIT): the sender here is the
-        // KILLER's client, not the host (checkArmored runs locally on whoever attempted the murder),
-        // so this cannot use UTSRpc.RequireHost - the host must still be accepted outright (it may
-        // relay/act on a client's behalf, same convention as RequireOwnerOrHost), but a non-host
-        // sender is only believable if they exist, are not naming THEMSELVES as the newly
-        // unarmored target, and the target is actually marked extra-armored in the first place.
-        // Anything else is a forged/buggy message and is dropped rather than desyncing the armor set.
-        // AUDIT: no longer requires the sender to still be alive - a legitimate break-armor message
-        // is sent from checkArmored the moment a murder attempt lands, so a simultaneous death of
-        // the sender (e.g. an unrelated kill resolving the same tick) must not discard an otherwise
-        // valid message; sender != null / PlayerId mismatch / IsExtraArmored already reject forgery.
+        // Audit 16.11. UTS Teil 2: Rollenberechtigung und Angriffsnähe inklusive legitimer Selbstbrüche prüfen.
         private static void ApplyBreakExtraArmor(PlayerControl sender, byte playerId) {
             try {
-                if (!UTSRpc.IsHost(sender)) {
-                    if (sender == null || sender.PlayerId == playerId || !IsExtraArmored(playerId)) {
-                        UsefulTORStuffPlugin.Logger?.LogWarning(
-                            $"[MultiModifiers] implausible break-armor from player " +
-                            $"{sender?.PlayerId.ToString() ?? "?"} for target {playerId} - ignored.");
-                        return;
-                    }
-                }
+                // Audit 16.11. UTS Teil 2: identische Angriffsprüfung auf beiden Empfangspfaden.
+                if (!IsExtraArmored(playerId) || !AuditFixA_RpcBoundary.ArmorAttempt(sender, playerId)) return;
                 brokenExtraArmor.Add(playerId);
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[MultiModifiers] break-armor apply failed: {e}");

@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.7.6";
+    public const string PluginVersion = "1.7.6.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -638,6 +638,8 @@ public class UsefulTORStuffPlugin : BasePlugin
             // The updater keeps working: a disabled mod must still be updatable, and the manager
             // reads its state to show what needs updating.
             AddComponent<UsefulTORStuffUpdater>();
+            // Audit 16.11. UTS-3-04: Installationen auch im Manager-only-Modus anbieten.
+            AddComponent<UTSModDownloader>();
             ModManagerRegistry.MarkUpdateCheckNow();
 
             AddComponent<ModManagerButton>();

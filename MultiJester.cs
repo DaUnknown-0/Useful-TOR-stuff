@@ -570,12 +570,19 @@ namespace UsefulTORStuff {
         private static byte? endWinnerId;
         private static byte endLawyerId = byte.MaxValue, endLawyerTargetId = byte.MaxValue;
         private static bool endLawyerBonus;
+        private static readonly HashSet<byte> endLovers = new(); // Audit 16.11. UTS-1-04
 
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameEnd))]
         private static class WinnerSnapshotPatch {
             [HarmonyPriority(Priority.First)]
-            public static void Prefix() {
+            public static void Prefix([HarmonyArgument(0)] EndGameResult endGameResult) {
                 try {
+                    endLovers.Clear();
+                    if (Lovers.existingAndAlive() && ((int)endGameResult.GameOverReason == 10
+                        || (GameManager.Instance.DidHumansWin(endGameResult.GameOverReason) && !Lovers.existingWithKiller()))) {
+                        endLovers.Add(Lovers.lover1.PlayerId);
+                        endLovers.Add(Lovers.lover2.PlayerId);
+                    }
                     endJesters.Clear();
                     endJesters.AddRange(extraJesters);
                     endWinnerId = winnerId;
@@ -635,6 +642,8 @@ namespace UsefulTORStuff {
                     // PlayerId. Iterated backwards so removing an entry can't skip the next one.
                     var names = new HashSet<string>();
                     foreach (byte id in endJesters) {
+                        // Audit 16.11. UTS-1-04: TOR hat zulässige Lovers bereits wieder hinzugefügt.
+                        if (endLovers.Contains(id)) continue;
                         var p = Helpers.playerById(id);
                         if (p?.Data != null) names.Add(p.Data.PlayerName);
                     }

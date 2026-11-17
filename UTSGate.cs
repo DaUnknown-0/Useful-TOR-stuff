@@ -2,52 +2,9 @@
 // Licensed under GPL-3.0-or-later. See LICENSE for details.
 // Based on The Other Roles (https://github.com/TheOtherRolesAU/TheOtherRoles), GPL-3.0.
 
-/*
- * UTSGate - "the host does not have this mod" gate for every settings-driven feature.
- *
- * THE PROBLEM
- * TOR's option sync is host-driven: CustomOption.ShareOptionSelections() walks the host's
- * CustomOption.options list and broadcasts (id, selection) pairs; every client writes those onto
- * the option with the matching id (CustomOptions.cs, ShareOptions RPC). An option the host does
- * not HAVE is never in that list, so it is never sent, so the client keeps whatever value its own
- * BepInEx config last stored (CustomOption ctor: selection = entry.Value).
- *
- * Consequence: a client running Forgotten Fixes in a lobby whose host does NOT run it keeps every
- * one of our options at its own locally saved value, while nobody else in the lobby plays by those
- * values. That is not a cosmetic desync, it is a one-sided rule change: shorter sabotage cooldowns,
- * extra Mini/Armored/Tiebreaker holders, the Medic's unshield button, the Lawyer/Lover map tracker,
- * a Trickster mixup sabotage that only exists on one screen, ... all of it silently in that one
- * player's favour, and all of it invisible to everyone else.
- *
- * THE RULE
- * A settings-driven feature may only act when the settings it reads are the ones the whole lobby
- * agreed on, i.e. when the HOST has this mod (then the host's values arrive via TOR's normal sync
- * and everyone reads the same numbers). We are always allowed to act when we ARE the host, since
- * then our values are what gets shared.
- *
- * HOW
- * Not by rewriting CustomOption.selection: the host's own sync writes into that same field, so
- * blanking it would race the sync and (via TOR's preset/config paths) risk persisting the blanked
- * value. Instead every feature reads its options THROUGH this class, which returns the option's
- * defaultSelection while the gate is closed. Every option in this mod defaults to "the behaviour
- * TOR has without it" (toggles default Off, quantity options default to 1), so a closed gate is
- * exactly vanilla TOR behaviour, with no state touched and nothing to restore afterwards.
- *
- * WHICH OPTIONS
- * Only the ones this mod created. Features also read TOR's own options (CustomOptionHolder.*) and
- * those come from the host over the normal sync, so they must keep their real value. The owned set
- * is captured automatically in UsefulTORStuffPlugin.Load(): snapshot CustomOption.options before
- * our CreateOptions() calls, diff afterwards. That way a future feature is gated the day it is
- * written, with no registration list to forget to update.
- *
- * WHAT IS NOT GATED
- * Bugfixes without an option (Bloody throttle, Bloody killer map, Trapper shift charges, sound at
- * position, Snitch client fix - which has its own, stricter "everyone has the mod" gate) stay
- * active: they repair TOR behaviour instead of changing the agreed rules, and they cost nobody
- * anything. Local tools (Mod Manager, WebConfig, lobby password gate, map language toggle) are
- * likewise untouched; WebConfig deliberately reads CustomOption.selection directly, so the host's
- * settings editor always shows the real stored values.
- */
+// Audit 16.11. UTS Teil 3: Regeloptionen sind nur nach Empfang vom aktuellen Host aktiv.
+// Nicht übertragene Optionen behalten ihre Config, werden aber mit defaultSelection gelesen.
+// TOR-Optionen und ausdrücklich lokale Anzeigeoptionen bleiben davon ausgenommen.
 
 using System;
 using System.Collections.Generic;
@@ -118,10 +75,7 @@ namespace UsefulTORStuff {
 
         // ── The gate itself ───────────────────────────────────────────────────────────────────
 
-        // Latched in the lobby (GameStartManager.Update stops running once the game starts), so the
-        // value a round plays under is the one that was true when it started. Optimistic default:
-        // "open" until a lobby frame proves otherwise, so main menu / freeplay / any code path that
-        // never reaches a lobby behaves normally.
+        // Mod-Anwesenheit und empfangene IDs werden getrennt geprüft.
         private static bool hostHasMod = true;
 
         // Remembers what we last logged/announced, so the state change is reported once, not per frame.
@@ -140,15 +94,30 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Recomputed every lobby frame from the mod-presence handshake (UsefulVersionHandshake).
-        // The host's client id is AmongUsClient.Instance.HostId - the same lookup TOR itself uses to
-        // detect a host without TOR (GameStartManagerPatch.cs:147). Version differences are NOT
-        // checked here: a host with any build of this mod still shares OUR option ids, which is all
-        // the gate needs. Mismatched versions are surfaced separately by the Mod-Check board.
+        // Audit 16.11. UTS Teil 3: Anwesenheit allein sagt nichts über einzelne Options-IDs.
+        // Nur in dieser Lobby vom aktuellen Host empfangene Optionen dürfen Regeln aktivieren.
+        private static readonly HashSet<int> receivedHostOptions = new();
+        private static int receivedHost = int.MinValue, receivedGame = int.MinValue;
+
+        private static void CheckHost() {
+            var client = AmongUsClient.Instance;
+            if (client == null) return;
+            if (receivedHost == client.HostId && receivedGame == client.GameId) return;
+            receivedHostOptions.Clear();
+            receivedHost = client.HostId;
+            receivedGame = client.GameId;
+        }
+
+        internal static void RecordHostOption(int id) {
+            CheckHost();
+            receivedHostOptions.Add(id);
+        }
+
         public static void EvaluateInLobby() {
             try {
                 var client = AmongUsClient.Instance;
                 if (client == null) return;
+                CheckHost();
                 SetState(client.AmHost
                          || UsefulVersionHandshake.playerVersions.ContainsKey(client.HostId));
             } catch (Exception ex) {
@@ -156,10 +125,11 @@ namespace UsefulTORStuff {
             }
         }
 
-        // Joining a lobby resets the latch to "open": the handshake dictionary was just cleared, so
-        // an immediate false would only mean "nobody has answered yet". The first lobby frames after
-        // the host's broadcast settle it, long before a round can start.
-        public static void ResetOnGameJoined() => SetState(true);
+        public static void ResetOnGameJoined() {
+            receivedHostOptions.Clear();
+            receivedHost = receivedGame = int.MinValue;
+            SetState(AmongUsClient.Instance?.AmHost == true);
+        }
 
         private static void SetState(bool active) {
             hostHasMod = active;
@@ -178,7 +148,10 @@ namespace UsefulTORStuff {
 
         private static int Index(CustomOption option) {
             if (option == null) return 0;
-            if (SettingsActive || !ownOptionIds.Contains(option.id) || alwaysActiveIds.Contains(option.id))
+            CheckHost();
+            bool localAuthority = AmongUsClient.Instance == null || AmongUsClient.Instance.AmHost;
+            if (!ownOptionIds.Contains(option.id) || alwaysActiveIds.Contains(option.id)
+                || localAuthority || (SettingsActive && receivedHostOptions.Contains(option.id)))
                 return option.selection;
             return option.defaultSelection;
         }

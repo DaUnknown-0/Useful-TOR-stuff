@@ -190,7 +190,9 @@ namespace UsefulTORStuff {
         }
 
         // Signature mirrors TOR's private guesserOnClick(int buttonTarget, MeetingHud __instance).
-        public static bool GuesserClickPrefix(int buttonTarget, MeetingHud __instance) {
+        // Audit 16.11. UTS Teil 3: Ziel ist statisch, Meeting explizit als zweites Argument binden.
+        public static bool GuesserClickPrefix(int buttonTarget, [HarmonyArgument(1)] MeetingHud meeting) {
+            var __instance = meeting;
             try {
                 if (__instance == null || __instance.playerStates == null) return true;
                 if (buttonTarget < 0 || buttonTarget >= __instance.playerStates.Length) return true;

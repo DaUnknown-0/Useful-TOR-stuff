@@ -175,7 +175,8 @@ namespace UsefulTORStuff
                     "com.tormod.usefultorstuff",
                     "com.tormod.nightfall",
                     "com.daunknown0.atlas",
-                    "com.daunknown.unknownshalloween"
+                    "com.daunknown.unknownshalloween",
+                    "com.daunknown.smokescreen"
                 };
 
                 foreach (var guid in knownGuids)

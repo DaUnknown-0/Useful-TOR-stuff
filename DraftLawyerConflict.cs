@@ -101,6 +101,8 @@ namespace UsefulTORStuff {
                         + ", sendPick=" + (sendPick != null) + ") - Lawyer/Prosecutor stay TOR's in the draft.");
                     return;
                 }
+                // Audit 16.11. UTS-1-06: Grant ausschließlich aus der empfangenen Originalwahl.
+                harmony.Patch(draft.GetMethod("receivePick", all), prefix: new HarmonyMethod(typeof(DraftLawyerConflict), nameof(ReceivePickPrefix)));
                 harmony.Patch(sendPick, prefix: new HarmonyMethod(typeof(DraftLawyerConflict), nameof(SendPickPrefix)));
                 UsefulTORStuffPlugin.Logger?.LogInfo("[DraftLawyer] role draft patched.");
             } catch (Exception e) {
@@ -130,7 +132,7 @@ namespace UsefulTORStuff {
         private static int EffectiveMode() {
             if (Mode == null || !UTSGate.SettingsActive) return -1;
             int m = UTSGate.Sel(Mode);
-            if (m == ModeCrewGuesser && !GuesserMode()) m = ModeHide;
+            if (m == ModeCrewGuesser && (!GuesserMode() || !UsefulVersionHandshake.EveryoneHasMod())) m = ModeHide;
             return m;
         }
 
@@ -207,8 +209,8 @@ namespace UsefulTORStuff {
                 if (mode < 0) return;
                 byte before = RoleId;
                 if (mode == ModeCrewGuesser) {
-                    RoleId = (byte)TheOtherRoles.RoleId.Crewmate;
-                    SendGrant();
+                    // Audit 16.11. UTS-1-06: Originalwahl geht an receivePick auf allen Clients.
+                    return;
                 } else {
                     // ModeRandom, and ModeHide as a safety net (the hold should have kept it off the buttons)
                     RoleId = RandomOtherOnButtons(other);
@@ -222,47 +224,47 @@ namespace UsefulTORStuff {
         // a random role among the picker's other buttons (TOR already checked their limits), else Crewmate
         private static byte RandomOtherOnButtons(RoleId other) {
             var shown = new List<RoleInfo>();
+            bool recognizedLabel = false;
             if (buttonsField.GetValue(null) is IList buttons) {
                 foreach (var o in buttons) {
                     var b = o as ActionButton;
                     if (b == null) continue;
-                    var tmp = b.GetComponentInChildren<TMPro.TextMeshPro>(true);
+                    // Audit 16.11. UTS-1-09: TOR erstellt den Rollentext ausdrücklich als textHolder.
+                    var tmp = b.transform.Find("textHolder")?.GetComponent<TMPro.TextMeshPro>();
                     if (tmp == null) continue;
                     string text = tmp.text ?? "";
                     var info = RoleInfo.allRoleInfos.FirstOrDefault(r => r.name != null && r.name.Replace(" ", "\n") == text);
+                    if (info != null) recognizedLabel = true;
                     if (info == null || info.roleId == other || info.roleId == TheOtherRoles.RoleId.Lawyer
                         || info.roleId == TheOtherRoles.RoleId.Prosecutor || shown.Contains(info)) continue;
                     shown.Add(info);
                 }
             }
-            if (shown.Count == 0) return (byte)TheOtherRoles.RoleId.Crewmate;
+            if (shown.Count == 0) {
+                UsefulTORStuffPlugin.Logger?.LogInfo(recognizedLabel
+                    ? "[DraftLawyer] Keine andere angebotene Rolle. Ersatz: Crewmate."
+                    : "[DraftLawyer] Rollentexte nicht erkannt. Ersatz: Crewmate.");
+                return (byte)TheOtherRoles.RoleId.Crewmate;
+            }
             return (byte)shown[UnityEngine.Random.Range(0, shown.Count)].roleId;
         }
 
         // ---- the Guesser on top (mode 2) ----
 
-        private static void SendGrant() {
-            var lp = PlayerControl.LocalPlayer;
-            if (lp == null) return;
-            if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) { guesserGrants.Add(lp.PlayerId); return; }
-            if (!UTSRpc.CanSend) return;
-            var w = UTSRpc.Begin(GuesserGrantRpcId);
-            AmongUsClient.Instance.FinishRpcImmediately(w);
-        }
+        // Audit 16.11. UTS-1-06: veraltete payloadlose Selbstauskünfte begründen keinen Grant.
+        private static void HandleGrant(MessageReader reader) { }
 
-        // picker -> host, no payload: the grant is always for the sender himself
-        private static void HandleGrant(MessageReader reader) {
-            var sender = UTSRpc.Sender;
-            if (sender == null || AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost) return;
+        public static void ReceivePickPrefix(byte playerId, ref byte roleId) {
             if (!DraftRunning() || EffectiveMode() != ModeCrewGuesser) return;
-            // Only plausible while Lawyer or Prosecutor is already taken; that the sender really ended up a
-            // Crewmate is checked when the grant is handed out (the claim arrives before his pick).
-            if (!Taken().HasValue) {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[DraftLawyer] player {sender.PlayerId} claimed a Guesser, but neither Lawyer nor Prosecutor is taken - ignored.");
-                return;
-            }
-            guesserGrants.Add(sender.PlayerId);
-            UsefulTORStuffPlugin.Logger?.LogInfo($"[DraftLawyer] player {sender.PlayerId} is owed a Guesser.");
+            var taken = Taken();
+            if (!taken.HasValue) return;
+            var other = taken.Value == RoleId.Lawyer ? RoleId.Prosecutor : RoleId.Lawyer;
+            if (roleId != (byte)other) return;
+            var draft = isRunningField.DeclaringType;
+            var order = AccessTools.Field(draft, "pickOrder")?.GetValue(null) as List<byte>;
+            if (order == null || order.Count == 0 || order[0] != playerId) return;
+            roleId = (byte)RoleId.Crewmate;
+            if (AmongUsClient.Instance != null && AmongUsClient.Instance.AmHost) guesserGrants.Add(playerId);
         }
 
         [HarmonyPatch(typeof(IntroCutscene), nameof(IntroCutscene.OnDestroy))]
@@ -271,7 +273,8 @@ namespace UsefulTORStuff {
                 Release();
                 if (guesserGrants.Count == 0) return;
                 try {
-                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost || !GuesserMode()) return;
+                    if (AmongUsClient.Instance == null || !AmongUsClient.Instance.AmHost || !GuesserMode()
+                        || !AmongUsClient.Instance.IsGameStarted || ShipStatus.Instance == null) return;
                     byte rpc = SetGuesserGmId();
                     if (rpc == 0) return;
                     foreach (byte id in guesserGrants) {
@@ -301,6 +304,12 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]
         static class JoinPatch {
             public static void Postfix() { Release(); guesserGrants.Clear(); }
+        }
+
+        [HarmonyPatch(typeof(ShipStatus), nameof(ShipStatus.Start))]
+        static class RoundStartPatch {
+            // Audit 16.11. UTS-1-06: ein abgebrochener Draft begründet keinen Grant der nächsten Runde.
+            public static void Prefix() { Release(); guesserGrants.Clear(); }
         }
     }
 }

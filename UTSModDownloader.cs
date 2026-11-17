@@ -246,6 +246,8 @@ namespace UsefulTORStuff {
                 job.TargetVersion = target.Version;
                 // nothing to do when that version is already installed (running or switched off)
                 var local = UTSModCatalog.StateOf(job.Catalog, out var localVersion);
+                // Audit 16.11. UTS-3-08: vorbereiteten Dateistand statt nur laufender Version vergleichen.
+                localVersion = AuditFixD_PluginInstall.PreparedVersion(job.Catalog.WriteTargetPath, localVersion);
                 if (local != LocalModState.Missing && localVersion != null
                     && UsefulTORStuffUpdater.SemCompare(localVersion, job.TargetVersion) == 0) {
                     job.NoChange = true;
@@ -305,32 +307,11 @@ namespace UsefulTORStuff {
                 yield break;
             }
 
-            bool moved = false;
-            try {
-                if (File.Exists(filePath + ".old")) File.Delete(filePath + ".old");
-                if (File.Exists(filePath)) { File.Move(filePath, filePath + ".old"); moved = true; }
-            } catch (Exception ex) {
-                UsefulTORStuffPlugin.Logger?.LogError($"[ModSync] {job.Catalog.DisplayName}: {ex.Message}");
-                Fail(job, "uts.modsync.error_write");
-                yield break;
-            }
-
-            var persist = File.WriteAllBytesAsync(filePath, data);
-            while (!persist.IsCompleted) {
-                if (persist.Exception != null) break;
-                yield return new WaitForEndOfFrame();
-            }
-
-            if (persist.IsFaulted || persist.IsCanceled) {
-                UsefulTORStuffPlugin.Logger?.LogError(
-                    $"[ModSync] {job.Catalog.DisplayName}: write failed - {persist.Exception?.Message ?? "canceled"}");
-                // Put the previous DLL back, otherwise a failed replace leaves the player with no mod.
-                // A write that failed midway has already created a truncated file, which has to go
-                // first; checking "no file there" alone kept the broken DLL and left the good one as .old.
-                try {
-                    if (File.Exists(filePath)) File.Delete(filePath);
-                    if (moved) File.Move(filePath + ".old", filePath);
-                } catch { }
+            // Audit 16.11. UTS-3-06: gemeinsamer atomarer Austausch mit dem Selbstupdater.
+            var persist = AuditFixD_PluginInstall.Install(filePath, data, job.TargetVersion);
+            while (!persist.IsCompleted) yield return new WaitForEndOfFrame();
+            if (!persist.IsCompletedSuccessfully) {
+                UsefulTORStuffPlugin.Logger?.LogError($"[ModSync] Installation fehlgeschlagen: {persist.Exception?.GetBaseException().Message}");
                 Fail(job, "uts.modsync.error_write");
                 yield break;
             }

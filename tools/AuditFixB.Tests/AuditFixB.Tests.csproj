@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net6.0</TargetFramework><CheckEolTargetFramework>false</CheckEolTargetFramework><EnableDefaultCompileItems>false</EnableDefaultCompileItems><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+ <ItemGroup>
+  <ProjectReference Include="TorStub/TorStub.csproj" />
+  <ProjectReference Include="ModStub/ModStub.csproj" />
+  <PackageReference Include="HarmonyX" Version="2.10.2" />
+  <Compile Include="Program.cs" />
+  <Compile Include="../../OptionSyncFix.cs;../../PacedOptionSync.cs;../../UTSGate.cs;../../AuditFixB_OptionCodec.cs;../../AuditFixB_Presets.cs;../../AuditFixB_Clipboard.cs" />
+ </ItemGroup>
+</Project>

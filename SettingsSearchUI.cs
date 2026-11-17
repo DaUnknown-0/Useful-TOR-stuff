@@ -61,6 +61,14 @@ namespace UsefulTORStuff {
         private static Dictionary<int, string> haystack;
         private static Dictionary<int, CustomOption> sectionOf;
         private static int builtFor = -1;
+        static SettingsSearch() {
+            // Audit 16.11. UTS-2-08: übersetzte Namen ändern sich bei gleicher Optionszahl.
+            UTSLocalization.LanguageApplied += () => {
+                haystack = null;
+                builtFor = -1;
+                SettingsSearchEdit.Dirty = SettingsSearchView.Dirty = true;
+            };
+        }
 
         internal static string SectionTitle(CustomOption header) =>
             header == null ? "" : (!string.IsNullOrEmpty(header.heading) ? header.heading : header.name);

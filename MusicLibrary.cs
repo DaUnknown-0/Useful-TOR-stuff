@@ -197,13 +197,17 @@ namespace UsefulTORStuff {
 
         /// Every downloaded version goes; "Load music" would bring them back (nothing is marked deleted).
         internal static void DeleteAll() {
-            queue.Clear();
-            foreach (var t in AllVersions) {
-                try { if (File.Exists(PathOf(t))) File.Delete(PathOf(t)); } catch (Exception e) { Warn($"delete {t.Key}: {e.Message}"); }
-                DraftMusic.Forget(t.Key);
+            // Audit 16.11. UTS-2-09: Löschung und Veröffentlichung bilden dieselbe kritische Sektion.
+            lock (storeLock) {
+                generation++;
+                queue.Clear();
+                foreach (var t in AllVersions) {
+                    try { if (File.Exists(PathOf(t))) File.Delete(PathOf(t)); } catch (Exception e) { Warn($"delete {t.Key}: {e.Message}"); }
+                    DraftMusic.Forget(t.Key);
+                }
+                present.Clear();
+                state.Clear();
             }
-            present.Clear();
-            state.Clear();
             Log("all music deleted");
             DraftMusic.Changed();
         }
@@ -218,6 +222,8 @@ namespace UsefulTORStuff {
         private static string running;
         private static float runningProgress;
         private static bool worker;
+        private static readonly object storeLock = new();
+        private static int generation;
 
         internal static Dl StateOf(DraftMusic.Track t) {
             if (t == null) return Dl.None;
@@ -278,6 +284,7 @@ namespace UsefulTORStuff {
                 queue.RemoveAt(0);
                 var t = Version(key);
                 if (t == null || Ready(t)) { state.Remove(key); continue; }
+                int jobGeneration = generation;
                 running = key;
                 runningProgress = 0f;
                 DraftMusic.Changed();
@@ -304,11 +311,14 @@ namespace UsefulTORStuff {
                 www.Dispose();
 
                 if (error == null) {
-                    var write = Task.Run(() => Store(t, data));
+                    var write = Task.Run(() => {
+                        lock (storeLock) return jobGeneration == generation ? Store(t, data) : "abgebrochen";
+                    });
                     while (!write.IsCompleted) yield return null;
                     error = write.IsFaulted ? write.Exception?.GetBaseException().Message : write.Result;
                 }
                 running = null;
+                if (jobGeneration != generation) { state.Remove(key); DraftMusic.Changed(); continue; }
                 present.Remove(key);
                 if (error == null) { state.Remove(key); Log($"{key} downloaded ({t.Size} bytes)"); }
                 else { state[key] = Dl.Failed; Warn($"{key}: download failed ({error})"); }

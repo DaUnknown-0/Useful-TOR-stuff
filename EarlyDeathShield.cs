@@ -87,6 +87,7 @@ namespace UsefulTORStuff {
         // to the 2nd or 3rd meeting (User 2026-10-02). A separate sub so an older build, which knows
         // only Sub 0, still shields everyone until the first meeting as before.
         private const byte SubMeetings   = 4;
+        private const byte SubRoundAssigned = 5; // Audit 16.11. UTS-1-05: kein Lobby-Vorschaumarker.
 
         private static int LastsUntil(byte id) => lastsUntil.TryGetValue(id, out int n) ? n : 1;
         /// The meeting this player's shield lasts to (1 unless the host forced a longer one).
@@ -416,6 +417,9 @@ namespace UsefulTORStuff {
                         if (UTSRpc.RequireHost("EarlyDeathShield.SetShields")) ApplySetShields(ids);
                         break;
                     }
+                    case SubRoundAssigned:
+                        if (UTSRpc.RequireHost("EarlyDeathShield.RoundAssigned")) assignedThisRound = true;
+                        break;
                     case SubClear:
                         if (UTSRpc.RequireHost("EarlyDeathShield.Clear")) ApplyClear();
                         break;
@@ -559,7 +563,13 @@ namespace UsefulTORStuff {
                                        + (r.Override == DeathTimeHistory.OverrideOn ? $", forced until meeting {r.Meetings}" : "") + ")")) : "")
                     + ".");
 
-                if (list.Count > 0) SendSetShields(list);
+                SendSetShields(list);
+                // Audit 16.11. UTS-1-05: leere Liste ist ebenfalls eine abgeschlossene Vergabe.
+                if (UTSRpc.CanSend) {
+                    var writer = UTSRpc.Begin(RpcId);
+                    writer.Write(SubRoundAssigned);
+                    AmongUsClient.Instance.FinishRpcImmediately(writer);
+                }
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[EarlyDeathShield] round start failed: {e}");
             }
@@ -570,6 +580,7 @@ namespace UsefulTORStuff {
             public static void Postfix() {
                 try {
                     meetingsSeen++;
+                    assignedThisRound = true;
                     DropExpired(true);
                 } catch { }
             }
@@ -692,6 +703,7 @@ namespace UsefulTORStuff {
                 shielded.Clear();
                 lastsUntil.Clear();
                 meetingsSeen = 0;
+                assignedThisRound = false;
                 lastPreviewKey = "";
             }
         }
@@ -703,6 +715,7 @@ namespace UsefulTORStuff {
                 shielded.Clear();
                 lastsUntil.Clear();
                 meetingsSeen = 0;
+                assignedThisRound = false;
                 lastPreviewKey = "";
             }
         }

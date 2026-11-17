@@ -268,6 +268,7 @@ namespace UsefulTORStuff {
 
         public static void RoundCaptured(List<RoundEntry> entries, DateTime start, DateTime end, float gameplaySeconds, int mapId, string mapName) {
             if (entries == null || entries.Count == 0) return;
+            MergeExtCounts(entries); // Audit 16.11. UTS-2-06: vor dem Rundencleanup übernehmen.
             pending = entries;
             pendingStart = start;
             pendingEnd = end;
@@ -304,8 +305,6 @@ namespace UsefulTORStuff {
                 return;
             }
             foreach (var e in entries) e.Won = winners.Contains(e.Name);
-            MergeExtCounts(entries);
-
             EnsureLoaded();
             var newest = Newest();
             if (newest != DateTime.MinValue && pendingStart - newest > DeathTimeHistory.SessionGap) {
@@ -544,7 +543,11 @@ namespace UsefulTORStuff {
 
         // Built-in title on the same counters: rounds in which a player carried a newcomer or early death shield.
         internal const string ShieldTitleId = "uts.shielded";
-        private static readonly Dictionary<byte, float> shieldCountedAt = new Dictionary<byte, float>();
+        // Audit 16.11. UTS-2-07: stabile Identität innerhalb einer Runde, keine Zeitfenster.
+        private static readonly HashSet<string> shieldCounted = new();
+        internal static void ClearRoundCounts() {
+            extCounts.Clear(); shieldCounted.Clear(); dataVersion++;
+        }
 
         private static void AddShieldTitle() {
             AddTitle(ShieldTitleId, 50,
@@ -553,13 +556,13 @@ namespace UsefulTORStuff {
         }
 
         /// <summary>A shield was handed to this player. Only the list of the round start counts (intro end): in the
-        /// lobby the same message is just the preview of who would get one. A repeat within two minutes is the same shield.</summary>
+        /// lobby the same message is just the preview of who would get one. Repeats in the same round count once.</summary>
         internal static void CountShield(byte playerId) {
             try {
-                if (ShipStatus.Instance == null || LobbyBehaviour.Instance != null) return;
-                float now = UnityEngine.Time.realtimeSinceStartup;
-                if (shieldCountedAt.TryGetValue(playerId, out float at) && now - at < 120f) { shieldCountedAt[playerId] = now; return; }
-                shieldCountedAt[playerId] = now;
+                if (ShipStatus.Instance == null || LobbyBehaviour.Instance != null
+                    || AmongUsClient.Instance == null || !AmongUsClient.Instance.IsGameStarted) return;
+                string code = NewcomerShield.CodeOf(TheOtherRoles.Helpers.playerById(playerId));
+                if (string.IsNullOrEmpty(code) || !shieldCounted.Add(code)) return;
                 Count(ShieldTitleId, playerId, 1);
             } catch { }
         }
@@ -606,6 +609,8 @@ namespace UsefulTORStuff {
         /// <summary>Counts amount for a player under a title id (every client; the host's numbers are shown).</summary>
         public static void Count(string id, byte playerId, int amount) {
             try {
+                // Audit 16.11. UTS-2-06: keine wartenden Werte außerhalb laufender Runden.
+                if (ShipStatus.Instance == null || AmongUsClient.Instance == null || !AmongUsClient.Instance.IsGameStarted) return;
                 id = CleanId(id);
                 if (id.Length == 0 || amount == 0) return;
                 PlayerControl p = null;
@@ -623,7 +628,7 @@ namespace UsefulTORStuff {
 
         internal static int PendingCount(string id) => extCounts.Values.Sum(d => d.TryGetValue(id, out var n) ? n : 0);
 
-        // a finished round takes over the counts of its players; counts of players not in it wait for their next round
+        // Die fertige Runde übernimmt ihre Spieler. Übrige Zähler werden am Rundenschnitt verworfen.
         private static void MergeExtCounts(List<RoundEntry> entries) {
             if (extCounts.Count == 0) return;
             foreach (var e in entries) {

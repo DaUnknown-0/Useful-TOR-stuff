@@ -200,14 +200,17 @@ namespace UsefulTORStuff {
             var res = new ModpackApplyResult();
             if (p == null) return res;
             var dl = UTSModDownloader.Instance;
+            // Audit 16.11. UTS-3-04: fehlender Downloader darf keine Teilanwendung verursachen.
+            if (dl == null) { res.Errors.Add("Downloader nicht verfügbar"); return res; }
             foreach (var e in UTSModCatalog.Entries) {
                 var want = p.Get(e.Id);
                 var state = UTSModCatalog.StateOf(e, out _);
                 try {
                     if (want != null) {
+                        string targetPath = e.External ? ExternalPath(e) : e.TargetPath;
                         // a DLL parked as .disabled comes back without a download
-                        if (state != LocalModState.Active && File.Exists(e.TargetPath + ".disabled") && !File.Exists(e.TargetPath)) {
-                            File.Move(e.TargetPath + ".disabled", e.TargetPath);
+                        if (state != LocalModState.Active && File.Exists(targetPath + ".disabled") && !File.Exists(targetPath)) {
+                            File.Move(targetPath + ".disabled", targetPath);
                             res.Enabled++;
                         } else if (dl != null) {
                             dl.EnqueueLatest(e, want.Prerelease);
@@ -234,7 +237,7 @@ namespace UsefulTORStuff {
         /// <summary>Whether the mod is set to run at the next start (config), or for Submerged: its DLL is in place.</summary>
         public static bool IsSwitchedOn(CatalogEntry e) {
             if (e == null) return false;
-            if (e.External) return File.Exists(e.TargetPath);
+            if (e.External) return File.Exists(ExternalPath(e));
             var mod = RegistryEntry(e.Guid);
             if (mod != null && mod.Enabled != null) return mod.Enabled.Value;
             // not registered (never ran): the config file decides, default on
@@ -245,7 +248,7 @@ namespace UsefulTORStuff {
         public static bool SetSwitchedOn(CatalogEntry e, bool on) {
             if (e == null) return false;
             if (e.External) {
-                string path = e.TargetPath, parked = path + ".disabled";
+                string path = ExternalPath(e), parked = path + ".disabled"; // Audit 16.11. UTS-3-09
                 if (!on && File.Exists(path)) {
                     if (File.Exists(parked)) File.Delete(parked);
                     File.Move(path, parked);
@@ -262,6 +265,16 @@ namespace UsefulTORStuff {
                 return true;
             }
             return WriteConfigEnabled(e.Guid, on);
+        }
+
+        // Audit 16.11. UTS-3-09: deaktivierte Unterordner-Installationen auch im nächsten Prozess finden.
+        internal static string ExternalPath(CatalogEntry e) {
+            string loaded = e.WriteTargetPath;
+            if (File.Exists(loaded) || File.Exists(loaded + ".disabled")) return loaded;
+            var parked = Directory.GetFiles(BepInEx.Paths.PluginPath, e.AssetName + ".disabled", SearchOption.AllDirectories);
+            if (parked.Length == 1) return parked[0].Substring(0, parked[0].Length - ".disabled".Length);
+            if (parked.Length > 1) throw new IOException("Mehrere deaktivierte Installationen gefunden: " + e.DisplayName);
+            return loaded;
         }
 
         private static ModInfo RegistryEntry(string guid) {

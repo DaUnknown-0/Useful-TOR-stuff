@@ -87,7 +87,7 @@ namespace UsefulTORStuff {
                     if (BepInEx.Unity.IL2CPP.IL2CPPChainloader.Instance.Plugins.TryGetValue(Guid, out var info)
                         && info != null && !string.IsNullOrEmpty(info.Location)) {
                         string full = Path.GetFullPath(info.Location);
-                        string root = Path.GetFullPath(Paths.PluginPath);
+                        string root = Path.GetFullPath(Paths.PluginPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar; // Audit 16.11. UTS-3-07: Verzeichnisgrenze prüfen.
                         if (full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && full.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
                             return full;
                     }
@@ -136,6 +136,10 @@ namespace UsefulTORStuff {
             // Add-on for Unknown's Collection (added 2026-10-05).
             new CatalogEntry(8, "com.daunknown.unknownshalloween", "Unknown's Halloween",
                              "DaUnknown-0", "UnknownsHalloween", "UnknownsHalloween.dll", "Halloween"),
+            // Stream protection (added 2026-11-17). Purely local: the camera sees Crewmate, a capture-excluded
+            // overlay shows the streamer the real HUD. No RPCs, so it never affects other players.
+            new CatalogEntry(9, "com.daunknown.smokescreen", "Unknown's Smokescreen",
+                             "DaUnknown-0", "UnknownsSmokescreen", "UnknownsSmokescreen.dll", "Smokescreen"),
         };
 
         // Reserved: "a mod outside this catalog". Counted in the inventory so the local player can
@@ -236,7 +240,7 @@ namespace UsefulTORStuff {
                 } else if (e.External) {
                     // Parked by a modpack (UTSModpacks.SetSwitchedOn renames it to .disabled): that is
                     // "switched off", not missing, or Mod Sync would offer to download it right back.
-                    try { if (File.Exists(e.TargetPath + ".disabled") && !File.Exists(e.TargetPath)) row.State = LocalModState.Disabled; } catch { }
+                    try { if (File.Exists(UTSModpacks.ExternalPath(e) + ".disabled") && !File.Exists(UTSModpacks.ExternalPath(e))) row.State = LocalModState.Disabled; } catch { }
                 }
                 list.Add(row);
             }

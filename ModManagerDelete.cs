@@ -41,6 +41,7 @@ namespace UsefulTORStuff
     {
         private const string PendingFileName = "UTSPendingDelete.txt";
         private const string DeletedSuffix = ".deleted";
+        private static readonly object pendingLock = new(); // Audit 16.11. UTS-1-07
 
         // Asset folders of releases that do not publish "DeletePaths" yet, relative to the BepInEx folder.
         private static readonly Dictionary<string, string[]> KnownFolders = new Dictionary<string, string[]>
@@ -137,6 +138,7 @@ namespace UsefulTORStuff
             if (!CanDelete(mod)) return;
             var later = new List<string>();
             string dll = PluginDll(mod.Guid) ?? "";
+            string queuedStamp = "\t" + DateTime.UtcNow.Ticks; // Audit 16.11. UTS-1-07: Zeit je Eintrag.
             foreach (var target in Targets(mod))
             {
                 string left = Remove(target);
@@ -144,13 +146,13 @@ namespace UsefulTORStuff
                 {
                     removed++;
                     // the running mod writes its config again on the next save: removed once more at the next start
-                    if (target.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase)) later.Add(target + "\t" + dll);
+                    if (target.EndsWith(".cfg", StringComparison.OrdinalIgnoreCase)) later.Add(target + "\t" + dll + queuedStamp);
                 }
-                else { later.Add(left + "\t" + dll); pending++; }
+                else { later.Add(left + "\t" + dll + queuedStamp); pending++; }
             }
             if (later.Count > 0)
             {
-                try { File.AppendAllLines(PendingFile, later); }
+                try { lock (pendingLock) File.AppendAllLines(PendingFile, later); }
                 catch (Exception ex)
                 {
                     LastUnqueued = pending;
@@ -165,45 +167,74 @@ namespace UsefulTORStuff
         /// <summary>Removes what an earlier session could not (call first thing in Load).</summary>
         public static void ProcessPending()
         {
-            try
-            {
-                foreach (var f in Directory.GetFiles(Paths.PluginPath, "*.dll" + DeletedSuffix, SearchOption.AllDirectories))
-                    try { File.Delete(f); } catch { }
-
-                string file = PendingFile;
-                if (!File.Exists(file)) return;
-                DateTime queuedAt = File.GetLastWriteTimeUtc(file);
-                var left = new List<string>();
-                int removed = 0;
-                foreach (var line in File.ReadAllLines(file))
+            lock (pendingLock) {
+                try
                 {
-                    // "path" (older queues) or "path<TAB>the mod's DLL"
-                    string[] parts = line.Split('\t');
-                    string path = parts[0].Trim();
-                    string owner = parts.Length > 1 ? parts[1].Trim() : "";
-                    if (path.Length == 0) continue;
-                    try { path = Path.GetFullPath(path); } catch { continue; }
-                    if (!IsSafe(path)) continue;
-                    // reinstalled since (Catalog tab, Mod Sync): a fresh DLL under the old name stays
-                    if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && File.Exists(path)
-                        && File.GetLastWriteTimeUtc(path) > queuedAt) continue;
-                    // ... and so do its config and asset folders
-                    try
+                    foreach (var f in Directory.GetFiles(Paths.PluginPath, "*.dll" + DeletedSuffix, SearchOption.AllDirectories))
+                        try { File.Delete(f); } catch { }
+
+                    string file = PendingFile;
+                    if (!File.Exists(file)) return;
+                    DateTime legacyQueuedAt = File.GetLastWriteTimeUtc(file);
+                    var left = new List<string>();
+                    int removed = 0;
+                    foreach (var line in File.ReadAllLines(file))
                     {
-                        if (owner.Length > 0 && File.Exists(owner) && File.GetLastWriteTimeUtc(owner) > queuedAt) continue;
+                        // "path" (older queues) or "path<TAB>the mod's DLL"
+                        string[] parts = line.Split('\t');
+                        string path = parts[0].Trim();
+                        string owner = parts.Length > 1 ? parts[1].Trim() : "";
+                        DateTime queuedAt = parts.Length > 2 && long.TryParse(parts[2], out var ticks) && ticks >= DateTime.MinValue.Ticks && ticks <= DateTime.MaxValue.Ticks
+                            ? new DateTime(ticks, DateTimeKind.Utc) : legacyQueuedAt;
+                        if (path.Length == 0) continue;
+                        try { path = Path.GetFullPath(path); } catch { continue; }
+                        if (!IsSafe(path)) continue;
+                        // reinstalled since (Catalog tab, Mod Sync): a fresh DLL under the old name stays
+                        if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) && File.Exists(path)
+                            && File.GetLastWriteTimeUtc(path) > queuedAt) continue;
+                        // ... and so do its config and asset folders
+                        try
+                        {
+                            if (owner.Length > 0 && File.Exists(owner) && File.GetLastWriteTimeUtc(owner) > queuedAt) continue;
+                        }
+                        catch { }
+                        string rest = Remove(path);
+                        if (rest == null) removed++; else left.Add(rest + "\t" + owner + "\t" + queuedAt.Ticks);
                     }
-                    catch { }
-                    string rest = Remove(path);
-                    if (rest == null) removed++; else left.Add(rest);
+                    if (left.Count == 0) File.Delete(file);
+                    else {
+                        string temp = file + ".tmp";
+                        File.WriteAllLines(temp, left);
+                        File.Move(temp, file, true);
+                    }
+                    UsefulTORStuffPlugin.Logger?.LogInfo($"[ModManager] pending deletions: {removed} removed, {left.Count} still in use");
                 }
-                if (left.Count == 0) File.Delete(file);
-                else File.WriteAllLines(file, left);
-                UsefulTORStuffPlugin.Logger?.LogInfo($"[ModManager] pending deletions: {removed} removed, {left.Count} still in use");
+                catch (Exception ex)
+                {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[ModManager] pending deletions failed: {ex.Message}");
+                }
             }
-            catch (Exception ex)
-            {
-                UsefulTORStuffPlugin.Logger?.LogWarning($"[ModManager] pending deletions failed: {ex.Message}");
+
+        }
+
+        // Audit 16.11. UTS-1-07: Neuinstallation hebt nur die Aufträge dieses Besitzers auf.
+        internal static void CancelPending(string dll) {
+            lock (pendingLock) {
+                try {
+                    if (!File.Exists(PendingFile)) return;
+                    var keep = File.ReadAllLines(PendingFile).Where(line => {
+                        var fields = line.Split('\t');
+                        return !string.Equals(fields[0], dll, StringComparison.OrdinalIgnoreCase)
+                            && !(fields.Length > 1 && string.Equals(fields[1], dll, StringComparison.OrdinalIgnoreCase));
+                    }).ToArray();
+                    string tmp = PendingFile + ".tmp";
+                    File.WriteAllLines(tmp, keep);
+                    File.Move(tmp, PendingFile, true);
+                } catch (Exception ex) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[ModManager] Löschaufträge bleiben durch den DLL-Zeitstempel geschützt: {ex.Message}");
+                }
             }
+
         }
 
         // UI gallery: a dummy mod with two config files and an asset folder is deleted again; "config" and a path

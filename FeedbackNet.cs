@@ -89,8 +89,9 @@ internal static class FeedbackNet
             foreach (var n in new List<FeedbackNote>(FeedbackStore.Outbox)) {
                 n.Received = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 n.FromKey = FeedbackOwner.KeyOf(PlayerControl.LocalPlayer);
-                FeedbackStore.AddToInbox(n);
-                FeedbackStore.RemoveFromOutbox(n.Id);
+                // Audit 16.11. UTS-1-11: Outbox bei fehlgeschlagenem Schreiben erhalten.
+                if (FeedbackStore.AddToInbox(n) || (FeedbackStore.InInbox(n.Id) && FeedbackStore.InboxEdited(n.Id) >= n.Edited))
+                    FeedbackStore.RemoveFromOutbox(n.Id);
             }
             DeliverReplies();
             return;
@@ -183,8 +184,9 @@ internal static class FeedbackNet
             Snippet = Cut(r.ReadString(), FeedbackReplies.MaxSnippet),
         };
         if (sender == null || !FeedbackOwner.IsOwner(sender) || string.IsNullOrEmpty(reply.Id)) return;
-        if (FeedbackReplies.Store(reply, sender.Data?.PlayerName))
-            UsefulTORStuffPlugin.Logger.LogInfo($"[Feedback] note {reply.Id} done ({reply.Version})");
+        // Audit 16.11. UTS-1-12: ohne persistierte Antwort keine Empfangsbestätigung.
+        if (!FeedbackReplies.Store(reply, sender.Data?.PlayerName) && !FeedbackReplies.Has(reply.Id)) return;
+        UsefulTORStuffPlugin.Logger.LogInfo($"[Feedback] note {reply.Id} done ({reply.Version})");
         try {
             var client = AmongUsClient.Instance;
             var w = client.StartRpcImmediately(PlayerControl.LocalPlayer.NetId, CallId, SendOption.Reliable, sender.OwnerId);

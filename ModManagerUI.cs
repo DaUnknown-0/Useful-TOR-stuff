@@ -204,7 +204,7 @@ namespace UsefulTORStuff
                 // popup switched off. Undo on the way out and drop IsUIOpen so a retry is possible.
                 try { EnableBackgroundUI(); } catch { }
                 IsUIOpen = false;
-                if (_popup != null) { Destroy(_popup); _popup = null; }
+                if (_popup != null) { VanillaSlider.FinishDrag(_popup); Destroy(_popup); _popup = null; }
             }
         }
 
@@ -241,7 +241,7 @@ namespace UsefulTORStuff
             _musicSummary = null; _musicLoadText = null; _musicLoadButton = null;
             _renameLabel = null; _restartButton = null;
             EnableBackgroundUI();
-            if (_popup != null) { Destroy(_popup); _popup = null; }
+            if (_popup != null) { VanillaSlider.FinishDrag(_popup); Destroy(_popup); _popup = null; }
             IsUIOpen = false;
             Build();
         }
@@ -1240,7 +1240,7 @@ namespace UsefulTORStuff
                 IsUIOpen = false;
                 _entryRefs.Clear(); _catalogRefs.Clear(); _musicRefs.Clear();
                 EnableBackgroundUI();
-                if (_popup != null) { Destroy(_popup); _popup = null; }
+                if (_popup != null) { VanillaSlider.FinishDrag(_popup); Destroy(_popup); _popup = null; }
                 _tab = Tab.Installed;
                 _summary = "";
                 _renaming = null; _renameLabel = null;

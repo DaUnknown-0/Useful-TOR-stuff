@@ -24,10 +24,13 @@ namespace UsefulTORStuff {
     internal static class ShieldNotice {
         internal enum Kind { Newcomer, EarlyDeath }
 
-        private const float Delay = 1.5f, Seconds = 9f, RepeatGuard = 120f;
+        private const float Delay = 1.5f, Seconds = 9f;
 
         private static readonly Dictionary<Kind, float> shownAt = new Dictionary<Kind, float>();
         private static readonly Dictionary<Kind, float> dueAt = new Dictionary<Kind, float>();
+
+        // Audit 16.11. UTS-2-07: Hinweise gehören einer Runde, einschließlich wartender Meldungen.
+        internal static void ResetRound() { shownAt.Clear(); dueAt.Clear(); }
 
         /// <summary>A shield list arrived. Queues the notice when the local player is on it and a round is running.</summary>
         internal static void Arrived(Kind kind, List<byte> ids) {
@@ -37,7 +40,7 @@ namespace UsefulTORStuff {
                 if (ShipStatus.Instance == null || LobbyBehaviour.Instance != null) return;
                 float now = Time.realtimeSinceStartup;
                 // the host repeats the list (late joiners, meeting changes): the same shield is explained once
-                if (shownAt.TryGetValue(kind, out float at) && now - at < RepeatGuard) { shownAt[kind] = now; return; }
+                if (shownAt.ContainsKey(kind)) return;
                 if (!dueAt.ContainsKey(kind)) dueAt[kind] = now + Delay;
             } catch { }
         }

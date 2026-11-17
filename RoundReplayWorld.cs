@@ -675,8 +675,8 @@ namespace UsefulTORStuff {
         private static void Bodies(Vector2 eyeW, float radius) {
             var alive = new HashSet<byte>();
             foreach (var e in events) {
-                if (e.Kind != EvDeath || e.T > viewT || e.Target == 255 || float.IsNaN(e.Pos.x)) continue;
-                if (events.Any(m => m.Kind == EvMeeting && m.T > e.T && m.T <= viewT)) continue;
+                if (!e.HasBody || e.Kind != EvDeath || e.T > viewT || e.Target == 255 || float.IsNaN(e.Pos.x)) continue;
+                if (events.Any(m => m.Kind == EvMeeting && events.IndexOf(m) > events.IndexOf(e) && m.T >= e.T && m.T <= viewT)) continue;
                 if (bodiesGone.Any(g => g.Id == e.Target && g.T >= e.T && g.T <= viewT)) continue;
                 Vector2 at = e.Pos + worldShift;
                 if (!CanSee(eyeW, radius, at)) continue;

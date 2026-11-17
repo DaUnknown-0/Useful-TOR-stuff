@@ -102,6 +102,7 @@ namespace UsefulTORStuff {
         }
 
         private void Teardown() {
+            VanillaSlider.FinishDrag(panelRoot); // Audit 16.11. UTS-3-10
             if (panelRoot != null) { Destroy(panelRoot); panelRoot = null; LobbyPanelGuard.Closed(); }
         }
 

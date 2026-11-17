@@ -75,6 +75,7 @@ namespace UsefulTORStuff {
         private sealed class Ev {
             public float T;
             public int Kind;
+            public bool HasBody; // Audit 16.11. UTS-2-04: Todesereignis und Leiche getrennt.
             public Vector2 Pos;
             public string Text;
             public byte Actor = 255;
@@ -125,7 +126,8 @@ namespace UsefulTORStuff {
             if (!recording) return;
 
             bool meeting = MeetingHud.Instance != null || ExileController.Instance != null;
-            if (meeting && !inMeeting) events.Add(MeetingEvent());
+            // Audit 16.11. UTS-2-04/05: Tote vor der Meeting-Kante erfassen.
+            if (meeting && !inMeeting) { PollDeaths(); events.Add(MeetingEvent()); }
             inMeeting = meeting;
             // At the sample limit the clock stops with the samples (audit 04.10.): later events land
             // at the end of the timeline instead of beyond it, where playback never reached them.
@@ -204,11 +206,13 @@ namespace UsefulTORStuff {
             foreach (var dp in list) {
                 if (dp?.player == null || !deathsSeen.Add(dp.player.PlayerId)) continue;
                 bool exile = dp.deathReason == DeadPlayer.CustomDeathReason.Exile;
+                bool hasBody = !exile && dp.deathReason != DeadPlayer.CustomDeathReason.Guess
+                    && UnityEngine.Object.FindObjectsOfType<DeadBody>().Any(body => body.ParentId == dp.player.PlayerId);
                 Vector2 pos = dp.player.transform.position;
                 var tr = tracks.FirstOrDefault(t => t.Id == dp.player.PlayerId);
                 if (tr != null) for (int i = tr.P.Count - 1; i >= 0; i--) if (!float.IsNaN(tr.P[i].x)) { pos = tr.P[i]; break; }
                 byte killer = dp.killerIfExisting != null && GhostKillFeed.CauseOf(dp) == null ? dp.killerIfExisting.PlayerId : (byte)255;
-                events.Add(new Ev { T = clock, Kind = exile ? EvExile : EvDeath, Pos = pos, Text = GhostKillFeed.Describe(dp, true), Actor = killer, Target = dp.player.PlayerId,
+                events.Add(new Ev { T = clock, Kind = exile ? EvExile : EvDeath, HasBody = hasBody, Pos = pos, Text = GhostKillFeed.Describe(dp, true), Actor = killer, Target = dp.player.PlayerId,
                                     Seen = hostRec && !exile ? Witnesses(pos, killer).Where(id => id != dp.player.PlayerId).ToList() : null });
             }
         }
@@ -828,7 +832,7 @@ namespace UsefulTORStuff {
             var other = tracks.FirstOrDefault(t => t.Id != PlayerControl.LocalPlayer?.PlayerId && t.P.Count > 0);
             var victim = tracks.FirstOrDefault(t => t != other && t.Id != PlayerControl.LocalPlayer?.PlayerId && t.P.Count > 0) ?? other;
             if (victim != null)
-                events.Add(new Ev { T = Duration * 0.1f, Kind = EvDeath, Pos = victim.P[victim.P.Count / 10], Target = victim.Id,
+                events.Add(new Ev { T = Duration * 0.1f, Kind = EvDeath, HasBody = true, Pos = victim.P[victim.P.Count / 10], Target = victim.Id,
                                     Text = UTSLocalization.Tr("uts.killfeed.kill", victim.Name, tracks[0].Name) });
             Finish();
             DiagDump();
