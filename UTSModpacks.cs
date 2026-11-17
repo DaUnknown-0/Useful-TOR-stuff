@@ -113,7 +113,7 @@ namespace UsefulTORStuff {
             if (!UTSModSync.HostReported) return null;
             var p = new Modpack { Name = name ?? "" };
             foreach (var row in UTSModSync.Rows()) {
-                if (row?.Catalog == null || row.HostVersion == null || row.Catalog.HostOnly) continue;
+                if (row?.Catalog == null || row.HostVersion == null || row.Catalog.NotShared) continue;
                 if (p.Contains(row.Catalog.Id)) continue;
                 p.Mods.Add(new ModpackEntry { Id = row.Catalog.Id, Prerelease = UTSModSync.IsTestBuild(row.HostVersion) });
             }

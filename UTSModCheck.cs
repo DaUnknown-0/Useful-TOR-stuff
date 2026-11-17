@@ -90,7 +90,7 @@ namespace UsefulTORStuff {
             var mods = new List<(CatalogEntry Entry, Version Host)>();
             foreach (var row in UTSModCatalog.LocalInventory(out _)) {
                 if (row.State != LocalModState.Active || row.Version == null) continue;
-                if (row.Catalog.HostOnly) continue;
+                if (row.Catalog.NotShared) continue;
                 if (row.Catalog.BoardGated && !board.ContainsKey(row.Catalog.Guid)) continue;
                 mods.Add((row.Catalog, row.Version));
             }

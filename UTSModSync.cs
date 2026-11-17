@@ -134,7 +134,7 @@ namespace UsefulTORStuff {
 
             foreach (var localRow in local) {
                 var entry = localRow.Catalog;
-                if (entry.HostOnly) continue;
+                if (entry.NotShared) continue;
                 var hostEntry = host.Get(entry.Id);
 
                 // A mod the host has installed but switched off does not shape the round, so it is

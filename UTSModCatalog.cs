@@ -42,6 +42,12 @@ namespace UsefulTORStuff {
         // Runs on the host only (HostFix): a guest never needs it, so it is never offered to one and
         // never counts as "missing" in the host view.
         public readonly bool HostOnly;
+        // A personal, purely local tool (Smokescreen): each player decides for themselves. It never
+        // counts as "missing" or "different" in the host view and is never offered by the sync or a
+        // host modpack; the Mod Manager still installs and updates it.
+        public readonly bool LocalOnly;
+        // True for every entry that is not part of the shared lobby setup.
+        public bool NotShared => HostOnly || LocalOnly;
         // Only matters while the mod publishes its handshake column (Unknown's Atlas: only while an
         // Atlas map is chosen). The host view ignores it otherwise; the sync still offers it.
         public readonly bool BoardGated;
@@ -57,10 +63,11 @@ namespace UsefulTORStuff {
         public CatalogEntry(byte id, string guid, string displayName,
                             string owner, string repo, string assetName,
                             string shortName = null, bool hostOnly = false, bool boardGated = false,
-                            bool external = false, Version pinnedVersion = null, string requiresGuid = null) {
+                            bool external = false, Version pinnedVersion = null, string requiresGuid = null,
+                            bool localOnly = false) {
             Id = id; Guid = guid; DisplayName = displayName;
             RepositoryOwner = owner; RepositoryName = repo; AssetName = assetName;
-            ShortName = shortName ?? displayName; HostOnly = hostOnly; BoardGated = boardGated;
+            ShortName = shortName ?? displayName; HostOnly = hostOnly; LocalOnly = localOnly; BoardGated = boardGated;
             External = external; PinnedVersion = pinnedVersion; RequiresGuid = requiresGuid;
         }
 
@@ -139,7 +146,8 @@ namespace UsefulTORStuff {
             // Stream protection (added 2026-11-17). Purely local: the camera sees Crewmate, a capture-excluded
             // overlay shows the streamer the real HUD. No RPCs, so it never affects other players.
             new CatalogEntry(9, "com.daunknown.smokescreen", "Unknown's Smokescreen",
-                             "DaUnknown-0", "UnknownsSmokescreen", "UnknownsSmokescreen.dll", "Smokescreen"),
+                             "DaUnknown-0", "UnknownsSmokescreen", "UnknownsSmokescreen.dll", "Smokescreen",
+                             localOnly: true),
         };
 
         // Reserved: "a mod outside this catalog". Counted in the inventory so the local player can
