@@ -67,7 +67,17 @@ internal static class FeedbackOwner
 
     internal static string Hash(string s) => Sha(s);
 
+    // PUIDs and friend codes do not change: the lobby tick asked for the same few hashes every frame (PERF_UTS.md no. 1)
+    private static readonly System.Collections.Generic.Dictionary<string, string> shaCache = new(System.StringComparer.Ordinal);
+
     private static string Sha(string s)
+    {
+        if (shaCache.TryGetValue(s, out var cached)) return cached;
+        if (shaCache.Count > 512) shaCache.Clear();
+        return shaCache[s] = ShaNow(s);
+    }
+
+    private static string ShaNow(string s)
     {
         using var sha = SHA256.Create();
         var hash = sha.ComputeHash(Encoding.UTF8.GetBytes(s));

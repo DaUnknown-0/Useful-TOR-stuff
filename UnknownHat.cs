@@ -304,24 +304,47 @@ namespace UsefulTORStuff {
             }
             FeelingCuteHat.Restore(hp);
             if (!kind.isUnknown || walkFailed || !registered) return;
+            // Pointer tests instead of Unity's ==/!=/Equals: those go through the il2cpp bridge and box their bool
+            // result, per wearer and frame (DuoTest profile 18.11.: ~170 bytes of il2cpp garbage per call).
             var front = hp.FrontLayer;
             var back = hp.BackLayer;
-            if (front == null || !front.enabled || front.sprite == null) return;
-            if (back == null || !back.enabled) return;
+            if (!Alive(front) || !front.enabled) return;
+            var current = front.sprite;
+            if (!Alive(current)) return;
+            if (!Alive(back) || !back.enabled) return;
             FollowHead(hp, front, back);
 
-            var current = front.sprite;
-            if (walkFrames == null || Array.IndexOf(walkFrames, current) < 0) idleSprite = current;
-            if (idleSprite == null) return;
+            if (!IsWalkFrame(current.Pointer)) idleSprite = current;
+            if (!Alive(idleSprite)) return;
 
-            var pc = hp.GetComponentInParent<PlayerControl>();
-            int index = RunFrameIndex(pc);
+            int index = RunFrameIndex(PlayerOf(hp));
             Sprite want = idleSprite;
             if (index >= 0 && EnsureWalkFrames(idleSprite)) {
                 var f = walkFrames[index];
-                if (f != null) want = f;
+                if (Alive(f)) want = f;
             }
-            if (front.sprite != want) front.sprite = want;
+            if (current.Pointer != want.Pointer) front.sprite = want;
+        }
+
+        private static bool Alive(UnityEngine.Object o) => !ReferenceEquals(o, null) && o.m_CachedPtr != IntPtr.Zero;
+
+        private static bool IsWalkFrame(IntPtr sprite) {
+            var frames = walkFrames;
+            if (frames == null) return false;
+            for (int i = 0; i < frames.Length; i++)
+                if (!ReferenceEquals(frames[i], null) && frames[i].Pointer == sprite) return true;
+            return false;
+        }
+
+        // GetComponentInParent per frame allocated on the il2cpp heap; the wearer of a HatParent does not change.
+        private static readonly Dictionary<IntPtr, PlayerControl> wearerByHat = new();
+        private static PlayerControl PlayerOf(HatParent hp) {
+            var key = hp.Pointer;
+            if (wearerByHat.TryGetValue(key, out var pc) && Alive(pc)) return pc;
+            if (wearerByHat.Count > 64) wearerByHat.Clear();
+            pc = hp.GetComponentInParent<PlayerControl>();
+            wearerByHat[key] = pc;
+            return pc;
         }
 
         // The walk frames are measured against a hat that hangs on the head node (NodeId 0), like the costume hats of
@@ -340,8 +363,9 @@ namespace UsefulTORStuff {
         }
 
         internal static void FollowHead(HatParent hp, SpriteRenderer front, SpriteRenderer back) {
-            var sync = hp.SpriteSyncNode != null ? hp.SpriteSyncNode : hp.GetComponent<PowerTools.SpriteAnimNodeSync>();
-            if (sync != null && sync.NodeId != 0) sync.NodeId = 0;
+            var sync = hp.SpriteSyncNode;
+            if (!Alive(sync)) sync = hp.GetComponent<PowerTools.SpriteAnimNodeSync>();
+            if (Alive(sync) && sync.NodeId != 0) sync.NodeId = 0;
             var f = front.transform.localPosition;
             var b = back.transform.localPosition;
             if (Mathf.Abs(b.x - f.x) > 0.0005f || Mathf.Abs(b.y - f.y) > 0.0005f)
@@ -350,7 +374,7 @@ namespace UsefulTORStuff {
 
         // The frames share the main image's canvas, so pivot and scale are taken from TOR's main sprite.
         private static bool EnsureWalkFrames(Sprite main) {
-            if (walkFrames != null && walkFor == main) return true;
+            if (walkFrames != null && !ReferenceEquals(walkFor, null) && walkFor.Pointer == main.Pointer) return true;
             var frames = new Sprite[WalkFrames];
             Vector2 pivot = new Vector2(main.pivot.x / main.rect.width, main.pivot.y / main.rect.height);
             for (int i = 0; i < WalkFrames; i++) {

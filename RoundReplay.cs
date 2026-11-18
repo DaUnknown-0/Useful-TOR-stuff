@@ -93,6 +93,7 @@ namespace UsefulTORStuff {
         private static float clock, sampledUpTo;
         private static float nextDeathPoll;
         private static Texture2D mapTex;
+        private static string mapKey;      // texture + cut-out the image above was made from (reused while unchanged)
         private static Rect worldRect;
         private static bool mirrored;
         private static string mapName = "";
@@ -307,6 +308,15 @@ namespace UsefulTORStuff {
                 var tr = spr.textureRect;
                 int w = Mathf.Clamp((int)tr.width, 64, 1600);
                 int h = Mathf.Clamp((int)(tr.height * w / Mathf.Max(1f, tr.width)), 64, 1600);
+                // Same floor plan as last round (same map, texture and cut-out): the image is still loaded (DontUnload
+                // flag below), so keep it. Making it again grew the il2cpp heap by 20-30 MB per round end (18.11.).
+                // by name and size, not by pointer: the ship (and its map texture) is loaded anew for every round
+                string key = $"{SafeMapName()}|{src.name}|{src.width}x{src.height}|{tr.x}|{tr.y}|{tr.width}|{tr.height}|{w}x{h}";
+                if (key == mapKey && !ReferenceEquals(mapTex, null) && mapTex.m_CachedPtr != IntPtr.Zero) {
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[RoundReplay] map image unchanged, kept from last round.");
+                    return true;
+                }
+                mapKey = null;
                 rt = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32);
                 Graphics.Blit(src, rt, new Vector2(tr.width / src.width, tr.height / src.height),
                               new Vector2(tr.x / src.width, tr.y / src.height));
@@ -319,14 +329,23 @@ namespace UsefulTORStuff {
                 // outline/light). A plain sprite shader means the image already carries its colours.
                 string shader = bg.sharedMaterial != null && bg.sharedMaterial.shader != null ? bg.sharedMaterial.shader.name : "?";
                 if (!shader.StartsWith("Sprites/Default")) {
-                    var px = mapTex.GetPixels32();
-                    var room = new Color(0.16f, 0.32f, 0.78f);
-                    for (int i = 0; i < px.Length; i++) {
-                        var c = px[i];
-                        var o = Color.Lerp(room, Color.white, c.g / 255f);
-                        px[i] = new Color32((byte)(o.r * 255), (byte)(o.g * 255), (byte)(o.b * 255), c.a);
+                    // Raw RGBA32 bytes, mixed in plain C#: Color.Lerp/new Color32 per pixel went through the
+                    // il2cpp bridge (~1.4M boxed calls, the heap grew by up to 22 MB at every round end, 18.11.).
+                    var px = mapTex.GetRawTextureData();
+                    // lookup per green value: room colour (0.16, 0.32, 0.78) towards white
+                    var lr = new byte[256]; var lg = new byte[256]; var lb = new byte[256];
+                    for (int g = 0; g < 256; g++) {
+                        float t = g / 255f;
+                        lr[g] = (byte)((0.16f + 0.84f * t) * 255f);
+                        lg[g] = (byte)((0.32f + 0.68f * t) * 255f);
+                        lb[g] = (byte)((0.78f + 0.22f * t) * 255f);
                     }
-                    mapTex.SetPixels32(px);
+                    int n = px.Length;
+                    for (int i = 0; i + 3 < n; i += 4) {
+                        byte gv = px[i + 1];
+                        px[i] = lr[gv]; px[i + 1] = lg[gv]; px[i + 2] = lb[gv];
+                    }
+                    mapTex.LoadRawTextureData(px);
                 }
                 mapTex.Apply(false, true);
                 UsefulTORStuffPlugin.Logger?.LogInfo($"[RoundReplay] map image from '{bg.name}', shader '{shader}', {(shader.StartsWith("Sprites/Default") ? "kept" : "recoloured")}.");
@@ -335,6 +354,7 @@ namespace UsefulTORStuff {
                 // DontDestroyOnLoad does not cover assets; this flag does (User 2026-10-02: the replay
                 // silently did not open after a real round).
                 mapTex.hideFlags |= HideFlags.DontUnloadUnusedAsset;
+                mapKey = key;
                 return true;
             } catch (Exception e) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[RoundReplay] map capture failed: {e.Message}");

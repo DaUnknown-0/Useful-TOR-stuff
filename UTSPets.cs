@@ -114,6 +114,7 @@ namespace UsefulTORStuff {
             public PetData Data;
             public string Signature;
             public readonly Dictionary<int, Sprite[][]> Scaled = new();   // per carrier root scale (x1000): idle, walk, accent idle, accent walk, pet, accent pet
+            public Sprite[][] Unscaled;   // the same set for scale 1, built once instead of per frame (reset when the frames change)
         }
 
         private static readonly Dictionary<string, Live> live = new(StringComparer.Ordinal);       // ProductId -> registered
@@ -381,6 +382,7 @@ namespace UsefulTORStuff {
             l.OwnedSprites.UnionWith(next.OwnedSprites);
             l.Tex = next.Tex; l.Def = d; l.Idle = next.Idle; l.Walk = next.Walk;
             l.AccIdle = next.AccIdle; l.AccWalk = next.AccWalk; l.Pet = next.Pet; l.AccPet = next.AccPet; l.Icon = next.Icon;
+            l.Unscaled = null;
             l.Scaled.Clear();
             foreach (var kv in next.Scaled) l.Scaled[kv.Key] = kv.Value;
             l.Signature = d.Signature;
@@ -456,7 +458,7 @@ namespace UsefulTORStuff {
 
         private static Sprite[][] FramesFor(Live l, float scale) {
             int key = Mathf.RoundToInt(Mathf.Abs(scale) * 1000f);
-            if (key == 1000) return new[] { l.Idle, l.Walk, l.AccIdle, l.AccWalk, l.Pet, l.AccPet };
+            if (key == 1000) return l.Unscaled ??= new[] { l.Idle, l.Walk, l.AccIdle, l.AccWalk, l.Pet, l.AccPet };
             if (!l.Scaled.TryGetValue(key, out var v)) {
                 // Audit 16.11. UTS-3-03: nur unbenutzte Skalierungen verdrängen.
                 if (l.Scaled.Count >= 16) {
@@ -672,21 +674,44 @@ namespace UsefulTORStuff {
         // colour mask: a child renderer over the pet picture, tinted in the owner's body colour (like the costume accents)
         private const string AccName = "uts_pet_accent";
 
+        // Pet renderer pointer -> its accent renderer (null = none). transform.Find marshalled the name into a new il2cpp
+        // string for every pet each frame (DuoTest profile 18.11.); cleared every 10 s so a reused pointer is looked up again.
+        private static readonly Dictionary<IntPtr, SpriteRenderer> accByRend = new();
+        private static long accClearAt;
+
+        private static bool Alive(UnityEngine.Object o) => !ReferenceEquals(o, null) && o.m_CachedPtr != IntPtr.Zero;
+
         private static SpriteRenderer AccentRenderer(SpriteRenderer r0, bool want) {
-            var t = r0.transform.Find(AccName);
+            long now = Environment.TickCount64;
+            if (now >= accClearAt) { accByRend.Clear(); accClearAt = now + 10000; }
+            var key = r0.Pointer;
+            if (!accByRend.TryGetValue(key, out var sr) || (!ReferenceEquals(sr, null) && sr.m_CachedPtr == IntPtr.Zero)) {
+                if (accByRend.Count > 256) accByRend.Clear();
+                var found = r0.transform.Find(AccName);
+                sr = Alive(found) ? found.GetComponent<SpriteRenderer>() : null;
+                accByRend[key] = sr;
+            }
             if (!want) {
-                if (t != null && t.gameObject.activeSelf) t.gameObject.SetActive(false);
+                if (Alive(sr) && sr.gameObject.activeSelf) sr.gameObject.SetActive(false);
                 return null;
             }
-            if (t == null) {
+            if (!Alive(sr)) {
                 var go = new GameObject(AccName) { layer = r0.gameObject.layer };
                 go.transform.SetParent(r0.transform, false);
                 go.transform.localPosition = new Vector3(0f, 0f, -0.0002f);
-                go.AddComponent<SpriteRenderer>();
-                t = go.transform;
+                sr = go.AddComponent<SpriteRenderer>();
+                accByRend[key] = sr;
             }
-            if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
-            return t.GetComponent<SpriteRenderer>();
+            if (!sr.gameObject.activeSelf) sr.gameObject.SetActive(true);
+            return sr;
+        }
+
+        // .NET clock for the frame index: Time.time boxes its float on the il2cpp heap through Il2CppInterop
+        private static float Now() => Environment.TickCount64 * 0.001f;
+
+        private static bool SamePtr(UnityEngine.Object a, UnityEngine.Object b) {
+            IntPtr pa = Alive(a) ? a.Pointer : IntPtr.Zero, pb = Alive(b) ? b.Pointer : IntPtr.Zero;
+            return pa == pb;
         }
 
         // the colour the owner shows right now (Morphling, Camouflage included); previews without an owner use the local colour
@@ -736,22 +761,23 @@ namespace UsefulTORStuff {
                     bool petted = false;
                     try { petted = set[4] != null && __instance.beingPet; } catch { }
                     var key = __instance.Pointer;
-                    if (petted && !petStart.ContainsKey(key)) petStart[key] = Time.time;
+                    if (petted && !petStart.ContainsKey(key)) petStart[key] = Now();
                     else if (!petted && petStart.Count > 0) petStart.Remove(key);
                     var frames = petted ? set[4] : moving ? set[1] : set[0];
                     int f = petted
-                        ? (int)((Time.time - petStart[key]) * (l.Def.PetFps > 0f ? l.Def.PetFps : l.Def.Fps)) % frames.Length
-                        : (int)(Time.time * l.Def.Fps) % frames.Length;
-                    if (r0.sprite != frames[f]) r0.sprite = frames[f];
+                        ? (int)((Now() - petStart[key]) * (l.Def.PetFps > 0f ? l.Def.PetFps : l.Def.Fps)) % frames.Length
+                        : (int)(Now() * l.Def.Fps) % frames.Length;
+                    // pointer tests instead of Unity's != (it boxes its bool result through the il2cpp bridge)
+                    if (!SamePtr(r0.sprite, frames[f])) r0.sprite = frames[f];
                     if (l.Def.Flip) r0.flipX = !__instance.FlipX;
                     var dm = DefaultMat();
-                    if (dm != null && r0.sharedMaterial != dm) r0.sharedMaterial = dm;
+                    if (Alive(dm) && !SamePtr(r0.sharedMaterial, dm)) r0.sharedMaterial = dm;
                     var acc = petted ? set[5] : moving ? set[3] : set[2];
                     var ar = AccentRenderer(r0, acc != null);
                     if (ar != null) {
-                        if (ar.sprite != acc[f]) ar.sprite = acc[f];
+                        if (!SamePtr(ar.sprite, acc[f])) ar.sprite = acc[f];
                         ar.flipX = r0.flipX;
-                        if (dm != null && ar.sharedMaterial != dm) ar.sharedMaterial = dm;
+                        if (Alive(dm) && !SamePtr(ar.sharedMaterial, dm)) ar.sharedMaterial = dm;
                         // same order as the pet picture, in front of it only by the small z offset (like the costume accents):
                         // with order + 1 the mask was drawn over everything in the world, e.g. over a crate the pet stood
                         // behind, and it stayed visible in the dark outside your vision (User 06.11., two screenshots)

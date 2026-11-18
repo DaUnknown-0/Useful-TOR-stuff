@@ -100,7 +100,8 @@ internal static class FeedbackNet
         float now = Time.realtimeSinceStartup;
         if (now < nextSend) return;
         var owner = FeedbackOwner.Find();
-        if (owner == null) return;
+        // author not in this lobby: look again in a second, not every frame (PERF_UTS.md no. 1)
+        if (owner == null) { nextSend = now + 1f; return; }
 
         foreach (var n in FeedbackStore.Outbox) {
             if (lastSent.TryGetValue(n.Id, out float t) && now - t < RetryAfter) continue;

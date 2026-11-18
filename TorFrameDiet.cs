@@ -140,6 +140,12 @@ namespace UsefulTORStuff {
         private static readonly Predicate<CustomButton> deadButton = item => item == null || Gone(item.actionButton);
         public static int RemoveDeadButtons(List<CustomButton> list, Predicate<CustomButton> ignored) => list.RemoveAll(deadButton);
 
+        private static Il2CppSystem.Collections.Generic.List<PlayerControl> noPlayers;
+        public static Il2CppSystem.Collections.Generic.List<PlayerControl> NoPlayers() {
+            // never added to: only enumerated (reading Count every tick would box it)
+            return noPlayers ??= new Il2CppSystem.Collections.Generic.List<PlayerControl>();
+        }
+
         private static void ClearCaches() { activeCache.Clear(); posCache.Clear(); coolCache.Clear(); }
 
         // ================================================================================================
@@ -275,6 +281,14 @@ namespace UsefulTORStuff {
             int calls = 0, fasts = 0;
             var removeAll = typeof(List<CustomButton>).GetMethod(nameof(List<CustomButton>.RemoveAll));
             bool isHudUpdate = m.DeclaringType == typeof(CustomButton) && m.Name == nameof(CustomButton.HudUpdate);
+            // TOR's FixedUpdate postfix walks AllPlayerControls with an empty loop body (a commented-out colorblind
+            // line) for every player each physics tick: n^2 enumerator steps through the il2cpp bridge (PERF_TOR.md
+            // no. 2). It is the only AllPlayerControls read in that method; the copy reads an empty list there. When a
+            // TOR version uses the list more than once in it, nothing is replaced.
+            var allPcs = AccessTools.PropertyGetter(typeof(PlayerControl), nameof(PlayerControl.AllPlayerControls));
+            bool isFixedRoot = m.DeclaringType?.FullName == "TheOtherRoles.Patches.PlayerControlFixedUpdatePatch" && m.Name == "Postfix"
+                               && allPcs != null && body.Instructions.Count(i => (i.OpCode == OpCodes.Call || i.OpCode == OpCodes.Callvirt)
+                                   && i.Operand is Mono.Cecil.MethodReference r && r.Name == allPcs.Name && r.DeclaringType.Name == nameof(PlayerControl)) == 1;
             foreach (var ins in body.Instructions.ToList()) {
                 if (ins.OpCode != OpCodes.Call && ins.OpCode != OpCodes.Callvirt) continue;
                 if (ins.Operand is not Mono.Cecil.MethodReference mr) continue;
@@ -297,6 +311,10 @@ namespace UsefulTORStuff {
                 } else if (isHudUpdate && removeAll != null && target.MetadataToken == removeAll.MetadataToken && target.Module == removeAll.Module) {
                     ins.OpCode = OpCodes.Call;
                     ins.Operand = module.ImportReference(AccessTools.Method(typeof(TorFrameDiet), nameof(RemoveDeadButtons)));
+                    fasts++;
+                } else if (isFixedRoot && target.MetadataToken == allPcs.MetadataToken && target.Module == allPcs.Module) {
+                    ins.OpCode = OpCodes.Call;
+                    ins.Operand = module.ImportReference(AccessTools.Method(typeof(TorFrameDiet), nameof(NoPlayers)));
                     fasts++;
                 }
             }
@@ -515,6 +533,7 @@ namespace UsefulTORStuff {
             if (s.Off || s.RootId < 0) return;
             frame++;
             deltaTime = Time.deltaTime;     // one read per frame for every button
+            DietNewButtons();
             try { DHud(__instance, s.RootId); s.Failures = 0; }
             catch (Exception e) { Failed(s, e); }
         }
@@ -525,6 +544,99 @@ namespace UsefulTORStuff {
             if (s.Off || s.RootId < 0) return;
             try { DPlayer(__instance, s.RootId); s.Failures = 0; }
             catch (Exception e) { Failed(s, e); }
+        }
+
+        // ================================================================================================
+        // Button delegates (18.11.2026)
+        // ================================================================================================
+        // CustomButton.Update calls HasButton() and CouldUse() of every one of the ~110 buttons each frame. Those
+        // lambdas (TOR's, Unknown's Collection's, ours) test roles with Unity's ==/!= and implicit bool, each a boxed
+        // bool on the il2cpp heap: DuoTest profile 18.11., CustomButton.Update ~62 MB of the run's ~570 MB. New
+        // buttons get their two delegates swapped for copies of the same lambdas (DynamicMethods, never re-tiered)
+        // with only those operators replaced by the cheap test. A lambda that another mod patched with Harmony, that
+        // cannot be copied or that has nothing to replace keeps its original. Wrapping lambdas (a CouldUse that calls
+        // the button's former CouldUse) get the delegates in their closure fields swapped too, two levels deep.
+        private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CustomButton, object> dieted = new();
+        private static readonly Dictionary<MethodInfo, MethodInfo> lambdaCopies = new();   // null = keep the original
+        private static readonly object dietMark = new();
+        private static int dietCount = -1;
+        private static CustomButton dietLast;
+        private static int dietSwapped, dietWarned;
+
+        private static void DietNewButtons() {
+            var list = CustomButton.buttons;
+            if (list == null || fastAll == null) return;
+            int n = list.Count;
+            var last = n > 0 ? list[n - 1] : null;
+            if (n == dietCount && ReferenceEquals(last, dietLast)) return;
+            dietCount = n;
+            dietLast = last;
+            int before = dietSwapped;
+            for (int i = 0; i < n; i++) {
+                var b = list[i];
+                if (b == null || dieted.TryGetValue(b, out _)) continue;
+                dieted.Add(b, dietMark);
+                try {
+                    b.HasButton = DietFunc(b.HasButton, 0);
+                    b.CouldUse = DietFunc(b.CouldUse, 0);
+                } catch (Exception e) {
+                    if (dietWarned++ < 3) UsefulTORStuffPlugin.Logger?.LogWarning($"[TorFrameDiet] button delegates kept: {e.Message}");
+                }
+            }
+            if (dietSwapped != before)
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[TorFrameDiet] button delegates on copies: {dietSwapped} so far ({lambdaCopies.Count(kv => kv.Value != null)} lambdas copied).");
+        }
+
+        private static Func<bool> DietFunc(Func<bool> f, int depth) {
+            if (f == null || f.GetInvocationList().Length != 1) return f;
+            var m = f.Method;
+            if (m == null || m.DeclaringType == null) return f;   // already a copy (DynamicMethods have no declaring type)
+            var target = f.Target;
+            if (depth < 2 && target != null && target.GetType().IsClass) {
+                foreach (var fi in target.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)) {
+                    if (fi.FieldType != typeof(Func<bool>) || fi.IsInitOnly) continue;
+                    var inner = fi.GetValue(target) as Func<bool>;
+                    if (inner == null || ReferenceEquals(inner, f)) continue;
+                    var swapped = DietFunc(inner, depth + 1);
+                    if (!ReferenceEquals(swapped, inner)) fi.SetValue(target, swapped);
+                }
+            }
+            var copy = LambdaCopy(m);
+            if (copy == null) return f;
+            dietSwapped++;
+            return (Func<bool>)(m.IsStatic ? copy.CreateDelegate(typeof(Func<bool>)) : copy.CreateDelegate(typeof(Func<bool>), target));
+        }
+
+        private static MethodInfo LambdaCopy(MethodInfo m) {
+            if (lambdaCopies.TryGetValue(m, out var c)) return c;
+            c = null;
+            try {
+                string asm = m.DeclaringType.Assembly.GetName().Name;
+                if ((asm == "TheOtherRoles" || asm == "UnknownsCollection" || asm == "UsefulTORStuff")
+                    && !m.IsGenericMethod && !m.DeclaringType.ContainsGenericParameters
+                    && m.GetMethodBody() != null && Harmony.GetPatchInfo(m) == null) {
+                    using var dmd = new DynamicMethodDefinition(m);
+                    var body = dmd.Definition.Body;
+                    var module = dmd.Definition.Module;
+                    int fasts = 0;
+                    foreach (var ins in body.Instructions) {
+                        if (ins.OpCode != OpCodes.Call && ins.OpCode != OpCodes.Callvirt) continue;
+                        if (ins.Operand is not Mono.Cecil.MethodReference mr) continue;
+                        MethodBase t;
+                        try { t = mr.ResolveReflection(); } catch { continue; }
+                        if (t == null || !fastAll.TryGetValue((t.Module, t.MetadataToken), out var rep)) continue;
+                        ins.OpCode = OpCodes.Call;
+                        ins.Operand = module.ImportReference(rep);
+                        fasts++;
+                    }
+                    if (fasts > 0) c = dmd.Generate();
+                }
+            } catch (Exception e) {
+                if (dietWarned++ < 3) UsefulTORStuffPlugin.Logger?.LogWarning($"[TorFrameDiet] lambda {m.DeclaringType?.Name}.{m.Name} kept: {e.GetType().Name}: {e.Message}");
+                c = null;
+            }
+            lambdaCopies[m] = c;
+            return c;
         }
 
         [HarmonyPatch(typeof(AmongUsClient), nameof(AmongUsClient.OnGameJoined))]

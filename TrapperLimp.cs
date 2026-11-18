@@ -140,6 +140,8 @@ namespace UsefulTORStuff {
             }
         }
 
+        private static bool AnyLimp => everyoneHasMod && (selfLimping || limpUntil.Count > 0);
+
         private static bool? lastLabelOn;
 
         private static bool ShouldLimp(byte id) {
@@ -194,6 +196,7 @@ namespace UsefulTORStuff {
         static class PlayerPhysicsPatch {
             public static void Postfix(PlayerPhysics __instance) {
                 try {
+                    if (!AnyLimp) return;   // nobody limps: no Unity reads at all (PERF_UTS.md no. 3)
                     if (!__instance.AmOwner || __instance.myPlayer == null) return;
                     if (GameData.Instance != null && IsAlive(__instance.myPlayer) && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
                         __instance.body.velocity *= Ratio();
@@ -204,6 +207,7 @@ namespace UsefulTORStuff {
         static class NetTransformPatch {
             public static void Postfix(CustomNetworkTransform __instance) {
                 try {
+                    if (!AnyLimp) return;   // nobody limps: no Unity reads at all (PERF_UTS.md no. 3)
                     if (__instance.AmOwner || __instance.myPlayer == null) return;
                     if (GameData.Instance != null && IsAlive(__instance.myPlayer) && __instance.myPlayer.CanMove && ShouldLimp(__instance.myPlayer.PlayerId))
                         __instance.body.velocity *= Ratio();
