@@ -68,6 +68,12 @@ namespace UsefulTORStuff {
 
         public static void TryPatch(Harmony harmony) {
             try {
+                var target = AccessTools.Method(typeof(CustomHatManager), "GenerateDownloadList");
+                if (target != null)
+                    harmony.Patch(target, postfix: new HarmonyMethod(AccessTools.Method(typeof(UnknownHat), nameof(StripOwnFiles))));
+                else
+                    UsefulTORStuffPlugin.Logger?.LogWarning("[UnknownHat] GenerateDownloadList not found, TOR may log 404s for the hat files.");
+
                 string dir = ResolveHatsDirectory();
                 if (dir == null) {
                     UsefulTORStuffPlugin.Logger?.LogWarning("[UnknownHat] could not resolve TOR's hats directory, hat skipped.");
@@ -92,11 +98,6 @@ namespace UsefulTORStuff {
                 });
                 registered = true;
 
-                var target = AccessTools.Method(typeof(CustomHatManager), "GenerateDownloadList");
-                if (target != null)
-                    harmony.Patch(target, postfix: new HarmonyMethod(AccessTools.Method(typeof(UnknownHat), nameof(StripOwnFiles))));
-                else
-                    UsefulTORStuffPlugin.Logger?.LogWarning("[UnknownHat] GenerateDownloadList not found, TOR may log 404s for the hat files.");
                 UsefulTORStuffPlugin.Logger?.LogInfo($"[UnknownHat] registered '{HatName}' in {dir}.");
             } catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogError($"[UnknownHat] setup failed: {ex}");
@@ -104,7 +105,7 @@ namespace UsefulTORStuff {
         }
 
         // CustomHatManager.HatsDirectory is internal; the fallback rebuilds it from the public directory name.
-        private static string ResolveHatsDirectory() {
+        internal static string ResolveHatsDirectory() {
             try {
                 var prop = typeof(CustomHatManager).GetProperty("HatsDirectory", BindingFlags.NonPublic | BindingFlags.Static);
                 if (prop?.GetValue(null) is string fromTor && !string.IsNullOrEmpty(fromTor)) return fromTor;
@@ -150,7 +151,7 @@ namespace UsefulTORStuff {
 
         // The returned list is the object HatsLoader iterates, so removing in place is enough.
         private static void StripOwnFiles(List<string> __result) {
-            try { __result?.RemoveAll(f => OwnDiskFiles.Contains(f)); }
+            try { __result?.RemoveAll(f => OwnDiskFiles.Contains(f) || FeelingCuteHat.IsDiskFile(f)); }
             catch (Exception ex) { UsefulTORStuffPlugin.Logger?.LogWarning($"[UnknownHat] download strip failed: {ex.Message}"); }
         }
 
@@ -184,6 +185,14 @@ namespace UsefulTORStuff {
 
         private static bool IsOurs(string productId) => productId == HatId;
 
+        private static bool IsRestricted(string productId) => IsOurs(productId) || FeelingCuteHat.Find(productId) != null;
+
+        private static bool CanWear(string productId) =>
+            IsOurs(productId) ? LocalIsAuthor() : FeelingCuteHat.Find(productId) == null || FeelingCuteHat.LocalMatches();
+
+        private static bool ResetForbidden(string productId) =>
+            (FeelingCuteHat.Find(productId) == null || FeelingCuteHat.IdentityAvailable()) && !CanWear(productId);
+
         // ---- exclusive wardrobe entry --------------------------------------------------------------
 
         // TOR's hat tab is built from this list; no entry here means no chip and no gap.
@@ -191,13 +200,11 @@ namespace UsefulTORStuff {
         private static class UnlockedHatsPatch {
             public static void Postfix(ref Il2CppReferenceArray<HatData> __result) {
                 try {
-                    if (!registered || __result == null || LocalIsAuthor()) return;
-                    int ours = 0;
-                    foreach (var h in __result) if (h != null && IsOurs(h.ProductId)) ours++;
-                    if (ours == 0) return;
+                    if (__result == null) return;
                     var kept = new List<HatData>(__result.Length);
-                    foreach (var h in __result) if (h != null && !IsOurs(h.ProductId)) kept.Add(h);
-                    __result = new Il2CppReferenceArray<HatData>(kept.ToArray());
+                    foreach (var h in __result) if (h != null && CanWear(h.ProductId)) kept.Add(h);
+                    if (kept.Count != __result.Length)
+                        __result = new Il2CppReferenceArray<HatData>(kept.ToArray());
                 } catch (Exception ex) {
                     UsefulTORStuffPlugin.Logger?.LogWarning($"[UnknownHat] wardrobe filter failed: {ex.Message}");
                 }
@@ -210,7 +217,7 @@ namespace UsefulTORStuff {
             public static bool Prefix(HatsTab __instance) {
                 try {
                     var hat = __instance != null ? __instance.currentHat : null;
-                    if (hat != null && IsOurs(hat.ProductId) && !LocalIsAuthor()) return false;
+                    if (hat != null && !CanWear(hat.ProductId)) return false;
                 } catch { }
                 return true;
             }
@@ -221,9 +228,9 @@ namespace UsefulTORStuff {
         private static class RpcSetHatPatch {
             public static void Prefix(PlayerControl __instance, ref string hatId) {
                 try {
-                    if (!IsOurs(hatId) || __instance != PlayerControl.LocalPlayer || LocalIsAuthor()) return;
+                    if (!IsRestricted(hatId) || __instance != PlayerControl.LocalPlayer || CanWear(hatId)) return;
                     hatId = NoHatId;
-                    UsefulTORStuffPlugin.Logger?.LogInfo("[UnknownHat] not the author: announcing no hat instead.");
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[UnknownHat] locked costume replaced with no hat.");
                 } catch { }
             }
         }
@@ -238,7 +245,8 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
         private static class TickPatch {
             public static void Postfix() {
-                if (!registered || Time.time < nextSanitize) return;
+                FeelingCuteHat.Poll();
+                if (Time.time < nextSanitize) return;
                 nextSanitize = Time.time + 1f;
                 SanitizeSavedHat();
             }
@@ -259,7 +267,7 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(HatParent), nameof(HatParent.LateUpdate))]
         private static class WalkPatch {
             public static void Postfix(HatParent __instance) {
-                if (!registered || walkFailed || ReferenceEquals(__instance, null)) return;   // no Unity ==: it boxes per call
+                if ((!registered && !FeelingCuteHat.AnyRegistered) || ReferenceEquals(__instance, null)) return;
                 try { Animate(__instance); }
                 catch (Exception ex) {
                     walkFailed = true;
@@ -268,26 +276,34 @@ namespace UsefulTORStuff {
             }
         }
 
-        // HatData pointer -> ours? Reading ProductId every frame for every hat allocated a managed string each time
-        // just to say "not ours". Emptied every 10 s, so a pointer that a later HatData (TOR builds ours after the
-        // registration above) takes over is looked up again.
-        private static readonly Dictionary<IntPtr, bool> hatOursByPtr = new Dictionary<IntPtr, bool>();
+        // Der Zeiger-Cache vermeidet das erneute Lesen der Hut-ID pro Bild. Er wird regelmäßig geleert,
+        // damit ein neuer HatData-Eintrag mit wiederverwendetem Zeiger erneut zugeordnet wird.
+        private static readonly Dictionary<IntPtr, (bool isUnknown, FeelingCuteHat costume)> hatKindByPtr = new();
         private static float hatCacheClearAt;
 
         private static void Animate(HatParent hp) {
             var hat = hp.Hat;
-            if (ReferenceEquals(hat, null) || hat.m_CachedPtr == IntPtr.Zero) return;   // every hat of every player, every frame
+            if (ReferenceEquals(hat, null) || hat.m_CachedPtr == IntPtr.Zero) {
+                FeelingCuteHat.Restore(hp);
+                return;
+            }
             var ptr = hat.Pointer;
             // .NET clock instead of Time.time: every Unity float getter boxes on the il2cpp heap through Il2CppInterop,
             // and this runs for every hat of every player each frame, ours or not (multi-client test 2026-11-12).
             float now = Environment.TickCount64 * 0.001f;
-            if (now >= hatCacheClearAt) { hatOursByPtr.Clear(); hatCacheClearAt = now + 10f; }
-            if (!hatOursByPtr.TryGetValue(ptr, out bool ours)) {
-                if (hatOursByPtr.Count > 2048) hatOursByPtr.Clear();
-                ours = IsOurs(hat.ProductId);
-                hatOursByPtr[ptr] = ours;
+            if (now >= hatCacheClearAt) { hatKindByPtr.Clear(); hatCacheClearAt = now + 10f; }
+            if (!hatKindByPtr.TryGetValue(ptr, out var kind)) {
+                if (hatKindByPtr.Count > 2048) hatKindByPtr.Clear();
+                string id = hat.ProductId;
+                kind = (IsOurs(id), FeelingCuteHat.Find(id));
+                hatKindByPtr[ptr] = kind;
             }
-            if (!ours) return;
+            if (kind.costume?.Registered == true) {
+                kind.costume.Animate(hp);
+                return;
+            }
+            FeelingCuteHat.Restore(hp);
+            if (!kind.isUnknown || walkFailed || !registered) return;
             var front = hp.FrontLayer;
             var back = hp.BackLayer;
             if (front == null || !front.enabled || front.sprite == null) return;
@@ -298,22 +314,11 @@ namespace UsefulTORStuff {
             if (walkFrames == null || Array.IndexOf(walkFrames, current) < 0) idleSprite = current;
             if (idleSprite == null) return;
 
-            float cycle = -1f;
             var pc = hp.GetComponentInParent<PlayerControl>();
-            if (pc != null && pc.Data != null && !pc.Data.IsDead && !pc.onLadder && !pc.inVent && !pc.inMovingPlat) {
-                var anims = pc.MyPhysics != null ? pc.MyPhysics.Animations : null;
-                if (anims != null && anims.IsPlayingRunAnimation()) {
-                    var animator = anims.Animator != null ? anims.Animator.m_animator : null;
-                    if (animator != null) {
-                        float t = animator.GetCurrentAnimatorStateInfo(0).normalizedTime;
-                        cycle = t - Mathf.Floor(t);
-                    }
-                }
-            }
-
+            int index = RunFrameIndex(pc);
             Sprite want = idleSprite;
-            if (cycle >= 0f && EnsureWalkFrames(idleSprite)) {
-                var f = walkFrames[Mathf.Clamp(Mathf.FloorToInt(cycle * WalkFrames), 0, WalkFrames - 1)];
+            if (index >= 0 && EnsureWalkFrames(idleSprite)) {
+                var f = walkFrames[index];
                 if (f != null) want = f;
             }
             if (front.sprite != want) front.sprite = want;
@@ -324,7 +329,17 @@ namespace UsefulTORStuff {
         // frames only add what the body does relative to it. TOR leaves a non-bouncing custom hat on another node, so the
         // costume moved twice and cut into the visor (User 29.10.). Same fix as UCHats: sync on the head, back layer copies
         // the front layer's X/Y (the sync only moves the front layer).
-        private static void FollowHead(HatParent hp, SpriteRenderer front, SpriteRenderer back) {
+        internal static int RunFrameIndex(PlayerControl pc) {
+            if (pc == null || pc.Data == null || pc.Data.IsDead || pc.onLadder || pc.inVent || pc.inMovingPlat) return -1;
+            var anims = pc.MyPhysics != null ? pc.MyPhysics.Animations : null;
+            if (anims == null || !anims.IsPlayingRunAnimation()) return -1;
+            var animator = anims.Animator != null ? anims.Animator.m_animator : null;
+            if (animator == null) return -1;
+            float t = animator.GetCurrentAnimatorStateInfo(0).normalizedTime;
+            return Mathf.Clamp(Mathf.FloorToInt((t - Mathf.Floor(t)) * WalkFrames), 0, WalkFrames - 1);
+        }
+
+        internal static void FollowHead(HatParent hp, SpriteRenderer front, SpriteRenderer back) {
             var sync = hp.SpriteSyncNode != null ? hp.SpriteSyncNode : hp.GetComponent<PowerTools.SpriteAnimNodeSync>();
             if (sync != null && sync.NodeId != 0) sync.NodeId = 0;
             var f = front.transform.localPosition;
@@ -371,13 +386,10 @@ namespace UsefulTORStuff {
         // Saved hat is ours but the account is not the author's: back to the empty hat, and tell the lobby when in one.
         private static void SanitizeSavedHat() {
             try {
-                if (!registered) return;
                 var customization = DataManager.Player?.Customization;
-                if (customization == null || !IsOurs(customization.Hat) || LocalIsAuthor()) return;
-                customization.Hat = NoHatId;
+                if (customization != null && ResetForbidden(customization.Hat)) customization.Hat = NoHatId;
                 var lp = PlayerControl.LocalPlayer;
-                if (lp != null && lp.Data != null && IsOurs(lp.Data.DefaultOutfit.HatId)) lp.RpcSetHat(NoHatId);
-                UsefulTORStuffPlugin.Logger?.LogInfo("[UnknownHat] saved hat reset (not the author).");
+                if (lp != null && lp.Data != null && ResetForbidden(lp.Data.DefaultOutfit.HatId)) lp.RpcSetHat(NoHatId);
             } catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[UnknownHat] sanitize failed: {ex.Message}");
             }

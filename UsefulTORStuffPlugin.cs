@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.7.6.2";
+    public const string PluginVersion = "1.7.6.3";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -269,6 +269,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         // Exclusive costume hat for the author: registered for everyone, listed and wearable only for him.
         // Not an option and not host-synced, so it sits inside the capture bracket without being gated by it.
         UnknownHat.TryPatch(harmony);
+        FeelingCuteHat.Init();
 
         // Custom pets in the pet tab (Bit for the author, more from the online list), TOR's custom-hat scheme.
         UTSPets.Init();
