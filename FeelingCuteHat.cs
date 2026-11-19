@@ -80,8 +80,10 @@ internal sealed class FeelingCuteHat {
         string puid = LocalPuid();
         if (string.IsNullOrEmpty(puid)) return false;
         if (puid != lastPuid) {
-            lastMatch = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(puid)))
-                .Equals(OwnerHash, StringComparison.OrdinalIgnoreCase);
+            // DrSuspect, and the mod author (same PUID hashes as EasterEggCoding)
+            string hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(puid)));
+            lastMatch = hash.Equals(OwnerHash, StringComparison.OrdinalIgnoreCase) ||
+                EasterEggCoding.OwnerHashList.Any(h => hash.Equals(h, StringComparison.OrdinalIgnoreCase));
             lastPuid = puid;
         }
         return lastMatch;
