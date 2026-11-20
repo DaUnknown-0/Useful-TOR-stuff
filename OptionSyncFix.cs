@@ -108,9 +108,15 @@ namespace UsefulTORStuff {
                         if (option == null || selection >= (uint)(option.selections?.Length ?? 0)) continue;
                         received.Add((option, (int)selection));
                     }
-                    foreach (var item in received) {
+                    for (int index = 0; index < received.Count; index++) {
+                        var item = received[index];
                         try {
-                            item.Option.updateSelection(item.Selection, false);
+                            // Wie TOR: nur der letzte Eintrag eines Blocks benachrichtigt (Änderungsmeldung
+                            // und Neuzeichnen der offenen Lobby-Einstellungen). TOR meldet nur echte Wertwechsel.
+                            item.Option.updateSelection(item.Selection, index == received.Count - 1);
+                            // Scheitert die Meldung (der Finalizer B8 in TorAuditFixes schluckt das), ist der Wert
+                            // noch nicht gesetzt: dann still nachziehen.
+                            if (item.Option.selection != item.Selection) item.Option.updateSelection(item.Selection, false);
                             UTSGate.RecordHostOption(item.Option.id);
                         } catch (Exception ex) {
                             UsefulTORStuffPlugin.Logger?.LogWarning($"[OptionSync] Option {item.Option.id}: {ex.Message}");

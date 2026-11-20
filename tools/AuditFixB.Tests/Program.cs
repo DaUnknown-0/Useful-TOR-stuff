@@ -157,7 +157,10 @@ class Program {
   RPCProcedure.HandleShareOptions(2,new MessageReader(Block((own.id,0))));
   Check(own.selection==1,"Abgeschnittener Block wird vor Anwendung abgewiesen");
   AmongUsClient.Instance.HostId=3;
-  Check(!UTSGate.Bool(own),"Hostwechsel löscht Optionsfreigaben");
+  Check(UTSGate.Bool(own),"Hostwechsel in derselben Lobby behält Optionsfreigaben");
+  AmongUsClient.Instance.GameId++;
+  Check(!UTSGate.Bool(own),"Lobbywechsel löscht Optionsfreigaben");
+  AmongUsClient.Instance.GameId--;
   AmongUsClient.Instance.HostId=1;AmongUsClient.Instance.AmHost=true;
   Check(UTSGate.Bool(own),"Host liest eigene Werte direkt");
  }

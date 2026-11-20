@@ -99,11 +99,24 @@ namespace UsefulTORStuff {
         private static readonly HashSet<int> receivedHostOptions = new();
         private static int receivedHost = int.MinValue, receivedGame = int.MinValue;
 
+        // Review 20.11. A1: Ein Hostwechsel in derselben Lobby (alter Host geht) leert die Freigaben
+        // NICHT mehr. Die empfangenen Werte stammen vom bisher vereinbarten Host und sind auf allen
+        // Clients gleich; der neue Host liest dieselben Werte über seine selection. Vorher fielen alle
+        // Gäste auf Standardwerte zurück, der neue Host nicht (Desync bis zum nächsten Vollsync).
+        // Nur ein Lobbywechsel (GameId) leert. Wird dieser Client selbst neuer Host, schickt er in der
+        // Lobby einmal einen Vollsync (EvaluateInLobby), damit alle wieder denselben Stand bestätigt haben.
+        private static bool resyncOwed;
+
         private static void CheckHost() {
             var client = AmongUsClient.Instance;
             if (client == null) return;
             if (receivedHost == client.HostId && receivedGame == client.GameId) return;
-            receivedHostOptions.Clear();
+            if (receivedGame != client.GameId) {
+                receivedHostOptions.Clear();
+                resyncOwed = false;
+            } else if (receivedHost != int.MinValue && client.AmHost) {
+                resyncOwed = true;
+            }
             receivedHost = client.HostId;
             receivedGame = client.GameId;
         }
@@ -120,6 +133,13 @@ namespace UsefulTORStuff {
                 CheckHost();
                 SetState(client.AmHost
                          || UsefulVersionHandshake.playerVersions.ContainsKey(client.HostId));
+                if (resyncOwed) {
+                    resyncOwed = false;
+                    if (client.AmHost) {
+                        UsefulTORStuffPlugin.Logger?.LogInfo("[Gate] became host in this lobby: sending a full option sync.");
+                        PacedOptionSync.QueueFullSync();
+                    }
+                }
             } catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[Gate] evaluation failed: {ex.Message}");
             }
@@ -128,6 +148,7 @@ namespace UsefulTORStuff {
         public static void ResetOnGameJoined() {
             receivedHostOptions.Clear();
             receivedHost = receivedGame = int.MinValue;
+            resyncOwed = false;
             SetState(AmongUsClient.Instance?.AmHost == true);
         }
 

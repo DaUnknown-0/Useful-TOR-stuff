@@ -10,6 +10,10 @@ namespace UsefulTORStuff {
         private static bool Prefix(ref EndGameResult __1) {
             if ((int)__1.GameOverReason <= 16) return true;
             TheOtherRoles.Patches.OnGameEndPatch.gameOverReason = __1.GameOverReason;
+            // Review 20.11. A3: Vanilla bekommt wie bisher einen ihm bekannten Grund. Rohwerte über 16
+            // (Mod-Solosiege) sind im Vanilla-Spielende ungetestet (Endbildschirm, Statistik). Der echte
+            // Grund steht für alle Mods in OnGameEndPatch.gameOverReason.
+            __1.GameOverReason = GameOverReason.ImpostorByKill;
             Helpers.toggleZoom(reset: true);
             return false;
         }

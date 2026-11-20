@@ -27,7 +27,7 @@ namespace UsefulTORStuff {
                     }
                     // Verhindert auch, dass ein beschädigtes verwaltetes PE die laufende DLL ersetzt.
                     var assemblyVersion = System.Reflection.AssemblyName.GetAssemblyName(temp).Version;
-                    if (File.Exists(path)) File.Replace(temp, path, backup);
+                    if (File.Exists(path)) ReplaceLoaded(temp, path, backup);
                     else File.Move(temp, path);
                     prepared[path] = version ?? assemblyVersion;
                     ModManagerDelete.CancelPending(path);
@@ -41,5 +41,26 @@ namespace UsefulTORStuff {
                 }
             }
         });
+
+        // Review 20.11. A4: ReplaceFile fordert auf der Zieldatei mehr Rechte an als ein Umbenennen
+        // (Attribute/ACL übernehmen). Ob das auf einer von BepInEx geladenen DLL immer klappt, ist
+        // ungeprüft. Scheitert es, greift der frühere, bewährte Weg: laufende DLL beiseite schieben
+        // (bei geladenen Assemblies erlaubt), neue an ihren Platz, bei Fehler zurückrollen.
+        private static void ReplaceLoaded(string temp, string path, string backup) {
+            try {
+                File.Replace(temp, path, backup);
+                return;
+            } catch (Exception e) when (e is IOException || e is UnauthorizedAccessException) {
+                UsefulTORStuffPlugin.Logger?.LogInfo($"[Install] File.Replace failed ({e.GetType().Name}), moving instead: {Path.GetFileName(path)}");
+            }
+            // ReplaceFile kann die Zieldatei schon zur Sicherung umbenannt haben.
+            if (File.Exists(path)) File.Move(path, backup);
+            try {
+                File.Move(temp, path);
+            } catch {
+                try { if (!File.Exists(path) && File.Exists(backup)) File.Move(backup, path); } catch { }
+                throw;
+            }
+        }
     }
 }
