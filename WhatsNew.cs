@@ -228,8 +228,10 @@ namespace UsefulTORStuff {
                 VanillaUI.Backdrop(root, null);
                 var panel = VanillaUI.CenterPanel(root, new Vector2(1300, 900));
                 float y = VanillaUI.Title(panel, UTSLocalization.Tr("uts.whatsnew.title", item.Name, item.Version));
-                float boxH = 900 - y - 130f;
-                var box = VanillaUI.Box(panel, new Vector2(30, -y - 10f), new Vector2(1240, boxH));
+                // Title returns the (negative) offset below the title: the box starts there, not mirrored above the panel
+                float top = y - 10f;
+                float boxH = 900f + top - 120f;
+                var box = VanillaUI.Box(panel, new Vector2(30, top), new Vector2(1240, boxH));
                 // text area leaves a strip at the bottom of the box for the page arrows
                 float textH = boxH - 28f - 56f;
                 var t = VanillaUI.Text(box, item.Notes, 19, Color.white, new Vector2(18, -14), new Vector2(1204, textH));
