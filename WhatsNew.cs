@@ -8,7 +8,8 @@
  * config ([Interface] Seen Versions). At the first main menu of a start, every mod whose loaded version
  * differs from the remembered one gets its release notes from the GitHub Atom feed (ReleaseFeed, the same
  * source the updaters read, not counted against the API limit) and a panel shows them, one mod after the
- * other: name, version, the notes (cut after about 40 lines) and a button to the release page.
+ * other: name, version, the notes (split into pages that fit the box, arrows, wheel or arrow keys turn them) and a
+ * button to the release page.
  * A fresh install (nothing remembered yet) only remembers and shows nothing. A release without notes, a
  * private repository or no network: nothing is shown for that mod, the version is remembered anyway.
  * Switch: [Interface] Whats New.
@@ -30,12 +31,17 @@ namespace UsefulTORStuff {
 
         internal static BepInEx.Configuration.ConfigEntry<bool> Enabled;
         internal static BepInEx.Configuration.ConfigEntry<string> Seen;
-        private const int MaxLines = 40, MaxChars = 2600;
+        // long notes are split into pages that fit the box (User 2026-11-20: pages instead of text running out of the panel)
+        private const int MaxLines = 400, MaxChars = 30000;
 
         private sealed class Item { public string Name, Version, Notes, Url; }
         private readonly List<Item> queue = new List<Item>();
         private GameObject root;
         private static bool started;
+        private readonly List<string> pages = new List<string>();
+        private int page;
+        private TMPro.TextMeshProUGUI body, pageLabel;
+        private GameObject prevBtn, nextBtn;
 
         internal static void Bind(BepInEx.Configuration.ConfigFile config) {
             Enabled = config.Bind("Interface", "Whats New", true, "After an update, show the release notes of each updated mod in the main menu.");
@@ -52,6 +58,12 @@ namespace UsefulTORStuff {
                 if (root != null) {
                     if (MainMenu() == null) { Close(); return; }
                     if (Input.GetKeyDown(KeyCode.Escape)) Next();
+                    else if (Input.GetKeyDown(KeyCode.RightArrow) || Input.GetKeyDown(KeyCode.PageDown)) Turn(1);
+                    else if (Input.GetKeyDown(KeyCode.LeftArrow) || Input.GetKeyDown(KeyCode.PageUp)) Turn(-1);
+                    else {
+                        float wheel = Input.mouseScrollDelta.y;
+                        if (wheel < -0.01f) Turn(1); else if (wheel > 0.01f) Turn(-1);
+                    }
                     return;
                 }
                 if (started || Enabled == null || !Enabled.Value) return;
@@ -163,6 +175,49 @@ namespace UsefulTORStuff {
         [HideFromIl2Cpp]
         private void Close() {
             if (root != null) { Destroy(root); root = null; }
+            body = pageLabel = null; prevBtn = nextBtn = null;
+            pages.Clear(); page = 0;
+        }
+
+        /// <summary>Splits the notes line by line into pages whose rendered height fits the text box.</summary>
+        [HideFromIl2Cpp]
+        private static List<string> Paginate(TMPro.TextMeshProUGUI t, string notes, float width, float height) {
+            var result = new List<string>();
+            var cur = new System.Text.StringBuilder();
+            foreach (var line in (notes ?? "").Split('\n')) {
+                string candidate = cur.Length == 0 ? line : cur + "\n" + line;
+                float h;
+                try { h = t.GetPreferredValues(candidate, width, 0f).y; } catch { h = 0f; }
+                if (cur.Length > 0 && h > height) {
+                    result.Add(cur.ToString().TrimEnd('\n'));
+                    cur.Clear();
+                    if (line.Length == 0) continue; // no blank line at the top of a page
+                    cur.Append(line);
+                } else {
+                    cur.Clear(); cur.Append(candidate);
+                }
+            }
+            if (cur.Length > 0 || result.Count == 0) result.Add(cur.ToString());
+            return result;
+        }
+
+        [HideFromIl2Cpp]
+        private void Turn(int delta) {
+            if (body == null || pages.Count < 2) return;
+            int to = Mathf.Clamp(page + delta, 0, pages.Count - 1);
+            if (to == page) return;
+            page = to;
+            ShowPage();
+        }
+
+        [HideFromIl2Cpp]
+        private void ShowPage() {
+            if (body == null || pages.Count == 0) return;
+            body.text = pages[page];
+            bool many = pages.Count > 1;
+            if (pageLabel != null) { pageLabel.gameObject.SetActive(many); pageLabel.text = $"{page + 1} / {pages.Count}"; }
+            if (prevBtn != null) prevBtn.SetActive(many && page > 0);
+            if (nextBtn != null) nextBtn.SetActive(many && page < pages.Count - 1);
         }
 
         [HideFromIl2Cpp]
@@ -173,10 +228,22 @@ namespace UsefulTORStuff {
                 VanillaUI.Backdrop(root, null);
                 var panel = VanillaUI.CenterPanel(root, new Vector2(1300, 900));
                 float y = VanillaUI.Title(panel, UTSLocalization.Tr("uts.whatsnew.title", item.Name, item.Version));
-                var box = VanillaUI.Box(panel, new Vector2(30, -y - 10f), new Vector2(1240, 900 - y - 130f));
-                var t = VanillaUI.Text(box, item.Notes, 19, Color.white, new Vector2(18, -14), new Vector2(1204, 900 - y - 158f));
+                float boxH = 900 - y - 130f;
+                var box = VanillaUI.Box(panel, new Vector2(30, -y - 10f), new Vector2(1240, boxH));
+                // text area leaves a strip at the bottom of the box for the page arrows
+                float textH = boxH - 28f - 56f;
+                var t = VanillaUI.Text(box, item.Notes, 19, Color.white, new Vector2(18, -14), new Vector2(1204, textH));
                 t.enableWordWrapping = true;
-                t.overflowMode = TMPro.TextOverflowModes.Ellipsis;
+                t.overflowMode = TMPro.TextOverflowModes.Truncate;
+                body = t;
+                pages.Clear();
+                pages.AddRange(Paginate(t, item.Notes, 1204f, textH));
+                page = 0;
+                pageLabel = VanillaUI.Label(box, "", 20, Color.white, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
+                    new Vector2(0, 12), new Vector2(200, 40), TMPro.TextAlignmentOptions.Center);
+                prevBtn = VanillaUI.Button(box, "‹", new Vector2(-150, 8), new Vector2(80, 46), VanillaUI.Blue, () => Turn(-1));
+                nextBtn = VanillaUI.Button(box, "›", new Vector2(150, 8), new Vector2(80, 46), VanillaUI.Blue, () => Turn(1));
+                ShowPage();
                 string next = queue.Count > 1 ? UTSLocalization.Tr("uts.whatsnew.next", queue.Count - 1) : UTSLocalization.Tr("uts.whatsnew.close");
                 VanillaUI.Button(panel, next, new Vector2(230, 28), new Vector2(380, 60), VanillaUI.Green, Next);
                 string url = item.Url;
