@@ -51,11 +51,20 @@ namespace UsefulTORStuff {
         // TOR's HatData.GetHatExtension and its ExtensionCache are internal; the cache is read by reflection.
         private static readonly FieldInfo ExtensionField = AccessTools.Field(typeof(CustomHatManager), "ExtensionCache");
 
-        private static string PackageOf(HatData h) {
+        // also used by HatVariants (package of a chip in the hats tab)
+        internal static string PackageOf(HatData h) {
             try {
                 if (h == null || ExtensionField?.GetValue(null) is not Dictionary<string, HatExtension> cache) return "";
                 return cache.TryGetValue(h.name, out var ext) && ext != null ? ext.Package ?? "" : "";
             } catch { return ""; }
+        }
+
+        /// <summary>The main picture of a TOR custom hat (HatVariants' window), null for other hats.</summary>
+        internal static Sprite PreviewOf(HatData h) {
+            try {
+                if (h == null || ViewsField?.GetValue(null) is not Dictionary<string, HatViewData> views) return null;
+                return views.TryGetValue(h.name, out var view) && view != null ? view.MainImage : null;
+            } catch { return null; }
         }
 
         private static int Rank(string package) {
@@ -122,9 +131,9 @@ namespace UsefulTORStuff {
         // ---- hats tab opened while hats are still coming in -------------------------------------------
         // User 30.10. (screenshot, "manche skins fehlen, wenn sie beim join nicht geladen waren"): TOR builds the hats tab
         // once in OnEnable from the hats registered at that moment. Opened during the incremental load (or before a mod's
-        // late hats, e.g. Halloween costumes after their download), the missing hats never showed up until the tab was
+        // late hats, e.g. costumes another mod registers after their download), the missing hats never showed up until the tab was
         // opened again. Now an open tab rebuilds itself when new hats arrived: once the load is through, or at most every
-        // 2 s while it still runs.
+        // 2 s while it still runs. The rebuild goes through OnEnable, so HatVariants and HatSearch lay the tab out again.
         private static int published, tabBuiltAt;
         private static float lastRebuild;
 

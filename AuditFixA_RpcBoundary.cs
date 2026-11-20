@@ -357,7 +357,10 @@ namespace UsefulTORStuff {
             var picker = Player(player);
             return (Host(sender) || player == sender.PlayerId) && picker?.Data?.Role != null
                 && order?.Count > 0 && order[0] == player && info != null
-                && picker.Data.Role.IsImpostor == info.isImpostor && (role == (byte)RoleId.Crewmate || picked?.Contains(role) == false);
+                && picker.Data.Role.IsImpostor == info.isImpostor
+                // Crewmate und normaler Impostor dürfen mehrfach vorkommen: TORs Draft gibt sie als Notlösung erneut aus, wenn
+                // nichts anderes übrig ist. Vorher verwarf der Filter diese zweite Impostor-Wahl, und der Draft hing (20.11.2026).
+                && (role == (byte)RoleId.Crewmate || role == (byte)RoleId.Impostor || picked?.Contains(role) == false);
         }
         private static bool ValidTrap(PlayerControl sender, byte id) {
             if (Field("TheOtherRoles.Objects.Trap", "traps") is not IEnumerable traps) return false;

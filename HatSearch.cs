@@ -8,6 +8,9 @@
  * package does not contain the text is hidden and the rest close up in the grid; the package titles hide while a
  * search is on. Backspace deletes, Escape or Enter leaves the field, an empty field shows the full list again.
  * Purely local UI, no game state. Keys typed into the field are not passed on (the wardrobe has no other key use).
+ * Hat variants (HatVariants.cs, 2026-11-20): its postfix runs before this one, so the grouped layout is what this
+ * records as home positions. While a search text is set every variant is found on its own; with an empty field the
+ * homes come back and HatVariants.Hidden keeps the other variants of a group out of sight.
  */
 
 using System;
@@ -107,6 +110,7 @@ namespace UsefulTORStuff {
         }
 
         private static void Tick() {
+            if (HatVariants.PickerOpen) return;   // the variant window is on top: no focus change, no typing
             if (Input.GetMouseButtonDown(0)) {
                 var cam = Camera.main;
                 bool over = false;
@@ -133,12 +137,13 @@ namespace UsefulTORStuff {
         private static void Apply() {
             if (tab == null) return;
             string q = query.Trim().ToLowerInvariant();
+            HatVariants.SearchChanged(q.Length > 0);
             foreach (var (go, active) in titles) if (go != null) go.SetActive(q.Length == 0 && active);
             int n = 0;
             float x0 = tab.XRange.min, x1 = tab.XRange.max;
             foreach (var chip in tab.ColorChips) {
                 if (chip == null) continue;
-                bool show = q.Length == 0 || Matches(chip, q);
+                bool show = q.Length == 0 ? !HatVariants.Hidden(chip) : Matches(chip, q);
                 chip.gameObject.SetActive(show);
                 if (!show) continue;
                 if (q.Length == 0) {
@@ -159,8 +164,8 @@ namespace UsefulTORStuff {
                 var hat = chip.Tag?.TryCast<HatData>();
                 if (hat != null && hat.name != null && hat.name.ToLowerInvariant().Contains(q)) return true;
                 // TOR writes "<name>\nby <author>" under the custom chips
-                foreach (var t in chip.GetComponentsInChildren<TextMeshPro>())
-                    if (t != null && t.text != null && t.text.ToLowerInvariant().Contains(q)) return true;
+                foreach (var t in chip.GetComponentsInChildren<TextMeshPro>(true))
+                    if (t != null && t.gameObject.name != HatVariants.BadgeName && t.text != null && t.text.ToLowerInvariant().Contains(q)) return true;
             } catch { }
             return false;
         }
