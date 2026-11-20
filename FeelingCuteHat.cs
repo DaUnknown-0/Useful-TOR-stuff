@@ -19,27 +19,27 @@ namespace UsefulTORStuff;
 
 internal sealed class FeelingCuteHat {
     private const string OwnerHash = "6000e7a041af292fa9c437cf6d85c0c0d813f67d354b55298fe25f5cb9c8a124";
-    private const string AssetUrl = "https://raw.githubusercontent.com/DaUnknown-0/UTS-Music/main/costumes/";
     private const int WalkCount = 12;
 
-    private static readonly Vector2 Pivot = new(0.53f, 0.575f);
+    internal static readonly Vector2 Pivot = new(0.53f, 0.575f);
     private static readonly FeelingCuteHat[] Costumes = {
         new("Feeling Cute Blue Cat", "UTS_FeelingCute", "feeling-cute-v1.zip", 1836671,
             "f35cbe6aea427288a6798615c02839ebb0f43e07d6c35983bec3c7a83b61879d"),
         new("Feeling Cute Pawprint Cat", "UTS_FeelingCutePawprint", "feeling-cute-v2.zip", 1945853,
             "12ba5c7dff534f8616cc6e54d38aabba61cbd151d28505e4e4f215a7a500a4f9"),
-        new("Feeling Cute Overalls", "UTS_FeelingCuteOveralls", "feeling-cute-v3.zip", 1342816,
-            "ebdb8bc06f656fe0ad6649ef8630feb79a35fb55061bfbaba8694e0ec392808b", coversBody: false),
+        // 19.11.: Kopfkatze aus den Ebenen von feeling-cute-v3 (GPT-Bilder) herausgetrennt, Audits/2026-11-19/skin_overalls.
+        // Die Latzhose ist jetzt FeelingCuteSkin.
+        new("Feeling Cute Overalls Cat", "UTS_FeelingCuteOverallsCat", "feeling-cute-v3-cat.zip", 436784,
+            "d3410a58de903786996248987edd033c43a49d29bc2b806d7de1e4b7502c304e", coversBody: false),
     };
     private static string lastPuid;
     private static bool lastMatch;
     private static bool animationFailed;
 
-    private readonly string hatName, packageFile, packageHash, main, back, climb;
-    private readonly int packageSize;
+    private readonly string hatName, main, back, climb;
     private readonly bool coversBody;
     private readonly string[] diskFiles;
-    private Task<byte[]> download;
+    private readonly CostumePackage package;
     private Sprite[] poses, accents;
     private Dictionary<string, HatViewData> views;
     private HatViewData view;
@@ -48,9 +48,7 @@ internal sealed class FeelingCuteHat {
         bool coversBody = true) {
         this.hatName = hatName;
         ProductId = "hat_" + hatName.Replace(' ', '_');
-        this.packageFile = packageFile;
-        this.packageSize = packageSize;
-        this.packageHash = packageHash;
+        package = new CostumePackage(hatName, packageFile, packageSize, packageHash, Register);
         this.coversBody = coversBody;
         main = fileStem + ".png";
         back = fileStem + "_back.png";
@@ -58,7 +56,7 @@ internal sealed class FeelingCuteHat {
         diskFiles = new[] { main, back, climb };
     }
 
-    private string ProductId { get; }
+    internal string ProductId { get; }
     internal bool Registered { get; private set; }
     internal static bool AnyRegistered { get; private set; }
 
@@ -93,58 +91,9 @@ internal sealed class FeelingCuteHat {
 
     private void Warn(string message) => UsefulTORStuffPlugin.Logger?.LogWarning($"[{hatName}] {message}");
 
-    private string CacheFile => Path.Combine(BepInEx.Paths.BepInExRootPath, "uts-costumes", packageFile);
-
     internal static void Init() {
-        foreach (var costume in Costumes) costume.LoadPackage();
-    }
-
-    private void LoadPackage() {
-        try {
-            if (File.Exists(CacheFile) && new FileInfo(CacheFile).Length == packageSize) {
-                byte[] cached = File.ReadAllBytes(CacheFile);
-                if (Verify(cached)) {
-                    Register(cached);
-                    return;
-                }
-            }
-        } catch (Exception ex) {
-            Warn("Der Kostümcache konnte nicht geladen werden. " + ex.Message);
-        }
-        download = Task.Run(Fetch);
-    }
-
-    private bool Verify(byte[] bytes) => bytes.Length == packageSize &&
-        Convert.ToHexString(SHA256.HashData(bytes)).Equals(packageHash, StringComparison.OrdinalIgnoreCase);
-
-    private async Task<byte[]> Fetch() {
-        string source = AssetUrl;
-        string local = Environment.GetEnvironmentVariable("UTS_COSTUME_SOURCE");
-        if (Uri.TryCreate(local, UriKind.Absolute, out var loopback) && loopback.Scheme == "http" &&
-            loopback.Host == "127.0.0.1" && local.EndsWith("/", StringComparison.Ordinal))
-            source = local;
-
-        using var deadline = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(20));
-        using var http = new HttpClient();
-        using var response = await http.GetAsync(source + packageFile, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
-        response.EnsureSuccessStatusCode();
-        using var stream = await response.Content.ReadAsStreamAsync(deadline.Token);
-        var data = new byte[packageSize];
-        int offset = 0, count;
-        while (offset < data.Length && (count = await stream.ReadAsync(data.AsMemory(offset), deadline.Token)) > 0)
-            offset += count;
-        if (offset != data.Length || await stream.ReadAsync(new byte[1], deadline.Token) != 0 || !Verify(data))
-            throw new InvalidDataException("Größe oder SHA-256 des Kostümpakets stimmt nicht.");
-
-        Directory.CreateDirectory(Path.GetDirectoryName(CacheFile));
-        string temporary = CacheFile + "." + Guid.NewGuid().ToString("N") + ".part";
-        try {
-            File.WriteAllBytes(temporary, data);
-            File.Move(temporary, CacheFile, true);
-        } finally {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
-        return data;
+        foreach (var costume in Costumes) costume.package.Load();
+        FeelingCuteSkin.Init();
     }
 
     [HarmonyPatch(typeof(HatManager), nameof(HatManager.GetHatById))]
@@ -163,15 +112,8 @@ internal sealed class FeelingCuteHat {
     }
 
     internal static void Poll() {
-        foreach (var costume in Costumes) costume.PollPackage();
-    }
-
-    private void PollPackage() {
-        if (download == null || !download.IsCompleted) return;
-        var complete = download;
-        download = null;
-        try { Register(complete.GetAwaiter().GetResult()); }
-        catch (Exception ex) { Warn("Das Kostüm konnte nicht geladen werden. " + ex.Message); }
+        foreach (var costume in Costumes) costume.package.Poll();
+        FeelingCuteSkin.Poll();
     }
 
     private void Register(byte[] data) {
@@ -221,15 +163,9 @@ internal sealed class FeelingCuteHat {
         UsefulTORStuffPlugin.Logger?.LogInfo($"[{hatName}] Kostüm registriert.");
     }
 
-    private static byte[] ReadEntry(ZipArchive archive, string name) {
-        var entry = archive.GetEntry(name) ?? throw new InvalidDataException(name);
-        using var stream = entry.Open();
-        using var bytes = new MemoryStream((int)entry.Length);
-        stream.CopyTo(bytes);
-        return bytes.ToArray();
-    }
+    private static byte[] ReadEntry(ZipArchive archive, string name) => CostumePackage.ReadEntry(archive, name);
 
-    private static Sprite LoadSprite(byte[] data) {
+    internal static Sprite LoadSprite(byte[] data) {
         var texture = new Texture2D(2, 2, TextureFormat.ARGB32, false);
         if (!ImageConversion.LoadImage(texture, data, true)) {
             UnityEngine.Object.Destroy(texture);

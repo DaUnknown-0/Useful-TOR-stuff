@@ -50,6 +50,10 @@ namespace UsefulTORStuff {
         private const string Author = "DaUnknown-0";
         private const string Package = "Unknown's Collective";
         private const string NoHatId = "hat_NoHat";   // vanilla "empty" hat
+        private const string NoSkinId = "skin_None";  // vanilla "empty" skin
+        // Bis 1.7.6.3 waren Katze und Latzhose ein Hut. Gespeicherte Auswahl wird in Katzenhut + Skin umgezogen.
+        private const string OldOverallsHat = "hat_Feeling_Cute_Overalls";
+        private const string OverallsCatHat = "hat_Feeling_Cute_Overalls_Cat";
 
         // CreateHatBehaviour builds the product id as "hat_" + Name with spaces turned into underscores.
         private static readonly string HatId = "hat_" + HatName.Replace(' ', '_');
@@ -185,13 +189,16 @@ namespace UsefulTORStuff {
 
         private static bool IsOurs(string productId) => productId == HatId;
 
-        private static bool IsRestricted(string productId) => IsOurs(productId) || FeelingCuteHat.Find(productId) != null;
+        private static bool IsFeelingCute(string productId) =>
+            FeelingCuteHat.Find(productId) != null || FeelingCuteSkin.IsOurs(productId);
+
+        private static bool IsRestricted(string productId) => IsOurs(productId) || IsFeelingCute(productId);
 
         private static bool CanWear(string productId) =>
-            IsOurs(productId) ? LocalIsAuthor() : FeelingCuteHat.Find(productId) == null || FeelingCuteHat.LocalMatches();
+            IsOurs(productId) ? LocalIsAuthor() : !IsFeelingCute(productId) || FeelingCuteHat.LocalMatches();
 
         private static bool ResetForbidden(string productId) =>
-            (FeelingCuteHat.Find(productId) == null || FeelingCuteHat.IdentityAvailable()) && !CanWear(productId);
+            (!IsFeelingCute(productId) || FeelingCuteHat.IdentityAvailable()) && !CanWear(productId);
 
         // ---- exclusive wardrobe entry --------------------------------------------------------------
 
@@ -240,6 +247,56 @@ namespace UsefulTORStuff {
             public static void Postfix() => SanitizeSavedHat();
         }
 
+        // ---- Skin-Tab: dieselbe Sperre für Feeling Cute Overalls (FeelingCuteSkin.cs) -------------------
+
+        // SkinsTab.OnEnable baut seine Chips aus genau dieser Liste (GameAssembly 4.7.0 nachgelesen).
+        [HarmonyPatch(typeof(HatManager), nameof(HatManager.GetUnlockedSkins))]
+        private static class UnlockedSkinsPatch {
+            public static void Postfix(ref Il2CppReferenceArray<SkinData> __result) {
+                try {
+                    if (__result == null) return;
+                    var kept = new List<SkinData>(__result.Length);
+                    foreach (var s in __result) {
+                        if (s == null) continue;
+                        string id = s.ProductId;
+                        if (!CanWear(id) || (FeelingCuteSkin.IsOurs(id) && !FeelingCuteSkin.Loaded)) continue;
+                        kept.Add(s);
+                    }
+                    if (kept.Count != __result.Length)
+                        __result = new Il2CppReferenceArray<SkinData>(kept.ToArray());
+                } catch (Exception ex) {
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[UnknownHat] skin filter failed: {ex.Message}");
+                }
+            }
+        }
+
+        [HarmonyPatch(typeof(SkinsTab), nameof(SkinsTab.ClickEquip))]
+        private static class SkinEquipPatch {
+            public static bool Prefix(SkinsTab __instance) {
+                try {
+                    string id = __instance != null ? __instance.skinId : null;
+                    if (id != null && !CanWear(id)) return false;
+                } catch { }
+                return true;
+            }
+        }
+
+        [HarmonyPatch(typeof(PlayerControl), nameof(PlayerControl.RpcSetSkin))]
+        private static class RpcSetSkinPatch {
+            public static void Prefix(PlayerControl __instance, ref string skinId) {
+                try {
+                    if (!IsRestricted(skinId) || __instance != PlayerControl.LocalPlayer || CanWear(skinId)) return;
+                    skinId = NoSkinId;
+                    UsefulTORStuffPlugin.Logger?.LogInfo("[UnknownHat] locked skin replaced with no skin.");
+                } catch { }
+            }
+        }
+
+        [HarmonyPatch(typeof(SkinsTab), nameof(SkinsTab.OnEnable))]
+        private static class SkinTabOpenPatch {
+            public static void Postfix() => SanitizeSavedHat();
+        }
+
         private static float nextSanitize;
 
         [HarmonyPatch(typeof(HudManager), nameof(HudManager.Update))]
@@ -267,7 +324,9 @@ namespace UsefulTORStuff {
         [HarmonyPatch(typeof(HatParent), nameof(HatParent.LateUpdate))]
         private static class WalkPatch {
             public static void Postfix(HatParent __instance) {
-                if ((!registered && !FeelingCuteHat.AnyRegistered) || ReferenceEquals(__instance, null)) return;
+                if (ReferenceEquals(__instance, null)) return;
+                FeelingCuteSkin.Animate(__instance);
+                if (!registered && !FeelingCuteHat.AnyRegistered) return;
                 try { Animate(__instance); }
                 catch (Exception ex) {
                     walkFailed = true;
@@ -407,13 +466,38 @@ namespace UsefulTORStuff {
             return read == data.Length ? data : null;
         }
 
+        // Alter Kombi-Hut (bis 1.7.6.3) in der Speicherdatei: für Berechtigte Katzenhut + Latzhosen-Skin, sonst nichts.
+        private static void MigrateOldOveralls(AmongUs.Data.Player.PlayerCustomizationData customization, PlayerControl lp) {
+            bool saved = customization != null && customization.Hat == OldOverallsHat;
+            bool worn = lp != null && lp.Data != null && lp.Data.DefaultOutfit.HatId == OldOverallsHat;
+            if (!saved && !worn) return;
+            if (!FeelingCuteHat.IdentityAvailable()) return;
+            bool allowed = FeelingCuteHat.LocalMatches();
+            string hat = allowed ? OverallsCatHat : NoHatId;
+            if (saved) {
+                customization.Hat = hat;
+                if (allowed && customization.Skin == NoSkinId) customization.Skin = FeelingCuteSkin.ProductId;
+            }
+            if (worn) {
+                lp.RpcSetHat(hat);
+                if (allowed && lp.Data.DefaultOutfit.SkinId == NoSkinId) lp.RpcSetSkin(FeelingCuteSkin.ProductId);
+            }
+            UsefulTORStuffPlugin.Logger?.LogInfo("[UnknownHat] Feeling Cute Overalls auf Katzenhut + Skin umgestellt.");
+        }
+
         // Saved hat is ours but the account is not the author's: back to the empty hat, and tell the lobby when in one.
         private static void SanitizeSavedHat() {
             try {
                 var customization = DataManager.Player?.Customization;
-                if (customization != null && ResetForbidden(customization.Hat)) customization.Hat = NoHatId;
                 var lp = PlayerControl.LocalPlayer;
-                if (lp != null && lp.Data != null && ResetForbidden(lp.Data.DefaultOutfit.HatId)) lp.RpcSetHat(NoHatId);
+                MigrateOldOveralls(customization, lp);
+                if (customization != null && ResetForbidden(customization.Hat)) customization.Hat = NoHatId;
+                if (customization != null && ResetForbidden(customization.Skin)) customization.Skin = NoSkinId;
+                if (lp != null && lp.Data != null) {
+                    var outfit = lp.Data.DefaultOutfit;
+                    if (ResetForbidden(outfit.HatId)) lp.RpcSetHat(NoHatId);
+                    if (ResetForbidden(outfit.SkinId)) lp.RpcSetSkin(NoSkinId);
+                }
             } catch (Exception ex) {
                 UsefulTORStuffPlugin.Logger?.LogWarning($"[UnknownHat] sanitize failed: {ex.Message}");
             }
