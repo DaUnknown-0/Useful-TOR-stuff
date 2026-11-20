@@ -13,7 +13,7 @@
  * Laden im Spiel (GameAssembly 4.7.0 nachgelesen): CosmeticsLayer.SetSkin(string) -> HatManager.GetSkinById ->
  * CosmeticsLayer.SetSkin(SkinData) -> SkinLayer.SetSkin(SkinData, ...) -> Addressable -> SkinLayer.SetSkin(SkinViewData).
  * Der Prefix auf SkinLayer.SetSkin(SkinData) merkt sich die Ebene als Träger und gibt Vanilla den leeren Skin.
- * CosmeticsCache.GetSkin/CoAddSkin bekommen für unsere ID ebenfalls die leere ID.
+ * CosmeticsCache.CoAddSkin und TORs Helpers.setLook bekommen für unsere ID die leere ID (GetSkin selbst nie patchen, siehe SetLookPatch).
  *
  * Anzeige: Vanilla-Skins sind Unity-Animationsclips, die sich zur Laufzeit nicht bauen lassen. Stattdessen hängt
  * neben der Hut-Vorderebene jedes Trägers eine eigene Ebene auf dem Kopfknoten (NodeId 0), also genau dort, wo
@@ -200,9 +200,13 @@ internal static class FeelingCuteSkin {
         }
     }
 
-    [HarmonyPatch(typeof(CosmeticsCache), nameof(CosmeticsCache.GetSkin))]
-    private static class CacheGetPatch {
-        private static void Prefix(ref string id) { if (id == ProductId) id = SkinData.EmptyId; }
+    // Nicht CosmeticsCache.GetSkin patchen: TOR ruft es in Helpers.setLook in try/catch auf (bei jedem Rundenstart über
+    // Camouflager.resetCamouflage). Mit einem Patch läuft der Aufruf über den Il2CppInterop-Trampolin, der die native
+    // Exception nur loggt und null zurückgibt; setLook stürzt dann außerhalb seines try ab und bricht clearAndReloadRoles
+    // ab Camouflager ab (Medium, Hacker, Tracker ... nicht zurückgesetzt, FF 1.7.6.6 bis 1.7.7). Deshalb die ID vor TOR tauschen.
+    [HarmonyPatch(typeof(TheOtherRoles.Helpers), nameof(TheOtherRoles.Helpers.setLook))]
+    private static class SetLookPatch {
+        private static void Prefix(ref string skinId) { if (skinId == ProductId) skinId = SkinData.EmptyId; }
     }
 
     [HarmonyPatch(typeof(CosmeticsCache), nameof(CosmeticsCache.CoAddSkin))]

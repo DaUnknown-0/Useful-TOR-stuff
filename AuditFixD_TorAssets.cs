@@ -156,7 +156,11 @@ namespace UsefulTORStuff {
                 yield return null;
             }
             InitialFetchPatch.Clear();
-            // Ein zusätzlicher begrenzter Durchlauf repariert auch zuvor fehlgeschlagene Einzeldateien.
+            // Nur wiederholen, wenn der erste Abruf nichts geliefert hat. Läuft dabei TORs eigenes CoFetchHats (Patch nicht
+            // aktiv), hängt es alle Hüte ein zweites Mal an UnregisteredHats: jeder Hut stand doppelt im Hut-Tab (1.7.6.1 bis 1.7.7).
+            var pending = (List<CustomHat>)Pending.GetValue(null);
+            var views = (Dictionary<string, HatViewData>)Views.GetValue(null);
+            if ((pending?.Count ?? 0) > 0 || (views?.Count ?? 0) > 0) yield break;
             loader.FetchHats();
         }
 

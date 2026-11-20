@@ -92,6 +92,12 @@ namespace UsefulTORStuff {
 
         private static HatData Register(CustomHat hat) {
             Snapshot();
+            // Schon registriert (doppelter Eintrag aus einem zweiten Abruf): nur aus der Warteliste nehmen.
+            if (hat?.Name != null && ViewsField?.GetValue(null) is Dictionary<string, HatViewData> views && views.ContainsKey(hat.Name)) {
+                Pending.Remove(hat);
+                retryAt.Remove(hat);
+                return null;
+            }
             try {
                 var result = (HatData)Create.Invoke(null, new object[] { hat, false });
                 Pending.Remove(hat);
@@ -197,6 +203,22 @@ namespace UsefulTORStuff {
             try { return EOSManager.InstanceExists && EOSManager.Instance.HasFinishedLoginFlow(); } catch { return true; }
         }
 
+        // TOR hängt bei jedem Manifestabruf alle Hüte ungeprüft an UnregisteredHats. Ein zweiter Abruf (oder ein anderer Mod,
+        // der denselben Hut noch einmal einträgt) ergäbe jeden Hut doppelt im Hut-Tab. Vor jedem Durchgang: schon registrierte
+        // und doppelt wartende Namen entfernen.
+        private static readonly FieldInfo ViewsField = AccessTools.Field(typeof(CustomHatManager), "ViewDataCache");
+
+        private static void RemoveDuplicates(List<CustomHat> pending) {
+            try {
+                var views = ViewsField?.GetValue(null) as Dictionary<string, HatViewData>;
+                var seen = new HashSet<string>();
+                int removed = pending.RemoveAll(h => h?.Name != null && ((views != null && views.ContainsKey(h.Name)) || !seen.Add(h.Name)));
+                if (removed > 0) UsefulTORStuffPlugin.Logger?.LogInfo($"[StartupHats] {removed} duplicate hat(s) dropped before registration");
+            } catch (Exception e) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[StartupHats] duplicate check failed: {e.Message}");
+            }
+        }
+
         private static IEnumerator Run() {
             float next = 0f, spacing = 0f;
             bool batch = false;
@@ -212,7 +234,7 @@ namespace UsefulTORStuff {
                     continue;
                 }
                 float now = Time.realtimeSinceStartup;
-                if (!batch) { batch = true; spacing = SpreadSeconds / pending.Count; next = now; }
+                if (!batch) { RemoveDuplicates(pending); if (pending.Count == 0) continue; batch = true; spacing = SpreadSeconds / pending.Count; next = now; }
                 if (now < next) continue;
                 var timer = System.Diagnostics.Stopwatch.StartNew();
                 var added = new List<HatData>();
