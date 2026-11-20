@@ -204,9 +204,24 @@ internal static class FeelingCuteSkin {
     // Camouflager.resetCamouflage). Mit einem Patch läuft der Aufruf über den Il2CppInterop-Trampolin, der die native
     // Exception nur loggt und null zurückgibt; setLook stürzt dann außerhalb seines try ab und bricht clearAndReloadRoles
     // ab Camouflager ab (Medium, Hacker, Tracker ... nicht zurückgesetzt, FF 1.7.6.6 bis 1.7.7). Deshalb die ID vor TOR tauschen.
+    // setLook schreibt die SkinViewData direkt (Camouflager, Morphling, Zurücksetzen) und läuft nicht über SkinLayer.SetSkin.
+    // Deshalb hier auch die Trägerliste pflegen, sonst bleibt die Latzhose bei Tarnung sichtbar (User 20.11.).
     [HarmonyPatch(typeof(TheOtherRoles.Helpers), nameof(TheOtherRoles.Helpers.setLook))]
     private static class SetLookPatch {
-        private static void Prefix(ref string skinId) { if (skinId == ProductId) skinId = SkinData.EmptyId; }
+        private static void Prefix(PlayerControl target, ref string skinId) {
+            bool ours = skinId == ProductId;
+            if (ours) skinId = SkinData.EmptyId;
+            try {
+                var layer = !ReferenceEquals(target, null) && !ReferenceEquals(target.cosmetics, null) ? target.cosmetics.skin : null;
+                if (ReferenceEquals(layer, null)) return;
+                if (ours) {
+                    if (wearers.Count > 256) wearers.Clear();
+                    wearers.Add(layer.Pointer);
+                } else if (wearers.Count > 0) wearers.Remove(layer.Pointer);
+            } catch (Exception ex) {
+                UsefulTORStuffPlugin.Logger?.LogWarning($"[{SkinName}] setLook-Abgleich fehlgeschlagen: {ex.Message}");
+            }
+        }
     }
 
     [HarmonyPatch(typeof(CosmeticsCache), nameof(CosmeticsCache.CoAddSkin))]
