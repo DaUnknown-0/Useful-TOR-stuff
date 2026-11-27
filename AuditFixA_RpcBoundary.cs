@@ -238,8 +238,12 @@ namespace UsefulTORStuff {
                 case "VampireSetBitten":
                     a = d.Byte(); b = d.Byte();
                     // Beim Report und beim Emergency sendet TOR auch ohne vorhandenen Biss einen Reset.
-                    return b == 255 && a == 255 && (Owner(sender, Vampire.vampire) || Vampire.bitten == null || Reporter(sender))
-                        || b == 0 && Living(a) && Owner(sender, Vampire.vampire) && Near(sender, Player(a));
+                    // Fix 27.11.: der Reset kommt auch vom Gebissenen selbst (sein Meeting, letzter Notfallknopf), und der
+                    // Biss wird mit Netz-Verzoegerung gemessen (Killreichweite 2,5 plus Laufweg): eine Ablehnung liesse
+                    // den Biss auf diesem Client fehlen und spaeter den Biss-Tod scheitern.
+                    return b == 255 && a == 255 && (Owner(sender, Vampire.vampire) || Vampire.bitten == null || Reporter(sender)
+                                                    || Vampire.bitten.PlayerId == sender.PlayerId)
+                        || b == 0 && Living(a) && Owner(sender, Vampire.vampire) && Near(sender, Player(a), 6f);
                 case "PlaceGarlic":
                     return Alive(sender) && Vampire.garlicsActive && Position(d, sender) && !garlicPlaced.Contains(sender.PlayerId);
                 case "DeputyUsedHandcuffs":
@@ -263,8 +267,7 @@ namespace UsefulTORStuff {
                     uint vent = d.Packed(); return Owner(sender, SecurityGuard.securityGuard) && ShipStatus.Instance != null
                         && ShipStatus.Instance.AllVents.Any(v => v != null && v.Id == vent);
                 }
-                case "ArsonistWin": return Owner(sender, Arsonist.arsonist) && Alive(Arsonist.arsonist)
-                    && PlayerControl.AllPlayerControls.ToArray().Where(p => Alive(p) && p != Arsonist.arsonist).All(p => Arsonist.dousedPlayers.Contains(p));
+                case "ArsonistWin": return ArsonistWinOk(sender);
                 case "SetBlanked": a = d.Byte(); b = d.Byte(); return Exists(a) && (b == 0
                     ? host || a == sender.PlayerId || sender == Bomber.bomber
                     : b == 255 && Owner(sender, Pursuer.pursuer));
@@ -322,8 +325,18 @@ namespace UsefulTORStuff {
                 && theft.target == targetId && Time.time <= theft.until) return true;
             // Bombentode werden vom Opferclient gemeldet, nicht vom Bomber.
             if ((source == Bomber.bomber || source == recentBomber) && target == sender && BombNear(target)) return true;
-            // Ein Reporter löst den bereits bekannten Biss auch mit fremder sourceId auf.
-            if (source == Vampire.vampire && target == Vampire.bitten && Alive(source) && (source == sender || Reporter(sender))) return true;
+            // Vampire-Biss (Fix 27.11., Spieltest: ein Gebissener war beim Host noch am Leben, obwohl er tot war; er hatte
+            // das Meeting selbst gerufen). TOR fuehrt den Biss-Tod auf dem SENDER schon aus, eine Ablehnung hier spaltet
+            // also nur die Lobby. Angenommen wird:
+            //  - der verzoegerte Biss-Tod vom Vampire selbst, auch wenn dieser Client den Biss nicht kennt (die Biss-
+            //    Nachricht kann hier verspaetet oder abgelehnt worden sein) oder der Vampire weit weg steht;
+            //  - beim Meeting-Start die Aufloesung durch den Gebissenen selbst (er hat das Meeting gerufen; sein letzter
+            //    Notfallknopf zaehlt dann nicht mehr als "Reporter") oder durch einen Reporter.
+            if (source == Vampire.vampire && Alive(source)) {
+                if (source == sender && (target == Vampire.bitten || Vampire.bitten == null || Near(sender, target))) return true;
+                if (target == sender) return true;
+                if (target == Vampire.bitten && Reporter(sender)) return true;
+            }
             if (source == sender && Alive(sender) && MeetingHud.Instance == null) {
                 bool? companion = AuditFixA_CompanionRoles.Attack(source, target);
                 if (companion.HasValue) return companion.Value && ExileController.Instance == null && IntroCutscene.Instance == null
@@ -376,6 +389,25 @@ namespace UsefulTORStuff {
             return false;
         }
 
+        /// <summary>ArsonistWin (fix 27.11., playtest: a guest Arsonist ignited, everybody died on HIS screen, the host
+        /// refused the message and the round went on for everyone else, a desync). TOR's own button has already exiled
+        /// everyone on the Arsonist's game before this message arrives, so refusing it can only split the lobby. The
+        /// douse list on this client may lag the Arsonist's (a ShareGhostInfo that arrives late or was refused, a kill
+        /// still in flight) and TOR itself compares douses by PlayerId, never by object. So: the sender must be the
+        /// living Arsonist (that is the forgery guard); an incomplete douse list on THIS client is logged, not refused.</summary>
+        private static bool ArsonistWinOk(PlayerControl sender) {
+            if (!Owner(sender, Arsonist.arsonist) || !Alive(Arsonist.arsonist)) return false;
+            try {
+                var missing = PlayerControl.AllPlayerControls.ToArray()
+                    .Where(p => p != null && Alive(p) && p.PlayerId != Arsonist.arsonist.PlayerId
+                                && !Arsonist.dousedPlayers.Any(y => y != null && y.PlayerId == p.PlayerId))
+                    .Select(p => p.Data?.PlayerName ?? p.PlayerId.ToString()).ToList();
+                if (missing.Count > 0)
+                    UsefulTORStuffPlugin.Logger?.LogWarning($"[Audit A] ArsonistWin accepted although this client has no douse for: {string.Join(", ", missing)} (the Arsonist's game already ignited).");
+            } catch { }
+            return true;
+        }
+
         private static bool Ghost(PlayerControl sender, AuditFixA_Payload d) {
             byte id = d.Byte(), kind = d.Byte();
             bool same = id == sender.PlayerId;
@@ -387,7 +419,7 @@ namespace UsefulTORStuff {
                     return same && Deputy.handcuffedPlayers.Contains(id);
                 case RPCProcedure.GhostInfoTypes.HandcuffOver: return same;
                 case RPCProcedure.GhostInfoTypes.ArsonistDouse:
-                    target = d.Byte(); return same && Owner(sender, Arsonist.arsonist) && Living(target) && !Arsonist.dousedPlayers.Contains(Player(target));
+                    target = d.Byte(); return same && Owner(sender, Arsonist.arsonist) && Living(target) && !Arsonist.dousedPlayers.Any(y => y != null && y.PlayerId == target);
                 case RPCProcedure.GhostInfoTypes.BountyTarget: target = d.Byte(); return same && sender == BountyHunter.bountyHunter && (target == 255 || Living(target));
                 case RPCProcedure.GhostInfoTypes.NinjaMarked: target = d.Byte(); return same && sender == Ninja.ninja && (target == 255 || Living(target));
                 case RPCProcedure.GhostInfoTypes.WarlockTarget: target = d.Byte(); return same && sender == Warlock.warlock && (target == 255 || Living(target));

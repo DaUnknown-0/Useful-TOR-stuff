@@ -118,6 +118,8 @@ namespace UsefulTORStuff {
         }
 
         private static readonly Dictionary<string, Live> live = new(StringComparer.Ordinal);       // ProductId -> registered
+        /// <summary>ProductIds of the custom pets registered right now (the lobby command ff.trigger.pet picks one).</summary>
+        internal static List<string> LiveIds() => new List<string>(live.Keys);
         private static readonly Dictionary<string, Def> pending = new(StringComparer.Ordinal);     // ProductId -> waiting for the HatManager
         private static readonly ConcurrentQueue<Action> mainQueue = new();
         private static readonly Regex KeyRx = new("^[a-z][a-z0-9]{1,23}$");

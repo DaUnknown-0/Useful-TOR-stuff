@@ -51,7 +51,7 @@ public class UsefulTORStuffPlugin : BasePlugin
 {
     public const string PluginGuid = "com.tormod.usefultorstuff";
     public const string PluginName = "TOR - Forgotten Fixes";
-    public const string PluginVersion = "1.7.10";
+    public const string PluginVersion = "1.7.10.1";
     public static readonly System.Version Version = System.Version.Parse(PluginVersion);
 
     // Module byte for the mod-presence handshake (see UsefulVersionHandshake). Since the RPC
@@ -79,6 +79,12 @@ public class UsefulTORStuffPlugin : BasePlugin
 
     // Module byte for the lobby session statistics (SessionStats). Next free byte below 239, channel 240 only.
     public const byte SessionStatsRpcId = 238;
+
+    // Module byte for the Sheriff's hard-proof rule (SheriffHardProof): the Sheriff's Lover reports what they saw. Channel 240 only.
+    public const byte SheriffHardProofRpcId = 227;
+
+    // For patches applied after PatchAll (SheriffHardProof hooks Unknown's Collection by reflection once it is loaded).
+    internal static Harmony HarmonyInstance { get; private set; }
 
     public static ManualLogSource Logger { get; private set; }
 
@@ -220,6 +226,7 @@ public class UsefulTORStuffPlugin : BasePlugin
         _ = UTSRestart.IsRestart;
 
         var harmony = new Harmony(PluginGuid);
+        HarmonyInstance = harmony;
 
         // Collision watchdog for our consolidated custom callId (see UTSRpc.cs). TOR's CustomRPC enum
         // grows with every release; if it ever reaches our channel (or Unknown's Collection's), the
@@ -240,6 +247,9 @@ public class UsefulTORStuffPlugin : BasePlugin
 
         // Spawn-area kill protection receiver (module byte 241). Same pattern.
         AntiStartKill.RegisterRpc();
+
+        // Sheriff hard-proof rule: the Lover's report (module byte 227).
+        SheriffHardProof.RegisterRpc();
 
         // Early-death shield receiver (module byte 239). Same pattern.
         EarlyDeathShield.RegisterRpc();
@@ -439,6 +449,10 @@ public class UsefulTORStuffPlugin : BasePlugin
         // the green outline and cycles when a player stacks several shields. All patches are
         // attribute-based and picked up by PatchAll below.
         AntiStartKill.CreateOptions();
+
+        // Sheriff hard-proof rule (options 1353-1354, General tab): before the first meeting the Sheriff only shoots a
+        // player he caught at hard proof. Refused on his own client before TOR sends anything (no desync).
+        SheriffHardProof.CreateOptions();
 
         // Early-death shield (options 1383-1388, General tab): the pink shield. DeathTimeHistory
         // records on every client how much of each round a player survived before somebody else

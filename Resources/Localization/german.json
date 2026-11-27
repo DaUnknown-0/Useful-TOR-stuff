@@ -1440,5 +1440,10 @@
  "uts.whatsnew.next": "Weiter (noch {0})",
  "uts.whatsnew.close": "Alles klar",
  "uts.whatsnew.open": "Alle Notizen auf GitHub",
- "uts.sabotagetuning.show_cooldown_seconds": "Sabotage-Abklingzeit in Sekunden anzeigen"
+ "uts.sabotagetuning.show_cooldown_seconds": "Sabotage-Abklingzeit in Sekunden anzeigen",
+ "uts.sheriffproof.option_name": "Sheriff braucht vor dem ersten Meeting einen Hardproof",
+ "uts.sheriffproof.option_cooldown": "Abklingzeit nach einem abgelehnten Schuss",
+ "uts.sheriffproof.refused": "Erste Runde: Du darfst nur schießen, wenn du einen Hardproof gesehen hast (Kill, Morphen und Ähnliches).",
+ "uts.sheriffproof.option_thief": "Auch für den Thief",
+ "uts.sheriffproof.log_header": "Abgelehnte Schüsse letzte Runde (kein Hardproof):"
 }

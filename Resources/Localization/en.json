@@ -1440,5 +1440,10 @@
   "uts.whatsnew.next": "Next ({0} more)",
   "uts.whatsnew.close": "Got it",
   "uts.whatsnew.open": "Full notes on GitHub",
-  "uts.sabotagetuning.show_cooldown_seconds": "Show Sabotage Cooldown Seconds"
+  "uts.sabotagetuning.show_cooldown_seconds": "Show Sabotage Cooldown Seconds",
+ "uts.sheriffproof.option_name": "Sheriff Needs Hard Proof Before The First Meeting",
+ "uts.sheriffproof.option_cooldown": "Cooldown After A Refused Shot",
+ "uts.sheriffproof.refused": "First round: you may only shoot someone you saw at hard proof (a kill, morphing and the like).",
+ "uts.sheriffproof.option_thief": "Also For The Thief",
+ "uts.sheriffproof.log_header": "Refused shots last round (no hard proof):"
 }
